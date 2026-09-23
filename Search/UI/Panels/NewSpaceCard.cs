@@ -11,7 +11,7 @@ namespace Search;
 ///
 /// It stands over the column's rows while Browser.MakingSpace is set, on
 /// the column's own ground, and is out of sight the rest of the time.
-public sealed class NewSpaceCard : Grid
+public sealed partial class NewSpaceCard : Grid
 {
     private readonly Browser browser;
     private readonly Press iconButton = new() { Width = 44, Height = 40, HorizontalAlignment = HorizontalAlignment.Center };

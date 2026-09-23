@@ -13,7 +13,7 @@ namespace Search;
 
 // A window, a row of titles, and a field. Typing an address gets you a page;
 // there is nothing else to learn and nothing else to press.
-public sealed class MainWindow : Window
+public sealed partial class MainWindow : Window
 {
     private readonly Browser browser;
     private readonly Grid root = new();

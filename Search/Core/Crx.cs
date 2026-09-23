@@ -21,7 +21,7 @@ namespace Search;
 // extension passed off under another's id, fails one or the other.
 public static class Crx
 {
-    public sealed class Refused(string why) : Exception(why)
+    public sealed partial class Refused(string why) : Exception(why)
     {
         public static Refused NotAnID => new("That isn't a Chrome Web Store link or extension id");
         public static Refused Download(int code) => new($"The Chrome Web Store answered {code}");

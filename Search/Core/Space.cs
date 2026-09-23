@@ -184,7 +184,7 @@ public sealed class Space
 }
 
 /// Another space's row, as it was left.
-public sealed class Parked(List<Tab> tabs, Guid? active)
+public sealed partial class Parked(List<Tab> tabs, Guid? active)
 {
     public List<Tab> Tabs { get; } = tabs;
     public Guid? Active { get; set; } = active;

@@ -7,7 +7,7 @@ namespace Search;
 /// On an extension's page in the Chrome Web Store, the offer to add it —
 /// only where the page's own "Add to Search" isn't in place, so a store that
 /// has changed its markup still gets a way in.
-public sealed class StoreOffer : Grid
+public sealed partial class StoreOffer : Grid
 {
     private readonly Browser browser;
     private Tab? watched;

@@ -7,7 +7,7 @@ namespace Search;
 /// Everything that rises from the bottom edge to say one thing: a line that
 /// says it and leaves, a page asking for the camera, a password offered a
 /// place, the one mode this browser has.
-public sealed class Bars : StackPanel
+public sealed partial class Bars : StackPanel
 {
     private readonly Browser browser;
     private readonly Border announcement;

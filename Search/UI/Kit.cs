@@ -52,7 +52,9 @@ public static class Kit
     /// over a pale ground would be the loudest thing in the window.
     public static TextBox Field(double size, string placeholder = "")
     {
-        bareField ??= (ControlTemplate)XamlReader.Load("""
+        // As<T>, not a cast: compiled to native code there is no reflection
+        // to find the projection a cast would need.
+        bareField ??= WinRT.CastExtensions.As<ControlTemplate>(XamlReader.Load("""
             <ControlTemplate TargetType="TextBox"
                 xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                 xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
@@ -62,7 +64,7 @@ public static class Kit
                   IsHorizontalRailEnabled="True" ZoomMode="Disabled" IsTabStop="False"
                   Padding="{TemplateBinding Padding}" />
             </ControlTemplate>
-            """);
+            """));
         var field = new TextBox
         {
             Template = bareField,
@@ -102,7 +104,7 @@ public static class Kit
 }
 
 /// A small square holding one symbol. Lit when what it opens is open.
-public sealed class Door : Press
+public sealed partial class Door : Press
 {
     private readonly Border ground;
     private readonly IconElement glyph;
@@ -154,7 +156,7 @@ public sealed class Door : Press
 }
 
 /// A row that is an action rather than a page. Quiet until the pointer is on it.
-public sealed class Quiet : Press
+public sealed partial class Quiet : Press
 {
     public Quiet(string icon, string title, Action act, double height = 28)
     {
@@ -183,7 +185,7 @@ public sealed class Quiet : Press
 
 /// What stands for a page when there is no room for its title: the site's
 /// icon if there is one, and a letter in a faint square until there is.
-public sealed class Mark : Grid
+public sealed partial class Mark : Grid
 {
     private readonly Image image = new() { Stretch = Stretch.UniformToFill };
     private readonly Border plate;
@@ -218,7 +220,7 @@ public sealed class Mark : Grid
 
 /// An almost-closed ring, turning — small enough to sit inside a tab without
 /// becoming the loudest thing in it.
-public sealed class Ring : Grid
+public sealed partial class Ring : Grid
 {
     public Ring(double size = 10)
     {
@@ -253,7 +255,7 @@ public sealed class Ring : Grid
 
 /// A capsule button with words in it: filled for the one thing a line is
 /// about, washed for the rest.
-public sealed class Pill : Press
+public sealed partial class Pill : Press
 {
     public Pill(string title, Action act, bool filled = false)
     {
@@ -273,7 +275,7 @@ public sealed class Pill : Press
 }
 
 /// On or off: a small track with a knob, the Mac's switch at the Mac's size.
-public sealed class Switch : Press
+public sealed partial class Switch : Press
 {
     private readonly Border track;
     private readonly Ellipse knob;
@@ -307,7 +309,7 @@ public sealed class Switch : Press
 }
 
 /// A choice of a few, side by side, the chosen one lifted.
-public sealed class Segmented<T> : Grid where T : notnull
+public sealed partial class Segmented<T> : Grid where T : notnull
 {
     private readonly List<(T value, Border box, TextBlock label)> items = [];
     private T selected;
@@ -355,7 +357,7 @@ public sealed class Segmented<T> : Grid where T : notnull
 
 /// The plate: a rounded card with a title, a cross, whatever the panel is
 /// about, and — when there is one — a foot below a hairline.
-public class Plate : Grid
+public partial class Plate : Grid
 {
     public Plate(string title, UIElement content, Action close, UIElement? foot = null, double width = 560)
     {
@@ -396,7 +398,7 @@ public class Plate : Grid
 }
 
 /// A group of lines in one hairline box.
-public sealed class Card : Grid
+public sealed partial class Card : Grid
 {
     public StackPanel Lines { get; } = new();
 
@@ -420,7 +422,7 @@ public sealed class Card : Grid
 }
 
 /// The hairline between two lines of a card, inset like the text.
-public sealed class Rule : Grid
+public sealed partial class Rule : Grid
 {
     public Rule(double inset = 14)
     {
@@ -431,7 +433,7 @@ public sealed class Rule : Grid
 }
 
 /// One thing to set or do: what it is on the left, the control on the right.
-public sealed class Line : Grid
+public sealed partial class Line : Grid
 {
     public Line(string title, string? detail, UIElement? control)
     {
@@ -472,7 +474,7 @@ public static class Caption
 }
 
 /// The field for narrowing a list. The wash, the glass, the caret.
-public sealed class Hunt : Grid
+public sealed partial class Hunt : Grid
 {
     public TextBox Field { get; }
     public event Action<string>? Changed;
@@ -518,7 +520,7 @@ public static class Nothing
 }
 
 /// A small text action inside a row — Show, Copy, Remove.
-public sealed class Quick : Press
+public sealed partial class Quick : Press
 {
     public Quick(string title, Action act, Brush? tint = null)
     {

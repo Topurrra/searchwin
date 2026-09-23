@@ -9,7 +9,7 @@ namespace Search;
 // as much being able to remove a line as to read one.
 
 /// Every site you have been to, searchable, a card to a day.
-public sealed class HistoryPanel : Plate
+public sealed partial class HistoryPanel : Plate
 {
     /// What was being looked for, still there the next time the panel opens —
     /// the Mac keeps it on the browser for the same reason.
@@ -181,7 +181,7 @@ public sealed class HistoryPanel : Plate
 
     /// One line. A title, where it came from, and when — the three things you
     /// scan for, in the order you scan them.
-    private sealed class TraceRow : Press
+    private sealed partial class TraceRow : Press
     {
         public Trace Trace { get; }
 

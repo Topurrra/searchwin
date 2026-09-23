@@ -12,7 +12,7 @@ namespace Search;
 /// The extensions, behind one puzzle button — a list to press them from, pin
 /// them out of, reload or remove them. The pinned ones also sit in the row
 /// beside it, the way Chrome does it. Nothing at all with nothing installed.
-public sealed class ExtensionSlot : StackPanel
+public sealed partial class ExtensionSlot : StackPanel
 {
     private readonly Browser browser;
     private readonly StackPanel pinned = new() { Orientation = Orientation.Horizontal, Spacing = 2 };
@@ -128,7 +128,7 @@ public sealed class ExtensionSlot : StackPanel
 /// An extension's button: its icon, in a square that lights under the
 /// pointer. Its badge — the count some put in the corner — lives in the
 /// engine, which doesn't hand it over, so there is none.
-public sealed class ActionButton : Press
+public sealed partial class ActionButton : Press
 {
     public ActionButton(Installed item, Action press, double size = 15)
     {
@@ -201,7 +201,7 @@ public static class ExtensionActions
 
 /// The list behind the puzzle button: every extension that is on, a pin for
 /// each, and the way to Settings.
-public sealed class ExtensionMenu : StackPanel
+public sealed partial class ExtensionMenu : StackPanel
 {
     public ExtensionMenu(Browser browser, ExtensionSlot slot)
     {

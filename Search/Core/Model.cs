@@ -6,7 +6,7 @@ namespace Search;
 /// Something the window is drawn from. Setting a property that actually
 /// changes says so, by name, and whoever drew from it redraws — the part of
 /// SwiftUI's @Published this app leans on, and nothing more.
-public abstract class Model : INotifyPropertyChanged
+public abstract partial class Model : INotifyPropertyChanged
 {
     public event PropertyChangedEventHandler? PropertyChanged;
 

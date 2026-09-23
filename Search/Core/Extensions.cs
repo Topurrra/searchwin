@@ -61,7 +61,7 @@ public sealed class Installed
     public string EngineId => Engine ?? Id;
 }
 
-public sealed class Extensions : Model
+public sealed partial class Extensions : Model
 {
     public static readonly Extensions Shared = new();
 

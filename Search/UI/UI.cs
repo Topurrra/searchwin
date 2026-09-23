@@ -49,7 +49,7 @@ public static class UI
     }
 }
 
-public sealed class Later(Action act)
+public sealed partial class Later(Action act)
 {
     internal DispatcherQueueTimer? Timer;
     public bool Cancelled { get; private set; }

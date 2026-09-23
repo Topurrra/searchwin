@@ -871,7 +871,7 @@ public sealed class Bench
     /// view first. A selector, or `text=…` for a button or link by its words.
     private static string Locate(string selector) => $$"""
         (function () {
-          var s = {{JsonSerializer.Serialize(selector)}}, el = null;
+          var s = {{Bridge.Literal(selector)}}, el = null;
           if (s.indexOf('text=') === 0) {
             var want = s.slice(5).trim().toLowerCase();
             el = Array.prototype.find.call(document.querySelectorAll('button, a, [role=button], input[type=submit]'), function (e) {
@@ -892,8 +892,8 @@ public sealed class Bench
     /// would, the same as the password filler, so frameworks notice.
     private static string Act(string verb, string selector, string text)
     {
-        var sel = JsonSerializer.Serialize(selector);
-        var txt = JsonSerializer.Serialize(text);
+        var sel = Bridge.Literal(selector);
+        var txt = Bridge.Literal(text);
         return $$"""
         (function () {
           var el = document.querySelector({{sel}});

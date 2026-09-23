@@ -23,7 +23,7 @@ public interface IPageHost
     void Attach(Tab tab, CoreWebView2 core);
 }
 
-public sealed class Tab : Model
+public sealed partial class Tab : Model
 {
     public Guid Id { get; } = Guid.NewGuid();
 

@@ -11,7 +11,7 @@ namespace Search;
 /// app rather than by Windows, so they can live where the Mac keeps its
 /// traffic lights' equivalent: at the end of the strip, or in the column's
 /// corner, riding with it when it folds away.
-public sealed class WindowButtons : StackPanel
+public sealed partial class WindowButtons : StackPanel
 {
     private readonly Press maximize;
     private readonly FontIcon maxGlyph;
@@ -66,7 +66,7 @@ public sealed class WindowButtons : StackPanel
 /// Back, forward, reload. They watch the live tab, not the window: whether
 /// there is anywhere to go back to is the tab's to say, and it changes with
 /// every page.
-public sealed class Helm : StackPanel
+public sealed partial class Helm : StackPanel
 {
     private readonly Browser browser;
     private readonly Door back, forward, reload;

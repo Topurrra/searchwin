@@ -258,7 +258,7 @@ public static class Icons
         var data = $"F0 M{P(1, 0)} L{P(10, 0)} L{P(10, 13)} L{P(5.5, 9.6)} L{P(1, 13)} Z M{P(2.3, 1.3)} L{P(8.7, 1.3)} L{P(8.7, 10.4)} L{P(5.5, 8)} L{P(2.3, 10.4)} Z";
         return new PathIcon
         {
-            Data = (Geometry)XamlBindingHelper.ConvertValue(typeof(Geometry), data),
+            Data = Paths.Parse(data),
             Foreground = brush ?? Palette.Muted,
             Width = 11 * s,
             Height = 13 * s,
@@ -276,6 +276,64 @@ public static class Icons
     };
 }
 
+/// Path data — absolute M, L, H, V, C and Z, what Figma writes for a flattened
+/// shape — read into a geometry by hand, the way the Mac's Logomark reads its
+/// own. XAML can parse it too, but only by reflection, which a native build
+/// doesn't have.
+public static class Paths
+{
+    public static Geometry Parse(string data)
+    {
+        var geometry = new PathGeometry();
+        var text = data.Trim();
+        if (text.StartsWith("F0")) { geometry.FillRule = FillRule.EvenOdd; text = text[2..]; }
+        else if (text.StartsWith("F1")) { geometry.FillRule = FillRule.Nonzero; text = text[2..]; }
+
+        PathFigure? figure = null;
+        var last = new Windows.Foundation.Point();
+        var start = last;
+        foreach (System.Text.RegularExpressions.Match m in System.Text.RegularExpressions.Regex.Matches(text, "([MLHVCZ])([^MLHVCZ]*)"))
+        {
+            var n = System.Text.RegularExpressions.Regex.Matches(m.Groups[2].Value, @"-?(?:\d+\.?\d*|\.\d+)(?:[eE]-?\d+)?")
+                .Select(x => double.Parse(x.Value, System.Globalization.CultureInfo.InvariantCulture)).ToArray();
+            switch (m.Groups[1].Value)
+            {
+                case "M":
+                    last = start = new(n[0], n[1]);
+                    figure = new PathFigure { StartPoint = last, IsClosed = false, IsFilled = true };
+                    geometry.Figures.Add(figure);
+                    for (var k = 2; k + 1 < n.Length; k += 2)
+                        figure.Segments.Add(new LineSegment { Point = last = new(n[k], n[k + 1]) });
+                    break;
+                case "L":
+                    for (var k = 0; k + 1 < n.Length; k += 2)
+                        figure?.Segments.Add(new LineSegment { Point = last = new(n[k], n[k + 1]) });
+                    break;
+                case "H":
+                    foreach (var x in n) figure?.Segments.Add(new LineSegment { Point = last = new(x, last.Y) });
+                    break;
+                case "V":
+                    foreach (var y in n) figure?.Segments.Add(new LineSegment { Point = last = new(last.X, y) });
+                    break;
+                case "C":
+                    for (var k = 0; k + 5 < n.Length; k += 6)
+                        figure?.Segments.Add(new BezierSegment
+                        {
+                            Point1 = new(n[k], n[k + 1]),
+                            Point2 = new(n[k + 2], n[k + 3]),
+                            Point3 = last = new(n[k + 4], n[k + 5]),
+                        });
+                    break;
+                case "Z":
+                    if (figure != null) figure.IsClosed = true;
+                    last = start;
+                    break;
+            }
+        }
+        return geometry;
+    }
+}
+
 /// Search's mark — a pill with an S cut out of it, read from its own path
 /// data so it stays a crisp vector at any size. The same path as the Mac app
 /// and the website's mark.
@@ -288,7 +346,7 @@ public static class Logomark
     /// The mark, fitted into a box of the given width, filled with `brush`.
     public static FrameworkElement Make(double width, Brush? brush = null)
     {
-        var geometry = (Geometry)XamlBindingHelper.ConvertValue(typeof(Geometry), "F0 " + Data);
+        var geometry = Paths.Parse("F0 " + Data);
         var path = new Microsoft.UI.Xaml.Shapes.Path
         {
             Data = geometry,

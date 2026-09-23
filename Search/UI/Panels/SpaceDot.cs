@@ -14,7 +14,7 @@ namespace Search;
 ///
 /// It keeps itself out of sight while there are no spaces, so whoever
 /// places it only has to place it.
-public sealed class SpaceDot : Press
+public sealed partial class SpaceDot : Press
 {
     public const double Width_ = 26;
 

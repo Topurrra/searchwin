@@ -11,7 +11,7 @@ namespace Search;
 /// you are you, and never for longer than it takes to read it.
 ///
 /// PORT: Passwords.swift, and the import foot of it (Import.swift).
-public sealed class PasswordsPanel : Plate
+public sealed partial class PasswordsPanel : Plate
 {
     private readonly Browser browser;
     private readonly StackPanel body = new() { Spacing = 14 };
@@ -128,7 +128,7 @@ public sealed class PasswordsPanel : Plate
 
     // MARK: - a site, and its accounts once opened
 
-    private sealed class SiteRow : StackPanel
+    private sealed partial class SiteRow : StackPanel
     {
         public SiteRow(Browser browser, Browser.SiteRow site, bool open, Action<string> toggle)
         {
@@ -172,7 +172,7 @@ public sealed class PasswordsPanel : Plate
 
     /// One account: the name, the password as dots, and the three things to
     /// do with it. Show asks Windows who you are first.
-    private sealed class AccountRow : Press
+    private sealed partial class AccountRow : Press
     {
         private readonly Login login;
         private readonly TextBlock secret;
@@ -247,7 +247,7 @@ public sealed class PasswordsPanel : Plate
 
     /// A small text action inside a row — Show/Hide, Copy, Remove — with a
     /// label that can change (Kit's Quick can't, and lives in a shared file).
-    private sealed class Toggle : Press
+    private sealed partial class Toggle : Press
     {
         private readonly TextBlock label;
 
@@ -268,7 +268,7 @@ public sealed class PasswordsPanel : Plate
 
     /// Typing one in by hand. The site, the name, the password, and Save, in
     /// the same hairline box the list uses.
-    private sealed class AddForm : Grid
+    private sealed partial class AddForm : Grid
     {
         public AddForm(Browser browser, Action done)
         {

@@ -224,7 +224,7 @@ public static class Chromium
 
     /// SQLite, as Windows itself ships it (winsqlite3.dll, there since
     /// Windows 10) — only what reading a copied file needs.
-    private sealed class Sqlite : IDisposable
+    private sealed partial class Sqlite : IDisposable
     {
         private IntPtr db;
         private readonly string temp;
@@ -279,7 +279,7 @@ public static class Chromium
         }
     }
 
-    private sealed class Statement(IntPtr handle) : IDisposable
+    private sealed partial class Statement(IntPtr handle) : IDisposable
     {
         public bool Step() => sqlite3_step(handle) == Row;
         public void Reset() => sqlite3_reset(handle);

@@ -12,7 +12,7 @@ namespace Search;
 ///
 /// It covers the whole stage but takes clicks only where the list is: the
 /// ground around it has no background, so the page under it still gets them.
-public sealed class AccountList : Grid
+public sealed partial class AccountList : Grid
 {
     private readonly Browser browser;
     private readonly Grid card = new();

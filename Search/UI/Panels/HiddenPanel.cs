@@ -9,7 +9,7 @@ namespace Search;
 /// A list of selectors is not something anyone can read. So resting the pointer
 /// on a row puts that one thing back on the page, outlined, and scrolls to it —
 /// you decide what to restore by looking at it, not by decoding its name.
-public sealed class HiddenPanel : Plate
+public sealed partial class HiddenPanel : Plate
 {
     private readonly Browser browser;
     private readonly StackPanel body;

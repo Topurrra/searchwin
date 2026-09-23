@@ -95,7 +95,7 @@ public static class Bridge
         text.Replace("\\", "\\\\").Replace("`", "\\`").Replace("$", "\\$");
 
     /// A value as a JavaScript literal.
-    public static string Literal(object? value) => JsonSerializer.Serialize(value);
+    public static string Literal(string? value) => JsonSerializer.Serialize(value, Json.Default.String);
 }
 
 /// A script that goes into every page, and when.

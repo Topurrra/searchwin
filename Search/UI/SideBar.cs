@@ -14,7 +14,7 @@ namespace Search;
 /// the pinned squares, the cross that appears under the pointer — laid out the
 /// other way. The window's buttons keep the column's corner; the column starts
 /// under them and the page takes the whole height beside it.
-public sealed class SideBar : Grid
+public sealed partial class SideBar : Grid
 {
     private const double Row = 28, Gap = 2, Square = 34, PinGap = 4, FootHeight = 26 + 10;
 
@@ -396,7 +396,7 @@ public sealed class SideBar : Grid
 }
 
 /// One tab, as a line in the column.
-public sealed class SideRow : Press
+public sealed partial class SideRow : Press
 {
     private readonly Browser browser;
     public Tab Tab { get; }
@@ -462,7 +462,7 @@ public sealed class SideRow : Press
 
 /// A pinned tab as a cell in the block at the top of the column — as wide as
 /// its row asks for, but never taller than the classic square.
-public sealed class PinSquare : Press
+public sealed partial class PinSquare : Press
 {
     private readonly Browser browser;
     public Tab Tab { get; }

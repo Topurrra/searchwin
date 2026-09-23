@@ -14,7 +14,7 @@ namespace Search;
 // ever crosses over to this process to be refused. Everything else — the page,
 // its pictures, its own scripts — never wakes the app at all, which is the
 // whole difference between this and a blocker written in JavaScript.
-public sealed class Shield : Model
+public sealed partial class Shield : Model
 {
     public static readonly Shield Shared = new();
 

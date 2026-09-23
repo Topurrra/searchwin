@@ -7,7 +7,7 @@ namespace Search;
 
 /// Settings › Extensions: what is installed, and the two ways in — a Chrome
 /// Web Store link, or a folder.
-public sealed class ExtensionsPage : StackPanel
+public sealed partial class ExtensionsPage : StackPanel
 {
     private readonly Browser browser;
     private readonly TextBox link = Kit.Field(12.5);
@@ -138,7 +138,7 @@ public sealed class ExtensionsPage : StackPanel
 
     /// One extension: its icon, name, where it came from; what can be done
     /// with it under the pointer; and its switch.
-    private sealed class Row : Grid
+    private sealed partial class Row : Grid
     {
         public Row(Browser browser, Installed item)
         {

@@ -22,7 +22,7 @@ public static class Choices
     public static string Raw(this Look l) => l.ToString().ToLowerInvariant();
 }
 
-public sealed class Preferences : Model
+public sealed partial class Preferences : Model
 {
     private readonly Defaults store = Store.Settings;
 

@@ -13,7 +13,7 @@ namespace Search;
 /// nothing to scroll through, nothing to hunt for. The same white and
 /// hairline as the rest of the app; the same pill for the page you are on
 /// as for the tab you are on.
-public sealed class SettingsPanel : Grid
+public sealed partial class SettingsPanel : Grid
 {
     private enum Page { General, Tabs, Extensions, Passwords, Downloads, Privacy, About }
 
@@ -119,7 +119,7 @@ public sealed class SettingsPanel : Grid
 
     /// One page on the rail: the icon and the name, lifted out in white when
     /// it is the page you are on.
-    private sealed class PageRow : Press
+    private sealed partial class PageRow : Press
     {
         private readonly Border ground = Kit.Rounded(8);
         private readonly FontIcon icon;

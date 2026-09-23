@@ -6,7 +6,7 @@ namespace Search;
 
 /// What you have downloaded, newest first. A file is a click from opening,
 /// and one more from Explorer; the list forgets, the files stay.
-public sealed class DownloadsPanel : Plate
+public sealed partial class DownloadsPanel : Plate
 {
     private const string Document = "";
 
@@ -60,7 +60,7 @@ public sealed class DownloadsPanel : Plate
             loot.Kept.Count == 0 ? null : new Pill("Clear list", loot.ForgetAll)));
     }
 
-    private sealed class KeepRow : Press
+    private sealed partial class KeepRow : Press
     {
         public KeepRow(Keep keep, Action open, Action reveal, Action forget)
         {

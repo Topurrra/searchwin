@@ -14,7 +14,7 @@ namespace Search;
 /// A click is answered on release, at once — never after the system's
 /// double-click delay. Something that also wants a double click says so and
 /// then gets only that (see the Mac's OneClick for why never both).
-public class Press : Grid
+public partial class Press : Grid
 {
     /// A plain click (clicks = 1) or, for something that asked for them,
     /// a double one (clicks = 2).

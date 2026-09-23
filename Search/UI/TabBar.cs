@@ -9,7 +9,7 @@ namespace Search;
 /// The only chrome there is. Titles, one of them in a grey pill, and the pill
 /// slides from the tab you left to the tab you picked rather than blinking out
 /// of one and into the other.
-public sealed class TabBar : Grid
+public sealed partial class TabBar : Grid
 {
     private readonly Browser browser;
     private readonly ScrollViewer run = new()
@@ -348,7 +348,7 @@ public sealed class TabBar : Grid
 
 /// One tab in the strip: a pinned square, a mark alone, or a title — and, when
 /// it is the live one being clicked again, the address field.
-public sealed class TabPill : Press
+public sealed partial class TabPill : Press
 {
     private readonly Browser browser;
     public Tab Tab { get; }

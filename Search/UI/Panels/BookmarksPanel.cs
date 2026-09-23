@@ -16,7 +16,7 @@ namespace Search;
 /// row draggable into another folder or back out to the top, each row good
 /// for a right-click too. Used both in the small dropdown off the button and
 /// in the full manager — the interaction is the same size either way.
-public sealed class BookmarkOutline : Grid
+public sealed partial class BookmarkOutline : Grid
 {
     private const double Indent = 18;
 
@@ -227,7 +227,7 @@ public sealed class BookmarkOutline : Grid
     }
 
     /// One bookmark or one folder.
-    private sealed class OutlineRow : Press
+    private sealed partial class OutlineRow : Press
     {
         public Bookmark Node { get; }
         private readonly Border ground = Kit.Rounded(8);
@@ -437,7 +437,7 @@ public static class BookmarksDropdown
 }
 
 /// The full list, for taking things out of it or filing them away.
-public sealed class BookmarksPanel : Plate
+public sealed partial class BookmarksPanel : Plate
 {
     private readonly Browser browser;
     private readonly Grid content;

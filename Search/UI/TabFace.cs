@@ -11,7 +11,7 @@ namespace Search;
 /// the side: its mark, its name, and one slot at the right-hand end doing two
 /// jobs — the cross when the pointer is on it, the ring while the page is still
 /// coming, the speaker while it makes noise.
-public sealed class TabFace : Grid
+public sealed partial class TabFace : Grid
 {
     private readonly Browser browser;
     public Tab Tab { get; }

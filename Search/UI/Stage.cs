@@ -11,7 +11,7 @@ namespace Search;
 ///
 /// Every page lives on one stage, and only the live tab's is visible — the
 /// others keep their pages, hidden, which is what makes switching instant.
-public sealed class Stage : Grid
+public sealed partial class Stage : Grid
 {
     private readonly Browser browser;
     private readonly Panel pages = Web.Stage;
@@ -96,7 +96,7 @@ public sealed class Stage : Grid
 
 /// Looking for a word on the page. A pill in the top corner, the same white and
 /// hairline as everything else that floats, and gone the moment it isn't wanted.
-public sealed class FindBar : Grid
+public sealed partial class FindBar : Grid
 {
     private readonly Browser browser;
     private readonly TextBox field;

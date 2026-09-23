@@ -134,13 +134,13 @@ public sealed partial class Browser
     {
         try
         {
-            var ask = JsonSerializer.Serialize(new
+            var ask = new System.Text.Json.Nodes.JsonObject
             {
-                expression,
-                userGesture = true,
-                awaitPromise = true,
-                returnByValue = true,
-            });
+                ["expression"] = expression,
+                ["userGesture"] = true,
+                ["awaitPromise"] = true,
+                ["returnByValue"] = true,
+            }.ToJsonString();
             var json = await core.CallDevToolsProtocolMethodAsync("Runtime.evaluate", ask);
             using var doc = JsonDocument.Parse(json);
             var root = doc.RootElement;

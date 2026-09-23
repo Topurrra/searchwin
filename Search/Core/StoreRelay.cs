@@ -203,11 +203,11 @@ public sealed partial class Browser
     private void TellStore(Tab tab)
     {
         if (tab.Core is not { } core || !StoreRelay.IsStorePage(tab.Address)) return;
-        var state = JsonSerializer.Serialize(new
+        var state = new System.Text.Json.Nodes.JsonObject
         {
-            installed = Extensions.Shared.Installed.Select(i => i.Id).ToArray(),
-            busy = Extensions.Shared.Busy,
-        });
+            ["installed"] = new System.Text.Json.Nodes.JsonArray(Extensions.Shared.Installed.Select(i => (System.Text.Json.Nodes.JsonNode?)i.Id).ToArray()),
+            ["busy"] = Extensions.Shared.Busy,
+        }.ToJsonString();
         _ = core.ExecuteScriptAsync($"window.__officeStore && window.__officeStore.state({state})");
     }
 }

@@ -16,7 +16,7 @@ namespace Search;
 /// A UserControl rather than a Grid only so it can hold the keyboard: Enter
 /// is Continue here, as it is the default button on the Mac, and nothing
 /// typed should reach the address field waiting underneath.
-public sealed class WelcomePanel : UserControl
+public sealed partial class WelcomePanel : UserControl
 {
     private const int Pages = 4;
     private const double Column = 520;
@@ -363,7 +363,7 @@ public sealed class WelcomePanel : UserControl
     }
 
     /// The big capsule: filled in ink for the way on.
-    private sealed class Big : Press
+    private sealed partial class Big : Press
     {
         private readonly TextBlock label;
 
@@ -385,7 +385,7 @@ public sealed class WelcomePanel : UserControl
     }
 
     /// One of the two ways, as a small drawing of the window.
-    private sealed class Way : Press
+    private sealed partial class Way : Press
     {
         private readonly Border ground = Kit.Rounded(14);
         private readonly TextBlock label;

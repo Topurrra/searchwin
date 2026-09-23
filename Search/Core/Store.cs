@@ -83,19 +83,25 @@ public static class Store
         catch { }
     }
 
-    public static readonly JsonSerializerOptions Json = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
-        WriteIndented = false,
-    };
+    /// How each kept file is read and written, generated at build time (see
+    /// Json). A type missing from that list is a mistake in this app, not in
+    /// the file, and says so loudly rather than quietly losing data.
+    private static System.Text.Json.Serialization.Metadata.JsonTypeInfo<T> Shape<T>() =>
+        (System.Text.Json.Serialization.Metadata.JsonTypeInfo<T>?)Search.Json.Default.GetTypeInfo(typeof(T))
+            ?? throw new InvalidOperationException($"{typeof(T)} is not in Json.cs");
 
     public static T? Read<T>(string name) where T : class
     {
         var file = File(name);
         if (!System.IO.File.Exists(file)) return null;
-        try { return JsonSerializer.Deserialize<T>(System.IO.File.ReadAllBytes(file), Json); }
-        catch
+        byte[] bytes;
+        try { bytes = System.IO.File.ReadAllBytes(file); }
+        catch { return null; }
+        try { return JsonSerializer.Deserialize(bytes, Shape<T>()); }
+        // Only a file that really doesn't parse is set aside. Anything else —
+        // a file still being written, the app's own mistake — leaves it
+        // exactly where it is.
+        catch (JsonException)
         {
             Quarantine(file);
             return null;
@@ -104,7 +110,7 @@ public static class Store
 
     public static void Write<T>(string name, T value, bool now = false)
     {
-        var bytes = JsonSerializer.SerializeToUtf8Bytes(value, Json);
+        var bytes = JsonSerializer.SerializeToUtf8Bytes(value, Shape<T>());
         var file = File(name);
         if (now) WriteAtomic(file, bytes);
         else Task.Run(() => WriteAtomic(file, bytes));

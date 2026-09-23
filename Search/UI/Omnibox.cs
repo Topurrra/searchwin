@@ -10,7 +10,7 @@ namespace Search;
 /// One field, in the middle, and the few places it thinks you mean. Type an
 /// address and you go there; type words and you search. Type something that
 /// is neither and it shivers and says so.
-public sealed class Omnibox : Grid
+public sealed partial class Omnibox : Grid
 {
     /// The field's own height — the 22 of text and 14 of air above and below
     /// it — so the list can sit below it without being stacked with it.
@@ -293,7 +293,7 @@ public sealed class Omnibox : Grid
 
     /// One line of the list. Places you have been come with their titles; the
     /// arrow keys' row is washed, the pointer's only hovered.
-    private sealed class OfferRow : Press
+    private sealed partial class OfferRow : Press
     {
         public OfferRow(Suggestion offer, bool picked, Action take)
         {

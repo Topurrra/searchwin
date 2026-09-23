@@ -565,6 +565,9 @@ public sealed class Tab : Model
 
     public Action<Tab, double>? OnZoom;
 
+    /// The engine's own zoom on top of that, as the page last reported it.
+    public double NativeZoom { get; set; } = 1;
+
     // MARK: - the rest of the controls
 
     /// Set when the renderer went away while nobody was looking at the tab.
@@ -639,11 +642,11 @@ public static class Scroll
     public const string Script = """
     (function () {
       var waiting = false;
-      function tell() {
+      function tell(first) {
         var root = document.documentElement;
         var y = window.scrollY || root.scrollTop || 0;
         var ceiling = Math.max(1, (root.scrollHeight || 0) - window.innerHeight);
-        window.__officePost('officeScroll', { y: y, max: ceiling, dpr: window.devicePixelRatio });
+        window.__officePost('officeScroll', { y: y, max: ceiling, dpr: window.devicePixelRatio, first: !!first });
       }
       window.addEventListener('scroll', function () {
         if (waiting) return;
@@ -655,7 +658,7 @@ public static class Scroll
         waiting = true;
         requestAnimationFrame(function () { waiting = false; tell(); });
       }, { passive: true });
-      tell();
+      tell(true);
     })();
     """;
 
@@ -671,15 +674,16 @@ public static class Scroll
             var ceiling = max.GetDouble();
             tab.Reading = ceiling > 0 ? Math.Clamp(y.GetDouble() / ceiling, 0, 1) : 0;
         }
+        // The engine's own zoom — Ctrl and the wheel — shows only as the page's
+        // pixel ratio changing under it. The first report of each page is
+        // where it starts; a change after that is somebody zooming, and the
+        // line at the bottom says how far.
         if (body.TryGetProperty("dpr", out var dpr) && dpr.ValueKind == JsonValueKind.Number)
         {
-            var zoom = Math.Round(dpr.GetDouble() / Math.Max(0.5, Scale), 2);
-            if (Math.Abs(zoom - tab.Zoom) > 0.004)
-            {
-                var first = tab.Zoom == 1 && zoom == 1;
-                tab.Zoom = zoom;
-                if (!first) tab.OnZoom?.Invoke(tab, zoom);
-            }
+            var native = Math.Round(dpr.GetDouble() / Math.Max(0.5, Scale), 2);
+            var first = body.TryGetProperty("first", out var f) && f.ValueKind == JsonValueKind.True;
+            if (!first && Math.Abs(native - tab.NativeZoom) > 0.004) tab.OnZoom?.Invoke(tab, native * tab.Zoom);
+            tab.NativeZoom = native;
         }
     }
 }

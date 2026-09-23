@@ -98,6 +98,13 @@ public sealed class MainWindow : Window
         });
         system.ColorValuesChanged += (_, _) => UI.Do(() => { if (browser.Prefs.Look == Look.System) Relook(); });
         root.SizeChanged += (_, _) => Regions();
+        // The display's own scale, so a page's pixel ratio can be read as the
+        // zoom it is (see Scroll).
+        root.Loaded += (_, _) =>
+        {
+            Scroll.Scale = root.XamlRoot.RasterizationScale;
+            root.XamlRoot.Changed += (r, _) => Scroll.Scale = r.RasterizationScale;
+        };
         // Whatever moved — a column coming in, a row added, a tab reflowing —
         // the title bar's shape follows. Coalesced to once a frame, and only
         // handed to Windows when it actually changed.

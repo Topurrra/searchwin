@@ -69,6 +69,12 @@ dotnet build Search\Search.csproj        # a debug build: Search\bin\Debug\...\S
 .\build.ps1 -Zip                          # + build\Search-<version>-x64.zip
 ```
 
+With Visual Studio 2022 or its Build Tools ("Desktop development with C++")
+installed, the release build is compiled to native code (Native AOT): a 15 MB
+`Search.exe` beside the WinUI runtime, 73 MB in all, 30 MB zipped. Without the
+C++ linker it falls back to ReadyToRun, which carries the .NET runtime too
+(about 215 MB).
+
 A debug build — anything run from `bin\Debug`, or with `SEARCH_PROBE` set —
 keeps its own folder, `%LOCALAPPDATA%\Search (test)\`, and never touches the
 session, history or passwords of the Search you actually use.

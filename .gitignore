@@ -1,0 +1,6 @@
+# Build output — `dotnet build` and build.ps1 regenerate all of this.
+bin/
+obj/
+build/
+*.user
+.vs/

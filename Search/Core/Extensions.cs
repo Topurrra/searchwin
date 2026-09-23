@@ -8,6 +8,9 @@ public sealed class Extensions
     public static readonly Extensions Shared = new();
     /// An extension's new tab page, if one asked and you said yes.
     public Uri? NewTabPage => null;
+    /// A password manager extension that asked, Chrome's way, to do the saving
+    /// itself — its name, for Settings to say so.
+    public string? PasswordSavingTakenBy => null;
     /// An extension's OAuth sign-in coming back.
     public bool Intercept(Uri url) => false;
     /// A shortcut an extension registered.

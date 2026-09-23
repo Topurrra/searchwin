@@ -21,6 +21,9 @@ public static class Veiling
 
 public sealed partial class Browser
 {
+    /// The site on screen, as the curtain and the blocker name it.
+    public string? HereHost => Curtain.Host(Active?.Address);
+
     private bool veiling, reviewing;
     /// True while the pointer is picking things to hide.
     public bool Veiling { get => veiling; private set => Set(ref veiling, value); }

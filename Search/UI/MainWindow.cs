@@ -93,7 +93,7 @@ public sealed class MainWindow : Window
         browser.OnAny(Changed);
         browser.Prefs.OnAny(name =>
         {
-            if (name is nameof(Preferences.Sidebar) or nameof(Preferences.SideWidth) or nameof(Preferences.SideHides)) Arrange();
+            if (name is nameof(Preferences.Sidebar) or nameof(Preferences.SideWidth) or nameof(Preferences.SideHides) or nameof(Preferences.UsesSpaces)) Arrange();
             if (name == nameof(Preferences.Look)) Relook();
         });
         system.ColorValuesChanged += (_, _) => UI.Do(() => { if (browser.Prefs.Look == Look.System) Relook(); });
@@ -238,6 +238,7 @@ public sealed class MainWindow : Window
                 ShowPanels();
                 break;
             case nameof(Browser.Tabs):
+            case nameof(Browser.MakingSpace):
                 Regions();
                 break;
         }

@@ -47,13 +47,15 @@ public sealed class Bench
     public static readonly Bench Shared = new();
 
     private Browser? browser;
-    private Socket? listener;
     private CancellationTokenSource? stopping;
     private bool watching;
 
-    /// Where the socket is. Beside the session file, so a test run's bench is
-    /// as separate from the real one as everything else it keeps.
-    public static string SocketPath => Store.File("bench.sock");
+    /// The pipe's name: one per test world, so a test run's bench is as
+    /// separate from the real one as everything else it keeps. The Mac uses a
+    /// Unix socket in the app's folder; Windows has those too, but they refuse
+    /// connections under AppData on some machines, and a named pipe is what
+    /// Windows programs talk over.
+    public static string PipeName => "search-bench" + (Store.World is { } w ? "-" + w : "");
 
     /// True while something is listening.
     public bool Running { get; private set; }
@@ -64,28 +66,12 @@ public sealed class Bench
     {
         if (Running) return;
         this.browser = browser;
-        var path = SocketPath;
-        try { File.Delete(path); } catch { }
-        var socket = new Socket(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
-        try
-        {
-            socket.Bind(new UnixDomainSocketEndPoint(path));
-            socket.Listen(8);
-        }
-        catch (Exception e)
-        {
-            Log.Write($"bench: couldn't listen: {e.Message}");
-            socket.Dispose();
-            try { File.Delete(path); } catch { }
-            return;
-        }
-        listener = socket;
         stopping = new CancellationTokenSource();
         Running = true;
         if (!watching) browser.On(nameof(Browser.ActiveID), Unhouse);
         watching = true;
         var token = stopping.Token;
-        _ = Task.Run(() => Accept(socket, token));
+        _ = Task.Run(() => Accept(token));
     }
 
     public void Stop()
@@ -93,22 +79,33 @@ public sealed class Bench
         if (!Running) return;
         Running = false;
         stopping?.Cancel();
-        try { listener?.Dispose(); } catch { }
-        listener = null;
-        try { File.Delete(SocketPath); } catch { }
         // The tabs a script left open go with it.
         if (browser is { } b)
             UI.Do(() => { foreach (var tab in b.Tabs.Where(t => t.Bench).ToList()) b.Close(tab); });
     }
 
-    private async Task Accept(Socket socket, CancellationToken token)
+    /// One pipe instance waiting at a time; each connection is answered on
+    /// its own while the next one waits. CurrentUserOnly: only this Windows
+    /// user can connect, and nobody else can have put up a pipe by this name
+    /// first to listen in.
+    private async Task Accept(CancellationToken token)
     {
         while (!token.IsCancellationRequested)
         {
-            Socket client;
-            try { client = await socket.AcceptAsync(token); }
-            catch { break; }
-            _ = Task.Run(() => Serve(client));
+            var pipe = new System.IO.Pipes.NamedPipeServerStream(
+                PipeName, System.IO.Pipes.PipeDirection.InOut, System.IO.Pipes.NamedPipeServerStream.MaxAllowedServerInstances,
+                System.IO.Pipes.PipeTransmissionMode.Byte,
+                System.IO.Pipes.PipeOptions.Asynchronous | System.IO.Pipes.PipeOptions.CurrentUserOnly);
+            try { await pipe.WaitForConnectionAsync(token); }
+            catch
+            {
+                await pipe.DisposeAsync();
+                if (token.IsCancellationRequested) break;
+                Log.Write("bench: couldn't listen");
+                await Task.Delay(1000, CancellationToken.None);
+                continue;
+            }
+            _ = Task.Run(() => Serve(pipe));
         }
     }
 
@@ -116,12 +113,9 @@ public sealed class Bench
 
     /// Reads until a newline, hands the line to the UI thread, writes the
     /// answer, closes.
-    private async Task Serve(Socket client)
+    private async Task Serve(System.IO.Pipes.NamedPipeServerStream client)
     {
-        using var _ = client;
-        // Only this user. The folder already says so; this says it again,
-        // for the day the folder's permissions are not what they were.
-        if (!SameUser(client)) return;
+        await using var _ = client;
         JsonObject answer;
         try
         {
@@ -135,8 +129,9 @@ public sealed class Bench
         try
         {
             var bytes = Encoding.UTF8.GetBytes(answer.ToJsonString(Writing) + "\n");
-            await client.SendAsync(bytes, SocketFlags.None);
-            client.Shutdown(SocketShutdown.Both);
+            await client.WriteAsync(bytes);
+            await client.FlushAsync();
+            client.WaitForPipeDrain();
         }
         catch { }
     }
@@ -144,14 +139,14 @@ public sealed class Bench
     private static readonly JsonSerializerOptions Writing = new() { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
 
     /// One line, or null for a line that never ends — which is not a request.
-    private static async Task<string?> ReadLine(Socket client)
+    private static async Task<string?> ReadLine(Stream client)
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         var bytes = new List<byte>();
         var chunk = new byte[65536];
         while (true)
         {
-            var count = await client.ReceiveAsync(chunk, SocketFlags.None, timeout.Token);
+            var count = await client.ReadAsync(chunk, timeout.Token);
             if (count <= 0) break;
             var newline = Array.IndexOf(chunk, (byte)'\n', 0, count);
             bytes.AddRange(chunk.AsSpan(0, newline >= 0 ? newline : count).ToArray());
@@ -172,51 +167,6 @@ public sealed class Bench
         });
         return done.Task;
     }
-
-    private const int SioAfUnixGetPeerPid = 0x58000100;
-
-    /// The process at the other end belongs to whoever this one does.
-    /// Windows names the other end's process, not its user; the user is
-    /// read off that process's token.
-    private static bool SameUser(Socket client)
-    {
-        uint pid;
-        try
-        {
-            var answer = new byte[4];
-            client.IOControl(SioAfUnixGetPeerPid, null, answer);
-            pid = BitConverter.ToUInt32(answer, 0);
-        }
-        catch
-        {
-            // A Windows too old to say: the folder's own permissions stand.
-            return true;
-        }
-        var process = OpenProcess(0x1000 /* PROCESS_QUERY_LIMITED_INFORMATION */, false, pid);
-        if (process == IntPtr.Zero) return false;
-        try
-        {
-            if (!OpenProcessToken(process, 0x0008 /* TOKEN_QUERY */, out var token)) return false;
-            try
-            {
-                using var them = new WindowsIdentity(token);
-                using var us = WindowsIdentity.GetCurrent();
-                return them.User != null && them.User == us.User;
-            }
-            finally { CloseHandle(token); }
-        }
-        catch { return false; }
-        finally { CloseHandle(process); }
-    }
-
-    [DllImport("kernel32.dll", SetLastError = true)]
-    private static extern IntPtr OpenProcess(uint access, bool inherit, uint pid);
-
-    [DllImport("advapi32.dll", SetLastError = true)]
-    private static extern bool OpenProcessToken(IntPtr process, uint access, out IntPtr token);
-
-    [DllImport("kernel32.dll")]
-    private static extern bool CloseHandle(IntPtr handle);
 
     [DllImport("user32.dll")]
     private static extern IntPtr GetForegroundWindow();

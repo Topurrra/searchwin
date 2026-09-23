@@ -35,11 +35,17 @@ public static class StoreRelay
         return m ? m[1] : null;
       }
 
+      // The store's own button: grey and naming Chrome for a browser it
+      // doesn't recognise (Safari, on the Mac), or — for a Chromium engine
+      // like this one — a live "Add to Chrome" that would call an install
+      // API only Chrome has, and do nothing.
       function theirs() {
-        var buttons = document.querySelectorAll('button[disabled]');
+        var buttons = document.querySelectorAll('button');
         for (var i = 0; i < buttons.length; i++) {
           var b = buttons[i];
-          if (!b.dataset.office && /chrome/i.test(b.textContent || '')) return b;
+          if (b.dataset.office) continue;
+          var text = (b.textContent || '').trim();
+          if ((b.disabled && /chrome/i.test(text)) || /^(add to|remove from) chrome$/i.test(text)) return b;
         }
         return null;
       }
@@ -71,6 +77,8 @@ public static class StoreRelay
         for (var i = 0; i < buttons.length; i++) {
           var b = buttons[i];
           if (b.dataset.office || !/chrome/i.test(b.getAttribute('aria-label') || '')) continue;
+          // The install button itself is not a banner, live as it is here.
+          if (/^(add to|remove from) chrome$/i.test((b.textContent || '').trim())) continue;
           var box = bannerOf(b);
           if (box && !box.dataset.office) {
             box.style.display = 'none';

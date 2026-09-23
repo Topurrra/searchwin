@@ -41,6 +41,9 @@ public sealed class PasswordsPanel : Plate
         var top = new Grid { ColumnSpacing = 10 };
         top.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         top.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        // The same field every time, so what is typed in it survives a
+        // redraw — let go of by the row it was in before being put in this one.
+        (hunt.Parent as Panel)?.Children.Remove(hunt);
         top.Children.Add(hunt);
         var add = new Pill(adding ? "Cancel" : "Add", ToggleAdd, filled: !adding);
         Grid.SetColumn(add, 1);

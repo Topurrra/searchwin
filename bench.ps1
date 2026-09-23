@@ -55,28 +55,31 @@ function Folder([string]$world) {
     Join-Path $env:LOCALAPPDATA $name
 }
 
-function Ask([string]$path, [hashtable]$request) {
-    $socket = [System.Net.Sockets.Socket]::new(
-        [System.Net.Sockets.AddressFamily]::Unix,
-        [System.Net.Sockets.SocketType]::Stream,
-        [System.Net.Sockets.ProtocolType]::Unspecified)
+function Ask([string]$pipe, [hashtable]$request) {
+    $client = [System.IO.Pipes.NamedPipeClientStream]::new('.', $pipe, [System.IO.Pipes.PipeDirection]::InOut,
+        [System.IO.Pipes.PipeOptions]::CurrentUserOnly)
     try {
         try {
-            $socket.Connect([System.Net.Sockets.UnixDomainSocketEndPoint]::new($path))
+            $client.Connect(2000)
         } catch {
             # Single quotes: PowerShell reads curly double quotes as quotes too.
             Fail 'Search isn''t listening — is it open, with Settings › General › “Let a script drive Search” on?'
         }
         $line = ($request | ConvertTo-Json -Compress -Depth 8) + "`n"
-        [void]$socket.Send([System.Text.Encoding]::UTF8.GetBytes($line))
+        $bytes = [System.Text.Encoding]::UTF8.GetBytes($line)
+        $client.Write($bytes, 0, $bytes.Length)
+        $client.Flush()
         $received = [System.IO.MemoryStream]::new()
         $chunk = [byte[]]::new(65536)
-        while (($count = $socket.Receive($chunk)) -gt 0) { $received.Write($chunk, 0, $count) }
+        while (($count = $client.Read($chunk, 0, $chunk.Length)) -gt 0) {
+            $received.Write($chunk, 0, $count)
+            if ([Array]::IndexOf($chunk, [byte]10, 0, $count) -ge 0) { break }
+        }
         $text = [System.Text.Encoding]::UTF8.GetString($received.ToArray()).Split("`n", 2)[0]
         if (-not $text) { $text = '{}' }
         return $text | ConvertFrom-Json -Depth 32
     } finally {
-        $socket.Dispose()
+        $client.Dispose()
     }
 }
 
@@ -199,7 +202,7 @@ switch ($verb) {
     default { Fail ('unknown command “' + $verb + '” — see bench.ps1 help') }
 }
 
-$answer = Ask (Join-Path (Folder $world) 'bench.sock') $request
+$answer = Ask ('search-bench' + $(if ($world) { '-' + $world } else { '' })) $request
 if ($answer.PSObject.Properties.Name -contains 'error') { Fail "error: $($answer.error)" }
 
 switch ($verb) {

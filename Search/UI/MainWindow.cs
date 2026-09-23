@@ -96,7 +96,7 @@ public sealed class MainWindow : Window
             if (name is nameof(Preferences.Sidebar) or nameof(Preferences.SideWidth) or nameof(Preferences.SideHides)) Arrange();
             if (name == nameof(Preferences.Look)) Relook();
         });
-        system.ColorValuesChanged += (_, _) => UI.Main(() => { if (browser.Prefs.Look == Look.System) Relook(); });
+        system.ColorValuesChanged += (_, _) => UI.Do(() => { if (browser.Prefs.Look == Look.System) Relook(); });
         root.SizeChanged += (_, _) => Regions();
 
         Dress();
@@ -365,7 +365,7 @@ public sealed class MainWindow : Window
         if (panel != null)
         {
             var dim = new Grid { Background = new SolidColorBrush(Windows.UI.Color.FromArgb(26, 0, 0, 0)) };
-            dim.Tapped += (_, e) => { if (e.OriginalSource == dim) close(); };
+            dim.Tapped += (_, e) => { if (ReferenceEquals(e.OriginalSource, dim)) close(); };
             panels.Children.Add(dim);
             panels.Children.Add(panel);
         }

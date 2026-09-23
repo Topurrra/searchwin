@@ -39,5 +39,4 @@ public static class FormRelay
     public static bool PasskeysOffered { get; set; } = true;
     public const string Script = "";
     public const string WithoutPasskeys = "";
-    public static void Start(Browser browser) { }
 }

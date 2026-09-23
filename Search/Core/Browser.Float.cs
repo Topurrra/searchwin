@@ -17,8 +17,3 @@ public sealed partial class Browser
 
     public void Land() { }
 }
-
-public static class Float
-{
-    public static void Start(Browser browser) { }
-}

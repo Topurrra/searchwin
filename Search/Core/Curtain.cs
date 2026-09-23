@@ -8,8 +8,6 @@ namespace Search;
 // Browser.swift.
 public static class Curtain
 {
-    public static void Start(Browser browser) { }
-
     public static string? Host(Uri? url) => Address.Host(url) is { } h ? (h.StartsWith("www.") ? h[4..] : h) : null;
 
     public static string Css(string? host) => "";

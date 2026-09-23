@@ -12,7 +12,6 @@ public sealed partial class Browser : IPageHost
     public void Attach(Tab tab, CoreWebView2 core)
     {
         core.Profile.PreferredColorScheme = Palette.Dark ? CoreWebView2PreferredColorScheme.Dark : CoreWebView2PreferredColorScheme.Light;
-        Shield.Shared.Protect(core);
 
         // A page just built for the tab on screen comes onto the stage the
         // moment it exists.

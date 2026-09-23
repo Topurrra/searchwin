@@ -29,7 +29,7 @@ public static class Links
         var args = e.Kind == ExtendedActivationKind.Launch && e.Data is Windows.ApplicationModel.Activation.ILaunchActivatedEventArgs launch
             ? Split(launch.Arguments)
             : [];
-        UI.Main(() =>
+        UI.Do(() =>
         {
             Take(args);
             // The window comes forward either way, like clicking the app again.

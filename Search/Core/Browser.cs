@@ -227,7 +227,7 @@ public sealed partial class Browser : Model
             // Each tab keeps whatever is hidden on the site it is showing:
             // re-arming with nothing would quietly restore every element this
             // person had taken off, everywhere.
-            foreach (var tab in Tabs) tab.Arm(Curtain.Css(Curtain.Host(tab.Address)));
+            foreach (var tab in Tabs) tab.Arm(Curtain.Css(Curtain.Host(tab.Address)), force: true);
             Announce(Prefs.Passkeys ? "Passkeys offered again — reload the page" : "Sites will ask for a password instead");
         });
         Prefs.On(nameof(Preferences.Sidebar), () =>

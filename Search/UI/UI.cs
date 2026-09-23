@@ -10,7 +10,7 @@ public static class UI
 
     public static bool OnMain => Queue?.HasThreadAccess == true;
 
-    public static void Main(Action act)
+    public static void Do(Action act)
     {
         if (OnMain) act();
         else Queue.TryEnqueue(() => act());

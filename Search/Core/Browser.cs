@@ -531,7 +531,7 @@ public sealed partial class Browser : Model
     /// gets a tab of its own, in front.
     public void Arrive(Uri url)
     {
-        if (Active is { IsBlank: true, Floating: false } active && Typed.Length == 0)
+        if (Active is { IsBlank: true } active && Floating != active.Id && Typed.Length == 0)
         {
             active.Go(url);
             active.Show(true);
@@ -548,7 +548,7 @@ public sealed partial class Browser : Model
     /// held, or when the one you are on is busy playing in the float.
     public void Visit(Uri url, bool apart = false)
     {
-        if (Active is { Floating: false } active && !apart)
+        if (Active is { } active && Floating != active.Id && !apart)
         {
             Go(active, url);
             Editing = false;

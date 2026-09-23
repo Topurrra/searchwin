@@ -87,9 +87,18 @@ public sealed class SideBar : Grid
         SetRow(scroller, 2);
         Children.Add(scroller);
 
+        // The card for a new space, over the rows while it is being made, and
+        // two fingers sideways for the next space (see SpaceSwipe).
+        card = new NewSpaceCard(browser);
+        SetRow(card, 1);
+        SetRowSpan(card, 2);
+        Children.Add(card);
+        SpaceSwipe.Shared.Attach(this, browser);
+
         // One small door at the bottom: the bookmarks, and beside it the
         // extensions and the space.
         var foot = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2, Padding = new Thickness(10, 0, 10, 10), VerticalAlignment = VerticalAlignment.Bottom };
+        foot.Children.Add(new SpaceDot(browser));
         foot.Children.Add(new ExtensionSlot(browser));
         bookmarks = new Door(Icons.Bookmark, "Bookmarks", () => browser.BookmarksOpen = !browser.BookmarksOpen);
         foot.Children.Add(bookmarks);
@@ -140,6 +149,7 @@ public sealed class SideBar : Grid
     }
 
     private FrameworkElement? helmView, buttonsView, footView, edgeView;
+    private readonly NewSpaceCard card;
 
     /// What takes its own clicks; the rest of the column is the title bar.
     public IEnumerable<FrameworkElement> Passthrough()
@@ -148,6 +158,7 @@ public sealed class SideBar : Grid
         if (buttonsView != null) yield return buttonsView;
         if (pins.ActualHeight > 0) yield return pins;
         yield return list;
+        if (card.Visibility == Visibility.Visible) yield return card;
         if (footView != null) yield return footView;
         if (edgeView != null) yield return edgeView;
     }

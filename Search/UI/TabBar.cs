@@ -30,6 +30,7 @@ public sealed class TabBar : Grid
     private readonly StackPanel doors = new() { Orientation = Orientation.Horizontal, Spacing = Metrics.TabGap, VerticalAlignment = VerticalAlignment.Center };
     private readonly Dictionary<Guid, TabPill> pills = [];
     private readonly Door bookmarks;
+    private readonly SpaceDot dot;
 
     /// Which tab is under the hand, where it started, and how far it has come.
     private Tab? dragging;
@@ -59,6 +60,12 @@ public sealed class TabBar : Grid
         Motion.Glides(wash);
         Canvas.SetTop(wash, (Metrics.Strip - 28) / 2);
         lane.Children.Add(wash);
+        // The space on screen, first, when there are spaces.
+        dot = new SpaceDot(browser) { Margin = new Thickness(0, 0, Metrics.TabGap, 0) };
+        SetColumn(dot, 1);
+        Children.Add(dot);
+        browser.Prefs.On(nameof(Preferences.UsesSpaces), () => Layout());
+
         run.Content = lane;
         run.VerticalAlignment = VerticalAlignment.Center;
         SetColumn(run, 2);
@@ -130,6 +137,7 @@ public sealed class TabBar : Grid
     public IEnumerable<FrameworkElement> Passthrough()
     {
         yield return run;
+        if (browser.Prefs.UsesSpaces) yield return dot;
         yield return plus;
         yield return doors;
         if (buttons != null) yield return buttons;
@@ -180,7 +188,9 @@ public sealed class TabBar : Grid
         get
         {
             var far = doors.ActualWidth > 0 ? doors.ActualWidth + 8 : Metrics.Helm + 26 + 8;
-            return Math.Max(0, ActualWidth - Metrics.Lights - 12 - Metrics.PlusWidth - far - 3 * Metrics.TabGap - 3 * 46);
+            // What the space's dot takes before the tabs, when there are spaces.
+            var dotted = browser.Prefs.UsesSpaces ? SpaceDot.Width_ + Metrics.TabGap : 0;
+            return Math.Max(0, ActualWidth - Metrics.Lights - dotted - 12 - Metrics.PlusWidth - far - 3 * Metrics.TabGap - 3 * 46);
         }
     }
 

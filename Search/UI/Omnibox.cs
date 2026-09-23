@@ -132,36 +132,62 @@ public sealed partial class Omnibox : Grid
         Claim();
     }
 
+    /// The breath: a shape the size of the field, blurred by 26 — the Mac's
+    /// `.blur(radius: 26)` — as a drop shadow the compositor draws, growing and
+    /// brightening a little and back, over and over. It runs on the compositor
+    /// from start to finish: nothing on the UI thread restarts it, so it never
+    /// jumps when the field is shown again, and a real blur has no steps to
+    /// flicker between the way faint rings of ink did.
     private FrameworkElement Breath()
     {
-        // WinUI has no blur for a shape, so the glow is a few rings of ink,
-        // each fainter than the last, which reads as one soft edge.
-        var glow = new Grid { IsHitTestVisible = false, Height = FieldHeight, VerticalAlignment = VerticalAlignment.Top, RenderTransformOrigin = new Windows.Foundation.Point(0.5, 0.5) };
-        for (var i = 0; i < 7; i++)
+        var host = new Grid { IsHitTestVisible = false, Height = FieldHeight, VerticalAlignment = VerticalAlignment.Top };
+        Microsoft.UI.Composition.SpriteVisual? sprite = null;
+        Microsoft.UI.Composition.DropShadow? shadow = null;
+
+        void Colour()
         {
-            var spread = 4 + i * 4;
-            glow.Children.Add(new Border
-            {
-                CornerRadius = new CornerRadius(14 + spread),
-                Background = Palette.Brush(Tone.Ink, 0.012),
-                Margin = new Thickness(-spread),
-            });
+            // The Mac fills the shape with a twentieth of the ink before
+            // blurring it; a shadow's colour is its densest point.
+            if (shadow != null) shadow.Color = Palette.ColorOf(Tone.Ink, Palette.Dark ? 0.16 : 0.08);
         }
-        var scale = new ScaleTransform { ScaleX = 0.97, ScaleY = 0.97 };
-        glow.RenderTransform = scale;
-        glow.Opacity = 0.65;
-        var board = new Storyboard { RepeatBehavior = RepeatBehavior.Forever, AutoReverse = true };
-        var ease = new SineEase { EasingMode = EasingMode.EaseInOut };
-        foreach (var (target, prop, to) in new (DependencyObject, string, double)[] { (scale, "ScaleX", 1.03), (scale, "ScaleY", 1.03), (glow, "Opacity", 1) })
+
+        host.Loaded += (_, _) =>
         {
-            var a = new DoubleAnimation { To = to, Duration = TimeSpan.FromSeconds(2.6), EasingFunction = ease };
-            Storyboard.SetTarget(a, target);
-            Storyboard.SetTargetProperty(a, prop);
-            board.Children.Add(a);
-        }
-        glow.Loaded += (_, _) => board.Begin();
-        glow.Unloaded += (_, _) => board.Stop();
-        return glow;
+            if (sprite != null) return;
+            var compositor = Microsoft.UI.Xaml.Hosting.ElementCompositionPreview.GetElementVisual(host).Compositor;
+            sprite = compositor.CreateSpriteVisual();
+            shadow = compositor.CreateDropShadow();
+            shadow.BlurRadius = 26 * 2;
+            shadow.Offset = new System.Numerics.Vector3(0, 0, 0);
+            Colour();
+            sprite.Shadow = shadow;
+            // The visual follows the host's size, and scales about its middle.
+            var size = compositor.CreateExpressionAnimation("host.Size");
+            size.SetReferenceParameter("host", Microsoft.UI.Xaml.Hosting.ElementCompositionPreview.GetElementVisual(host));
+            sprite.StartAnimation("Size", size);
+            var centre = compositor.CreateExpressionAnimation("Vector3(this.Target.Size.X / 2, this.Target.Size.Y / 2, 0)");
+            sprite.StartAnimation("CenterPoint", centre);
+            Microsoft.UI.Xaml.Hosting.ElementCompositionPreview.SetElementChildVisual(host, sprite);
+
+            // easeInOut over 2.6 seconds, there and back, for ever.
+            var ease = compositor.CreateCubicBezierEasingFunction(new(0.42f, 0), new(0.58f, 1));
+            var grow = compositor.CreateVector3KeyFrameAnimation();
+            grow.InsertKeyFrame(0, new(0.97f, 0.97f, 1));
+            grow.InsertKeyFrame(1, new(1.03f, 1.03f, 1), ease);
+            grow.Duration = TimeSpan.FromSeconds(2.6);
+            grow.Direction = Microsoft.UI.Composition.AnimationDirection.Alternate;
+            grow.IterationBehavior = Microsoft.UI.Composition.AnimationIterationBehavior.Forever;
+            sprite.StartAnimation("Scale", grow);
+            var brighten = compositor.CreateScalarKeyFrameAnimation();
+            brighten.InsertKeyFrame(0, 0.65f);
+            brighten.InsertKeyFrame(1, 1f, ease);
+            brighten.Duration = TimeSpan.FromSeconds(2.6);
+            brighten.Direction = Microsoft.UI.Composition.AnimationDirection.Alternate;
+            brighten.IterationBehavior = Microsoft.UI.Composition.AnimationIterationBehavior.Forever;
+            shadow.StartAnimation("Opacity", brighten);
+        };
+        Palette.Turned += Colour;
+        return host;
     }
 
     /// Only when something other than typing changed it — Ctrl+L arriving with

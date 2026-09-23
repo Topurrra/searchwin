@@ -56,14 +56,22 @@ public partial class App : Application
         if (on) window.AppWindow.SetPresenter(AppWindowPresenterKind.FullScreen);
         else
         {
-            window.AppWindow.SetPresenter(AppWindowPresenterKind.Overlapped);
-            if (window.AppWindow.Presenter is OverlappedPresenter p)
-            {
-                Presenter = p;
-                p.SetBorderAndTitleBar(true, false);
-            }
+            Presenter = Overlapped();
+            window.AppWindow.SetPresenter(Presenter);
         }
         WindowChanged?.Invoke();
+    }
+
+    /// The window as it normally is: no title bar and none of Windows' own
+    /// buttons — the strip is the title bar, and the three buttons are the
+    /// app's (see WindowButtons). The border and its corners stay.
+    public static OverlappedPresenter Overlapped()
+    {
+        var presenter = OverlappedPresenter.Create();
+        presenter.SetBorderAndTitleBar(true, false);
+        presenter.PreferredMinimumWidth = 640;
+        presenter.PreferredMinimumHeight = 420;
+        return presenter;
     }
 }
 

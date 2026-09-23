@@ -124,16 +124,12 @@ public sealed partial class MainWindow : Window
     {
         var window = AppWindow;
         window.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "Search.ico"));
-        if (window.Presenter is OverlappedPresenter presenter)
-        {
-            App.Presenter = presenter;
-            // No title bar and none of Windows' own buttons: the strip is the
-            // title bar, and the three buttons are the app's (see
-            // WindowButtons). The border and its corners stay.
-            presenter.SetBorderAndTitleBar(true, false);
-            presenter.PreferredMinimumWidth = 640;
-            presenter.PreferredMinimumHeight = 420;
-        }
+        // A presenter of our own, rather than the one the window came with
+        // asked what kind it is: compiled to native code, that question has
+        // no reflection to answer it, the check quietly fails, and the window
+        // keeps Windows' title bar — its three buttons drawn over ours.
+        App.Presenter = App.Overlapped();
+        window.SetPresenter(App.Presenter);
         window.Changed += (_, e) =>
         {
             if (e.DidPresenterChange || e.DidSizeChange) App.WindowChanged?.Invoke();

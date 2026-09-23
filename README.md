@@ -67,7 +67,16 @@ panels) are switched off in the engine, and crash dumps stay on the machine.
 dotnet build Search\Search.csproj        # a debug build: Search\bin\Debug\...\Search.exe
 .\build.ps1                               # release, self-contained: build\Search\Search.exe
 .\build.ps1 -Zip                          # + build\Search-<version>-x64.zip
+.\build.ps1 -Installer                    # + build\Search-Setup-<version>-x64.exe (needs NSIS 3)
 ```
+
+The installer (21 MB) installs for the current user only — no administrator
+prompt — into `%LOCALAPPDATA%\Programs\Search`, adds Search to the Start menu,
+Apps & features and the browsers Default apps can pick. If WebView2 is missing
+it runs Microsoft's own bootstrapper, which it carries (1.8 MB, checked for
+Microsoft's signature at build time), to fetch it. Uninstalling leaves your
+history, bookmarks and passwords where they are, as dragging an app to the Bin
+does on the Mac. [PLAN.md](PLAN.md) has what comes next.
 
 With Visual Studio 2022 or its Build Tools ("Desktop development with C++")
 installed, the release build is compiled to native code (Native AOT): a 15 MB

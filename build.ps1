@@ -18,7 +18,9 @@
 
 param(
     [ValidateSet("x64", "arm64")] [string]$Arch = $(if ($env:PROCESSOR_ARCHITECTURE -eq "ARM64") { "arm64" } else { "x64" }),
-    [switch]$Zip
+    [switch]$Zip,
+    # + build\Search-Setup-<version>-<arch>.exe, the installer (NSIS 3).
+    [switch]$Installer
 )
 $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
@@ -50,8 +52,33 @@ Get-ChildItem $out -Filter *.pdb | Move-Item -Destination build -Force
 $size = (Get-ChildItem $out -Recurse | Measure-Object Length -Sum).Sum / 1MB
 "built: $out\Search.exe  ({0:N0} MB)" -f $size
 
+$version = ([xml](Get-Content Search\Search.csproj)).Project.PropertyGroup.Version | Select-Object -First 1
+
+if ($Installer) {
+    # Microsoft's WebView2 Evergreen bootstrapper, which Microsoft lets apps
+    # carry: 2 MB, and it only runs on a PC without WebView2. Fetched once
+    # into build\redist, and only kept if Microsoft signed it.
+    $redist = "build\redist"
+    $webview = "$redist\MicrosoftEdgeWebview2Setup.exe"
+    New-Item -ItemType Directory -Force $redist | Out-Null
+    if (-not (Test-Path $webview)) {
+        Invoke-WebRequest "https://go.microsoft.com/fwlink/p/?LinkId=2124703" -OutFile $webview
+    }
+    $signature = Get-AuthenticodeSignature $webview
+    if ($signature.Status -ne "Valid" -or $signature.SignerCertificate.Subject -notmatch "O=Microsoft Corporation") {
+        Remove-Item $webview
+        throw "the WebView2 bootstrapper isn't signed by Microsoft; not using it"
+    }
+
+    $nsis = @("${env:ProgramFiles(x86)}\NSIS\makensis.exe", "$env:ProgramFiles\NSIS\makensis.exe") | Where-Object { Test-Path $_ } | Select-Object -First 1
+    if (-not $nsis) { throw "the installer needs NSIS 3 (nsis.sourceforge.io)" }
+    $setup = "build\Search-Setup-$version-$Arch.exe"
+    & $nsis /V2 "/DVERSION=$version" "/DSOURCE=$PSScriptRoot\$out" "/DWEBVIEW2=$PSScriptRoot\$webview" "/DOUTFILE=$PSScriptRoot\$setup" Installer\Search.nsi
+    if ($LASTEXITCODE -ne 0) { throw "the installer didn't build" }
+    "installer: $setup  ({0:N0} MB)" -f ((Get-Item $setup).Length / 1MB)
+}
+
 if ($Zip) {
-    $version = ([xml](Get-Content Search\Search.csproj)).Project.PropertyGroup.Version | Select-Object -First 1
     $archive = "build\Search-$version-$Arch.zip"
     if (Test-Path $archive) { Remove-Item $archive }
     Compress-Archive -Path "$out\*" -DestinationPath $archive -CompressionLevel Optimal

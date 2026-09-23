@@ -20,9 +20,8 @@ namespace Search;
 // A way for a script on this PC to drive the browser you already have open,
 // in tabs of its own, without ever taking the window from you.
 //
-// Off unless switched on in Settings › General. On, the app listens on a Unix
-// socket in its own folder — a folder only this user can read, and the other
-// end is checked for the same user before a word is read. One JSON object per
+// Off unless switched on in Settings › General. On, the app listens on a named
+// pipe only this Windows user can open (see PipeName). One JSON object per
 // line in, one per line out, one request per connection. The tabs it opens
 // sit at the end of your row with a flask on them, are never selected on your
 // behalf, never enter the session or the history, and go when the script says

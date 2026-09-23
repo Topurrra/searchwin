@@ -104,8 +104,40 @@ side by side:
   re-fetched.
 - **Zoom** (`Ctrl+=`, `Ctrl+-`, `Ctrl+0`) is remembered per site, as on the
   Mac; `Ctrl` and the mouse wheel do the engine's own zoom as well.
+- **Video that follows you** uses Chromium's own picture-in-picture window:
+  always on top, native controls, no ±15 s skip buttons.
+- **Passwords from other browsers** come over as the CSV each browser exports.
+  Chrome and Edge lock their saved passwords to themselves on Windows
+  (app-bound encryption), so only their bookmarks, history and icons are read
+  straight from their files.
+- **Chrome extensions** run in WebView2's own extension engine. What it doesn't
+  expose to the app isn't there yet: badges and changing icons on the buttons,
+  an extension's own right-click items, extensions without a popup reacting to
+  their button, keyboard commands other than opening the popup, native
+  messaging.
+- **Spaces** switch with `Alt+1`–`Alt+9` (the Mac's `⌃1`–`⌃9`), the space's
+  icon, or a sideways swipe over the column that changes space once it is long
+  enough, rather than sliding under the fingers.
 - **Updates**: there is no update server for Windows builds yet, so this build
   doesn't look for one.
+
+### Testing it without closing it
+
+Turn on **Settings › General › Let a script drive Search** and the running app
+listens on a named pipe only your Windows user can open. `bench.ps1` (PowerShell
+7) speaks it, with the same commands as the Mac's `./bench`:
+
+```powershell
+./bench.ps1 open https://example.com     # a tab of its own, at the end of your row → its id
+./bench.ps1 wait 2e7e7e89                # until it has loaded
+./bench.ps1 text 2e7e7e89                # the page's text
+./bench.ps1 shot 2e7e7e89 out.png        # a picture of it
+./bench.ps1 click 2e7e7e89 "button.go"   # click, type, submit — through the page's own events
+./bench.ps1 probe                        # the window's state: open panels, a dialog, the window
+./bench.ps1 close all
+```
+
+Add `--test` to talk to a debug build instead of the Search you use.
 
 ## License
 

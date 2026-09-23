@@ -50,11 +50,6 @@ function Fail([string]$message) {
     exit 1
 }
 
-function Folder([string]$world) {
-    $name = if ($world) { "Search ($world)" } else { 'Search' }
-    Join-Path $env:LOCALAPPDATA $name
-}
-
 function Ask([string]$pipe, [hashtable]$request) {
     $client = [System.IO.Pipes.NamedPipeClientStream]::new('.', $pipe, [System.IO.Pipes.PipeDirection]::InOut,
         [System.IO.Pipes.PipeOptions]::CurrentUserOnly)

@@ -203,7 +203,7 @@ public sealed partial class WelcomePanel : UserControl
     {
         var stack = new StackPanel { Spacing = 22 };
         stack.Children.Add(Heading("Bring things over.",
-            "Passwords from Chrome, Edge, Brave or Arc go into Windows' Credential Manager, under Search. Nothing in the other browser changes."));
+            "Bookmarks and history from Chrome, Edge, Brave or Arc, and the passwords they export, into Search — the passwords in Windows' Credential Manager. Nothing in the other browser changes."));
 
         var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12 };
         void Draw()

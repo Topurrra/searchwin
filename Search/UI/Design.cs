@@ -270,9 +270,12 @@ public static class Icons
         };
     }
 
+    /// A glyph from the font. The drawn ones (Bookmark) aren't in it: asked
+    /// for here they come out as the nearest glyph the font has, a star,
+    /// rather than as a row of boxes — use Element for the real thing.
     public static FontIcon Make(string glyph, double size, Brush? brush = null) => new()
     {
-        Glyph = glyph,
+        Glyph = glyph == Bookmark ? Star : glyph,
         FontFamily = Font,
         FontSize = size,
         Foreground = brush ?? Palette.Muted,

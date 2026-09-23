@@ -150,7 +150,7 @@ public static class Veiling
       }
 
       function chrome() {
-        if (frame) return frame;
+        if (frame && frame.isConnected) return frame;
         frame = document.createElement('div');
         frame.style.cssText = 'position:fixed;z-index:2147483646;pointer-events:none;' +
           'border:2px solid rgba(23,23,23,.9);background:rgba(23,23,23,.07);' +
@@ -307,7 +307,10 @@ public static class Veiling
 
       window.__officeVeil = {
         on: function () {
-          if (live) return;
+          // Asked again while already on — a page that redrew itself and took
+          // the outline with it — puts the outline and the cursor back rather
+          // than doing nothing. Listeners added twice are added once.
+          if (live && frame && frame.isConnected) return;
           live = true;
           chrome();
           document.documentElement.style.cursor = 'crosshair';

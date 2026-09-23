@@ -230,6 +230,15 @@ public sealed partial class Browser : Model
             foreach (var tab in Tabs) tab.Arm(Curtain.Css(Curtain.Host(tab.Address)), force: true);
             Announce(Prefs.Passkeys ? "Passkeys offered again — reload the page" : "Sites will ask for a password instead");
         });
+        Prefs.On(nameof(Preferences.Spelling), () =>
+        {
+            foreach (var tab in Tabs.Concat(ParkedTabs))
+            {
+                tab.Arm(Curtain.Css(Curtain.Host(tab.Address)), force: true);
+                if (tab.Core != null) tab.Run(Spelling.Now(Prefs.Spelling));
+            }
+            Announce(Prefs.Spelling ? "Spelling checked as you type" : "Spelling left alone");
+        });
         Prefs.On(nameof(Preferences.Sidebar), () =>
         {
             // Back to the strip and then to the column again: the column comes
@@ -1064,7 +1073,8 @@ public sealed partial class Browser : Model
             else if (forward) find.FindNext();
             else find.FindPrevious();
             Missed = find.MatchCount == 0;
-            Matches = find.MatchCount > 0 ? $"{find.ActiveMatchIndex + 1} of {find.MatchCount}" : "";
+            // WebView2 counts its matches from one.
+            Matches = find.MatchCount > 0 ? $"{Math.Max(1, find.ActiveMatchIndex)} of {find.MatchCount}" : "";
         }
         catch { }
     }

@@ -178,6 +178,11 @@ public sealed class Bench
         "shot", "probe", "key", "press", "resize", "hit", "space", "strip", "column", "ui",
     ];
 
+    /// What a script may open: anything the field would take, and an
+    /// extension's own pages, which a script testing one needs.
+    private static Uri? Reachable(string text) =>
+        Address.Url(text) ?? (Uri.TryCreate(text, UriKind.Absolute, out var url) && url.Scheme == "chrome-extension" ? url : null);
+
     private void Handle(JsonObject request, Action<JsonObject> given)
     {
         // One answer, and always one: a page that never replies to a script
@@ -206,7 +211,7 @@ public sealed class Bench
 
             case "open":
             {
-                if (Str(request, "url") is not { } text || Address.Url(text) is not { } url) { answer(Error("open needs a url")); return; }
+                if (Str(request, "url") is not { } text || Reachable(text) is not { } url) { answer(Error("open needs a url")); return; }
                 var tab = b.BenchOpen(url);
                 Starting(tab);
                 House(tab);
@@ -217,7 +222,7 @@ public sealed class Bench
             case "go":
             {
                 if (Find(request) is not { } tab) { answer(Missing(request)); return; }
-                if (Str(request, "url") is not { } text || Address.Url(text) is not { } url) { answer(Error("go needs a url")); return; }
+                if (Str(request, "url") is not { } text || Reachable(text) is not { } url) { answer(Error("go needs a url")); return; }
                 b.Go(tab, url);
                 Starting(tab);
                 answer(Describe(tab));

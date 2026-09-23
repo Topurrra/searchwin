@@ -224,7 +224,10 @@ public static class SpaceAsk
             Width = 280,
         };
         var box = new StackPanel { Spacing = 10, Children = { words, field, fresh } };
-        var dialog = new ContentDialog { Title = "New Space", Content = box, PrimaryButtonText = "Create", CloseButtonText = "Cancel" };
+        // Create waits for a name: the grey "Work" is only a suggestion, and a
+        // button that did nothing when pressed over it read as broken.
+        var dialog = new ContentDialog { Title = "New Space", Content = box, PrimaryButtonText = "Create", CloseButtonText = "Cancel", IsPrimaryButtonEnabled = false };
+        field.TextChanged += (_, _) => dialog.IsPrimaryButtonEnabled = field.Text.Trim().Length > 0;
         if (!await Ask(dialog, field)) return;
         var name = field.Text.Trim();
         if (name.Length > 0) then(name, fresh.IsChecked != true);

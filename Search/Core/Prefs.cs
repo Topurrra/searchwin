@@ -49,7 +49,7 @@ public sealed partial class Preferences : Model
         // Anyone who already has a session was here before the welcome
         // existed; they are not asked to sit through it.
         welcomed = store.Bool("welcomed") || store.Has("glyph");
-        autocorrect = store.Bool("autocorrect");
+        spelling = store.OptionalBool("spelling") ?? true;
         usesSpaces = store.Bool("spaces");
     }
 
@@ -111,9 +111,10 @@ public sealed partial class Preferences : Model
     /// stands over the window.
     public bool Welcomed { get => welcomed; set { if (Set(ref welcomed, value)) store.Set("welcomed", value); } }
 
-    private bool autocorrect;
-    /// Spelling checked as you type inside pages. Off unless asked for.
-    public bool Autocorrect { get => autocorrect; set { if (Set(ref autocorrect, value)) store.Set("autocorrect", value); } }
+    private bool spelling;
+    /// Misspelt words underlined in a page's text fields, with the fix on a
+    /// right-click — Windows' own spelling checker. On unless turned off.
+    public bool Spelling { get => spelling; set { if (Set(ref spelling, value)) store.Set("spelling", value); } }
 
     private bool usesSpaces;
     /// Separate sets of tabs, each with its own sign-ins (see Spaces).

@@ -424,7 +424,7 @@ public static class BookmarksDropdown
         var press = new Press();
         var ground = Kit.Rounded(8);
         var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Padding = new Thickness(10, 6, 10, 6) };
-        var icon = Icons.Make(symbol ?? "", 11, Palette.Muted);
+        var icon = Icons.Element(symbol ?? "", 11, Palette.Muted);
         icon.Width = 14;
         row.Children.Add(icon);
         row.Children.Add(Kit.Text(title, 12.5));

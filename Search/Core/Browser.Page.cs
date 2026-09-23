@@ -97,6 +97,22 @@ public sealed partial class Browser : IPageHost
         };
 
         core.ContextMenuRequested += (_, e) => Extensions.Shared.AddMenuItems(tab, core, e);
+
+        // Next and previous land a moment after they are asked for; the
+        // count beside the find field follows the engine, not the asking.
+        try
+        {
+            void Count(object? sender, object e)
+            {
+                if (tab.Id != ActiveID || !Finding) return;
+                var find = core.Find;
+                Missed = Needle.Length > 0 && find.MatchCount == 0;
+                Matches = find.MatchCount > 0 ? $"{Math.Max(1, find.ActiveMatchIndex)} of {find.MatchCount}" : "";
+            }
+            core.Find.ActiveMatchIndexChanged += Count;
+            core.Find.MatchCountChanged += Count;
+        }
+        catch { }
         AttachFeatures(tab, core);
     }
 

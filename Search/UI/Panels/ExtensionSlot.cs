@@ -433,6 +433,8 @@ public static class ExtensionPopup
         // first; the popup's page is one of them.
         try { await Extensions.Shared.Adopt(core.Profile); } catch { }
         if (web != view) return;
+        try { await core.AddScriptToExecuteOnDocumentCreatedAsync(CurrentTab(tab?.Address)); } catch { }
+        if (web != view) return;
         core.Navigate(url.AbsoluteUri);
 
         // Measured when the document is built or has loaded; a page slow to
@@ -475,6 +477,44 @@ public static class ExtensionPopup
         view.Height = ground.Height;
         view.Opacity = 1;
     }
+
+    /// "Which tab am I about?" — answered for the popup. To the engine every
+    /// view is a tab in a window of its own, the popup's view included, so a
+    /// popup asking for the active tab of its window is told about itself:
+    /// uBlock showed its own id where the site's name should be. In Chrome a
+    /// popup belongs to the window it drops from, and that window's active tab
+    /// is the page under it. So the question is answered here with the page
+    /// the popup was opened over, found among the engine's tabs by its
+    /// address; and getCurrent, as in a Chrome popup, has no tab to give.
+    private static string CurrentTab(Uri? page) => $$"""
+    (function () {
+      var tabs = window.chrome && chrome.tabs;
+      if (!tabs || tabs.__officeCurrent) return;
+      var page = {{Bridge.Literal(page?.AbsoluteUri ?? "")}};
+      var query = tabs.query.bind(tabs);
+      function asksForCurrent(info) {
+        return info && (info.active === true || info.currentWindow === true || info.lastFocusedWindow === true || info.highlighted === true);
+      }
+      function current() {
+        return query({}).then(function (all) {
+          var others = all.filter(function (t) { return (t.url || '').indexOf(location.origin) !== 0; });
+          var hit = others.filter(function (t) { return t.url === page; });
+          var tab = (hit.length ? hit : others)[0];
+          return tab ? [Object.assign({}, tab, { active: true, highlighted: true })] : [];
+        });
+      }
+      tabs.query = function (info, callback) {
+        var answer = asksForCurrent(info) ? current() : query(info || {});
+        if (typeof callback === 'function') { answer.then(callback); return; }
+        return answer;
+      };
+      tabs.getCurrent = function (callback) {
+        if (typeof callback === 'function') { callback(undefined); return; }
+        return Promise.resolve(undefined);
+      };
+      tabs.__officeCurrent = true;
+    })();
+    """;
 
     /// The size Chrome would give the popup (Blink's auto-size, between
     /// 25 × 25 and 800 × 600), worked out in the page while its view is

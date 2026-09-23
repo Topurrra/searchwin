@@ -255,9 +255,9 @@ public sealed partial class SettingsPanel : Grid
                 control),
             new Line("Appearance", "Light, dark, or whatever Windows is doing — pages follow it too",
                 new Segmented<Look>(Enum.GetValues<Look>().Select(l => (l, l.Title())), prefs.Look, v => prefs.Look = v)),
-            new Line("Correct spelling as you type", "Windows' spelling check inside pages — it underlines and offers the fix",
-                new Switch(prefs.Autocorrect, on => prefs.Autocorrect = on)),
-            new Line("Let a script drive Search", "A local socket for testing. Its tabs open beside yours with a flask on them and never take over — see ./bench",
+            new Line("Check spelling as you type", "Misspelt words underlined in pages' text fields, with the fix on a right-click",
+                new Switch(prefs.Spelling, on => prefs.Spelling = on)),
+            new Line("Let a script drive Search", "A local pipe for testing. Its tabs open beside yours with a robot on them and never take over — see bench.ps1",
                 new Switch(prefs.Bench, on => prefs.Bench = on)));
     }
 

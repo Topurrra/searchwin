@@ -45,11 +45,6 @@ public static class Web
     /// its view is built — WebView2 only starts once its view is in a window —
     /// and stays until the tab lets it go.
     public static Panel Stage { get; set; } = null!;
-
-    /// The profile a tab's cookies and sign-ins live in: the first space's is
-    /// the default one, each other space has its own (see Spaces).
-    public static string ProfileName(Guid space) =>
-        space == Space.FirstID ? "Default" : "space-" + space.ToString("N");
 }
 
 /// The page's side of the conversation. Every script this browser puts in a

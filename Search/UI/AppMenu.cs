@@ -77,9 +77,7 @@ public static class AppMenu
             view.Items.Add(Radio(chosen.Title(), "look", b.Prefs.Look == chosen, () => b.Prefs.Look = chosen));
         }
         view.Items.Add(new MenuFlyoutSeparator());
-        var side = new ToggleMenuFlyoutItem { Text = "Show Tabs in Sidebar", IsChecked = b.Prefs.Sidebar, KeyboardAcceleratorTextOverride = "Ctrl+Shift+S" };
-        side.Click += (_, _) => b.ToggleSidebar();
-        view.Items.Add(side);
+        view.Items.Add(Check("Show Tabs in Sidebar", "Ctrl+Shift+S", b.Prefs.Sidebar, b.ToggleSidebar));
         view.Items.Add(Item(b.Folded ? "Show Sidebar" : "Hide Sidebar", "Ctrl+S", null, b.ToggleFold, b.Prefs.Sidebar));
         var wear = Sub("Tabs Wear", null);
         foreach (var glyph in new[] { Glyph.Letters, Glyph.Icons })
@@ -166,9 +164,19 @@ public static class AppMenu
         return sub;
     }
 
+    /// One of a few choices, the chosen one marked.
     private static RadioMenuFlyoutItem Radio(string text, string group, bool on, Action act)
     {
         var item = new RadioMenuFlyoutItem { Text = text, GroupName = group, IsChecked = on };
+        item.Click += (_, _) => act();
+        return item;
+    }
+
+    /// On or off, ticked when on.
+    private static ToggleMenuFlyoutItem Check(string text, string? keys, bool on, Action act)
+    {
+        var item = new ToggleMenuFlyoutItem { Text = text, IsChecked = on };
+        if (keys != null) item.KeyboardAcceleratorTextOverride = keys;
         item.Click += (_, _) => act();
         return item;
     }

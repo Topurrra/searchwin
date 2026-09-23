@@ -26,6 +26,11 @@ public partial class App : Application
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
         UI.Queue = Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread();
+        // The Fluent styles every control draws with: rounded dialogs, text
+        // fields, menus, tooltips. Made here, by type, so a native build has
+        // them too (see App.xaml) — once the app is up, before any window.
+        try { Resources.MergedDictionaries.Add(new Microsoft.UI.Xaml.Controls.XamlControlsResources()); }
+        catch (Exception e) { Links.Trouble(e); }
         // The engine starts now, while the window is still being drawn, so the
         // first address typed navigates instead of waiting for it.
         // Light or dark decided before anything is drawn or started, so the

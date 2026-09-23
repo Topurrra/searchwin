@@ -56,4 +56,15 @@
     <Content Include="Assets\**" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
+  <!-- An unpackaged publish leaves out the app's resource index (Search.pri)
+       and its compiled XAML, which a build puts beside the exe. Without the
+       index WinUI can't find its own themes: dialogs come up square, fields
+       white, and a menu using WinUI's own item styles brings the app down. -->
+  <Target Name="PublishResourceIndex" AfterTargets="Publish">
+    <ItemGroup>
+      <_ResourceIndex Include="$(OutDir)$(TargetName).pri;$(OutDir)*.xbf" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_ResourceIndex)" DestinationFolder="$(PublishDir)" SkipUnchangedFiles="true" />
+  </Target>
+
 </Project>

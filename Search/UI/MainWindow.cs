@@ -98,6 +98,10 @@ public sealed class MainWindow : Window
         });
         system.ColorValuesChanged += (_, _) => UI.Do(() => { if (browser.Prefs.Look == Look.System) Relook(); });
         root.SizeChanged += (_, _) => Regions();
+        // Whatever moved — a column coming in, a row added, a tab reflowing —
+        // the title bar's shape follows. Coalesced to once a frame, and only
+        // handed to Windows when it actually changed.
+        root.LayoutUpdated += (_, _) => Regions();
 
         Dress();
         Relook();
@@ -432,7 +436,13 @@ public sealed class MainWindow : Window
                 if (Folding && !browser.Peeking) through.Add(R(0, 0, 6, H));
             }
         }
+        var key = string.Join(";", caption.Select(r => $"{r.X},{r.Y},{r.Width},{r.Height}")) + "|"
+            + string.Join(";", through.Select(r => $"{r.X},{r.Y},{r.Width},{r.Height}"));
+        if (key == lastRegions) return;
+        lastRegions = key;
         source.SetRegionRects(NonClientRegionKind.Caption, caption.ToArray());
         source.SetRegionRects(NonClientRegionKind.Passthrough, through.ToArray());
     }
+
+    private string lastRegions = "";
 }

@@ -252,10 +252,11 @@ public sealed class TabBar : Grid
         {
             wash.Visibility = Visibility.Visible;
             wash.Width = liveSpan;
+            // The grey sits at the pills' height by its own Canvas.Top; its
+            // Translation carries only the slide along the row.
             var held = dragging != null && dragging.Id == browser.ActiveID;
-            if (held) Motion.Jump(wash, livePill.Translation);
-            else wash.Translation = new Vector3((float)liveX, (float)((Metrics.Strip - 28) / 2) - (float)((Metrics.Strip - 28) / 2), 0);
-            Canvas.SetTop(wash, (Metrics.Strip - 28) / 2);
+            if (held) Motion.Jump(wash, new Vector3(livePill.Translation.X, 0, 0));
+            else wash.Translation = new Vector3((float)liveX, 0, 0);
             var tab = livePill.Tab;
             // Not on a pinned square, nor a tab down to its mark: grey filling
             // from the left behind a single letter says nothing about anything.

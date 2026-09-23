@@ -32,7 +32,6 @@ public sealed class Omnibox : Grid
     /// this the field puts the same letter straight back as a completion and
     /// the address can never be shortened.
     private bool deleting;
-    private bool pushing;
 
     public Omnibox(Browser browser)
     {
@@ -79,19 +78,23 @@ public sealed class Omnibox : Grid
             BorderBrush = Palette.Hairline,
             BorderThickness = new Thickness(1),
             Padding = new Thickness(6),
-            VerticalAlignment = VerticalAlignment.Top,
-            Margin = new Thickness(0, FieldHeight + 8, 0, 0),
+            Width = Metrics.FieldWidth,
             Child = rows,
             Visibility = Visibility.Collapsed,
         };
         Kit.Lift(list, 20);
-        column.Children.Add(list);
+        // On a canvas, which measures its children at their own size and never
+        // clips them: the list hangs below a field that is only as tall as
+        // itself.
+        var hanger = new Canvas { VerticalAlignment = VerticalAlignment.Top, Height = FieldHeight };
+        Canvas.SetTop(list, FieldHeight + 8);
+        hanger.Children.Add(list);
+        column.Children.Add(hanger);
         column.Height = FieldHeight;
         Children.Add(column);
 
         field.TextChanged += (_, _) => Typed();
         field.PreviewKeyDown += OnKey;
-        field.GotFocus += (_, _) => field.SelectionHighlightColor = Palette.Brush(Tone.Ink, 0.12);
 
         browser.OnAny(name =>
         {
@@ -169,14 +172,26 @@ public sealed class Omnibox : Grid
     /// considers complete, and the next update would type it back in.
     private void Push()
     {
+        if (typing) return;
         var want = browser.Completed;
         if (want == synced) return;
         synced = want;
-        pushing = true;
-        field.Text = want;
-        pushing = false;
+        Put(want);
         SelectFrom(Math.Min(browser.Typed.Length, want.Length));
     }
+
+    /// The field's text, set from here. WinUI tells of a change a moment
+    /// later, not while it is being made — so what was set is remembered, and
+    /// the change it causes is recognised as ours rather than as typing.
+    private void Put(string text)
+    {
+        if (field.Text == text) return;
+        expected = text;
+        field.Text = text;
+    }
+
+    private string? expected;
+    private bool typing;
 
     /// The part after the caret, shown as selected, so the next keystroke
     /// replaces it and Enter takes it.
@@ -189,10 +204,17 @@ public sealed class Omnibox : Grid
 
     private void Typed()
     {
-        if (pushing) return;
         var text = field.Text;
+        if (expected != null)
+        {
+            var ours = expected;
+            expected = null;
+            if (text == ours) return;
+        }
         plate.BorderBrush = Palette.Hairline;
+        typing = true;
         browser.Typed = text;
+        typing = false;
         if (deleting || browser.Ending is not { } ending)
         {
             if (deleting) browser.StopCompleting();
@@ -201,10 +223,8 @@ public sealed class Omnibox : Grid
             return;
         }
         deleting = false;
-        pushing = true;
-        field.Text = text + ending;
-        pushing = false;
-        synced = field.Text;
+        Put(text + ending);
+        synced = text + ending;
         SelectFrom(text.Length);
     }
 

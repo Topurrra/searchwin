@@ -77,8 +77,8 @@ public static class Kit
             TextWrapping = TextWrapping.NoWrap,
             IsSpellCheckEnabled = false,
             IsTextPredictionEnabled = false,
-            SelectionHighlightColor = Palette.Brush(Tone.Ink, 0.12),
-            SelectionHighlightColorWhenNotFocused = Palette.Brush(Tone.Ink, 0.08),
+            SelectionHighlightColor = Palette.Brush(Tone.Selection),
+            SelectionHighlightColorWhenNotFocused = Palette.Brush(Tone.Selection),
             VerticalAlignment = VerticalAlignment.Center,
         };
         if (placeholder.Length > 0) field.PlaceholderText = placeholder;
@@ -105,7 +105,7 @@ public static class Kit
 public sealed class Door : Press
 {
     private readonly Border ground;
-    private readonly FontIcon glyph;
+    private readonly IconElement glyph;
     private bool on;
     private bool enabled = true;
 
@@ -114,7 +114,7 @@ public sealed class Door : Press
         Width = size;
         Height = size;
         ground = Kit.Rounded(8);
-        glyph = Icons.Make(icon, 12);
+        glyph = Icons.Element(icon, 12);
         glyph.HorizontalAlignment = HorizontalAlignment.Center;
         glyph.VerticalAlignment = VerticalAlignment.Center;
         Children.Add(ground);
@@ -126,7 +126,11 @@ public sealed class Door : Press
         Paint();
     }
 
-    public string Icon { get => glyph.Glyph; set => glyph.Glyph = value; }
+    public string Icon
+    {
+        get => (glyph as FontIcon)?.Glyph ?? "";
+        set { if (glyph is FontIcon font) font.Glyph = value; }
+    }
 
     public bool On { get => on; set { on = value; Paint(); } }
 

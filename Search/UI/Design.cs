@@ -16,7 +16,7 @@ namespace Search;
 // Every colour is a pair — one for a light window, one for a dark — and every
 // brush handed out here is repainted in place when the window changes between
 // them. Nothing else in the code knows which mode it is in.
-public enum Tone { Ground, Ink, Muted, Faint, Hairline, Wash, Hover, Resting, Black, White, Red }
+public enum Tone { Ground, Ink, Muted, Faint, Hairline, Wash, Hover, Resting, Selection, Black, White, Red }
 
 public static class Palette
 {
@@ -39,6 +39,9 @@ public static class Palette
         Tone.Wash => dark ? 0.175 : 0.937,         // the live tab
         Tone.Hover => dark ? 0.15 : 0.965,         // the one under the pointer
         Tone.Resting => dark ? 0.30 : 0.80,
+        // A tenth of the ink over the ground, already mixed: a field's
+        // selection is drawn opaque whatever its brush says.
+        Tone.Selection => dark ? 0.11 + (0.93 - 0.11) * 0.14 : 1 - 0.91 * 0.12,
         Tone.White => 1,
         _ => 0,
     };
@@ -212,7 +215,8 @@ public static class Icons
     public const string Forward = "";
     public const string Reload = "";
     public const string Close = "";
-    public const string Bookmark = "";
+    /// Drawn, not a glyph (see Element).
+    public const string Bookmark = "bookmark";
     public const string Search = "";
     public const string Speaker = "";
     public const string Private = "";
@@ -243,6 +247,24 @@ public static class Icons
     public const string Clear = "";
 
     public static readonly FontFamily Font = new("Segoe Fluent Icons, Segoe MDL2 Assets");
+
+    /// Any of the above, or one of the few drawn by hand because the font has
+    /// nothing like it — the bookmark's ribbon.
+    public static IconElement Element(string glyph, double size, Brush? brush = null)
+    {
+        if (glyph != Bookmark) return Make(glyph, size, brush);
+        var s = size / 12;
+        string P(double x, double y) => $"{(x * s).ToString(System.Globalization.CultureInfo.InvariantCulture)},{(y * s).ToString(System.Globalization.CultureInfo.InvariantCulture)}";
+        var data = $"F0 M{P(1, 0)} L{P(10, 0)} L{P(10, 13)} L{P(5.5, 9.6)} L{P(1, 13)} Z M{P(2.3, 1.3)} L{P(8.7, 1.3)} L{P(8.7, 10.4)} L{P(5.5, 8)} L{P(2.3, 10.4)} Z";
+        return new PathIcon
+        {
+            Data = (Geometry)XamlBindingHelper.ConvertValue(typeof(Geometry), data),
+            Foreground = brush ?? Palette.Muted,
+            Width = 11 * s,
+            Height = 13 * s,
+            IsHitTestVisible = false,
+        };
+    }
 
     public static FontIcon Make(string glyph, double size, Brush? brush = null) => new()
     {

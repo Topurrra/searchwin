@@ -24,6 +24,8 @@ public sealed class TabFace : Grid
     private readonly Ring ring = new();
     private readonly FontIcon speaker = Icons.Make(Icons.Speaker, 9);
     private readonly Press closer = new() { Width = 30, Height = 28, HorizontalAlignment = HorizontalAlignment.Right };
+    private readonly StackPanel lead = new() { Orientation = Orientation.Horizontal };
+    private readonly double spacing;
     private TextBox? field;
     private bool live;
     private bool hovering;
@@ -34,17 +36,21 @@ public sealed class TabFace : Grid
     {
         this.browser = browser;
         Tab = tab;
-        ColumnSpacing = spacing;
-        ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        this.spacing = spacing;
+        // What leads the title — the site's mark, the script's robot, the
+        // private tab's eye — in a run of its own, so the ones not shown take
+        // no room at all.
         ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
-        Add(mark, 0);
-        Add(robot, 1);
-        Add(shy, 2);
-        Add(title, 3);
+        lead.Children.Add(mark);
+        lead.Children.Add(robot);
+        lead.Children.Add(shy);
+        foreach (var e in lead.Children.OfType<FrameworkElement>()) e.VerticalAlignment = VerticalAlignment.Center;
+        lead.Spacing = spacing;
+        Add(lead, 0);
+        Add(title, 1);
 
         cross = Kit.Rounded(7.5, Palette.Brush(Tone.Ink, 0.07));
         var x = Icons.Make(Icons.Close, 7, Palette.Muted);
@@ -57,13 +63,14 @@ public sealed class TabFace : Grid
         speaker.HorizontalAlignment = HorizontalAlignment.Center;
         speaker.VerticalAlignment = VerticalAlignment.Center;
         foreach (var child in slot.Children) Motion.Fades(child);
-        Add(slot, 4);
+        slot.Margin = new Thickness(2, 0, 0, 0);
+        Add(slot, 2);
 
         // The cross is fifteen points across because that is how big it should
         // look. What you have to hit is the whole right-hand end of the tab.
         closer.Margin = new Thickness(0, 0, -7, 0);
         closer.Clicked += _ => { if (hovering) CloseAsked?.Invoke(); };
-        Grid.SetColumn(closer, 4);
+        Grid.SetColumn(closer, 2);
         Children.Add(closer);
 
         tab.PropertyChanged += OnTab;
@@ -106,6 +113,9 @@ public sealed class TabFace : Grid
         robot.Foreground = Palette.Brush(Tone.Muted, 0.7);
         shy.Visibility = !editing && Tab.Shy ? Visibility.Visible : Visibility.Collapsed;
         shy.Foreground = Palette.Brush(Tone.Muted, 0.7);
+        var leads = lead.Children.Any(c => c.Visibility == Visibility.Visible);
+        lead.Visibility = leads ? Visibility.Visible : Visibility.Collapsed;
+        lead.Margin = new Thickness(0, 0, leads ? spacing : 0, 0);
 
         slot.Width = editing ? 0 : 15;
         closer.Visibility = editing ? Visibility.Collapsed : Visibility.Visible;
@@ -129,7 +139,7 @@ public sealed class TabFace : Grid
         field = Kit.Field(12.5);
         field.Text = browser.TabDraft;
         Grid.SetColumn(field, 0);
-        Grid.SetColumnSpan(field, 4);
+        Grid.SetColumnSpan(field, 2);
         Children.Add(field);
         var mine = field;
         field.TextChanged += (_, _) => browser.TabDraft = mine.Text;

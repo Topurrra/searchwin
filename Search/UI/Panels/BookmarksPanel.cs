@@ -280,6 +280,8 @@ public sealed class BookmarkOutline : Grid
             {
                 var field = Kit.Field(12.5);
                 field.Text = node.Title;
+                // Esc here gives the old name back; it doesn't close the panel.
+                field.Tag = KeyHook.OwnEscape;
                 outline.editor = field;
                 var done = false;
                 void Finish(string? title)

@@ -116,6 +116,13 @@ public static class KeyHook
         return 1;
     }
 
+    /// A field tagged with this answers Esc itself — a rename in place, where
+    /// Esc means "never mind" rather than "put the panel away".
+    public const string OwnEscape = "own-escape";
+
+    public static bool FocusOwnsEscape() =>
+        App.Root?.XamlRoot is { } root && FocusManager.GetFocusedElement(root) is FrameworkElement { Tag: OwnEscape };
+
     /// Whether the keyboard is with a page rather than with the browser's own
     /// fields.
     private static bool InPage()

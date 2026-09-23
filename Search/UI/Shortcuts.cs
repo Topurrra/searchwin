@@ -25,6 +25,7 @@ public static class Shortcuts
         // back, so it belongs to whatever else wants it.
         if (key == VirtualKey.Escape && !ctrl && !alt)
         {
+            if (KeyHook.FocusOwnsEscape()) return false;
             if (b.EditingTab != null) { b.CancelTabEdit(); return true; }
             if (b.MakingSpace) { b.MakingSpace = false; return true; }
             if (b.Tuning) { b.Tuning = false; return true; }

@@ -419,6 +419,9 @@ public sealed class MainWindow : Window
         var through = new List<RectInt32>();
         var W = root.ActualWidth;
         var H = root.ActualHeight;
+        // The walk-through's top edge is its title bar, short of its own three
+        // buttons at the far end.
+        if (browser.Welcoming) caption.Add(R(0, 0, W - 3 * 46, 32));
         var covered = browser.Welcoming || browser.Tuning || browser.Recalling || browser.Hoarding || browser.Bookmarking || browser.Managing
             || (browser.FieldShowing && !(browser.Active?.IsBlank ?? true));
 

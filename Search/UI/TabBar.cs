@@ -90,6 +90,10 @@ public sealed partial class TabBar : Grid
         doors.Children.Add(helm);
         bookmarks = new Door(Icons.Bookmark, "Bookmarks", () => browser.BookmarksOpen = !browser.BookmarksOpen);
         doors.Children.Add(bookmarks);
+        // Everything the Mac keeps in its menu bar (see AppMenu).
+        Door? menu = null;
+        menu = new Door(Icons.Menu, "Menu", () => AppMenu.Show(browser, menu!, Microsoft.UI.Xaml.Controls.Primitives.FlyoutPlacementMode.BottomEdgeAlignedRight));
+        doors.Children.Add(menu);
         doors.Margin = new Thickness(0, 0, 8, 0);
         SetColumn(doors, 5);
         Children.Add(doors);

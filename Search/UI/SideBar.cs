@@ -102,6 +102,10 @@ public sealed partial class SideBar : Grid
         foot.Children.Add(new ExtensionSlot(browser));
         bookmarks = new Door(Icons.Bookmark, "Bookmarks", () => browser.BookmarksOpen = !browser.BookmarksOpen);
         foot.Children.Add(bookmarks);
+        // Everything the Mac keeps in its menu bar (see AppMenu).
+        Door? menu = null;
+        menu = new Door(Icons.Menu, "Menu", () => AppMenu.Show(browser, menu!, Microsoft.UI.Xaml.Controls.Primitives.FlyoutPlacementMode.TopEdgeAlignedLeft));
+        foot.Children.Insert(0, menu);
         SetRow(foot, 3);
         Children.Add(foot);
         footView = foot;

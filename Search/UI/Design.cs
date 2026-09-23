@@ -108,7 +108,9 @@ public static class Metrics
     /// itself while you read it. They give way when there are too many:
     /// narrower than TabTitled they show their site's mark alone, and they
     /// stop at TabMinWidth, the mark and its air. Past that the row scrolls.
-    public const double TabWidth = 186;
+    /// The Mac's is 186; Windows draws everything a quarter bigger on most
+    /// screens, so the same number reads long here.
+    public const double TabWidth = 160;
     public const double TabTitled = 80;
     public const double TabMinWidth = 36;
     public const double TabGap = 2;
@@ -245,6 +247,8 @@ public static class Icons
     public const string Left = "";
     public const string Right = "";
     public const string Clear = "";
+    public const string Star = "";
+    public const string Menu = "";
 
     public static readonly FontFamily Font = new("Segoe Fluent Icons, Segoe MDL2 Assets");
 

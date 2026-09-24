@@ -160,6 +160,9 @@ public sealed partial class Tab : Model
         };
         core.NavigationStarting += (_, e) =>
         {
+            var ours = ourNavigation;
+            ourNavigation = false;
+            if (!ToolsHost.MayOpen(Address, e, ours)) { e.Cancel = true; return; }
             Loading = true;
             Progress = 0.1;
         };
@@ -179,6 +182,7 @@ public sealed partial class Tab : Model
         core.ContainsFullScreenElementChanged += (_, _) => Immersed = core.ContainsFullScreenElement;
         core.FaviconChanged += (_, _) => Favicons.Shared.Fetch(this);
         core.WebMessageReceived += (_, e) => Received(e);
+        ToolsHost.Prepare(core);
 
         Arm(veils);
     }
@@ -323,7 +327,7 @@ public sealed partial class Tab : Model
         Pending = null;
         Cover = null;
         AdoptIcon();
-        WhenReady(core => core.Navigate(url.AbsoluteUri));
+        WhenReady(core => Open(core, url));
     }
 
     private Uri? pending;
@@ -369,7 +373,7 @@ public sealed partial class Tab : Model
         Reader = false;
         Typing = false;
         Immersed = false;
-        WhenReady(core => core.Navigate(url.AbsoluteUri));
+        WhenReady(core => Open(core, url));
         return true;
     }
 
@@ -494,8 +498,19 @@ public sealed partial class Tab : Model
     /// Fire and forget.
     public void Run(string script) => WhenReady(core => _ = core.ExecuteScriptAsync(script));
 
+    /// Search's own navigation: the only kind allowed into the tool pages
+    /// from a page that isn't one (see ToolsHost.MayOpen).
+    private bool ourNavigation;
+
+    private void Open(CoreWebView2 core, Uri url)
+    {
+        ourNavigation = true;
+        core.Navigate(url.AbsoluteUri);
+    }
+
     private void Received(CoreWebView2WebMessageReceivedEventArgs e)
     {
+        if (Core is { } tools && ToolsHost.Take(this, tools, e)) return;
         JsonElement message;
         try
         {
@@ -581,7 +596,7 @@ public sealed partial class Tab : Model
     {
         if (Address is not { } url) return;
         Failure = null;
-        if (Core is { } core) core.Navigate(url.AbsoluteUri);
+        if (Core is { } core) Open(core, url);
     }
 
     /// Coming back to a tab whose page quietly died while you were elsewhere.
@@ -598,7 +613,7 @@ public sealed partial class Tab : Model
     {
         if (Wake()) return;
         if (Core is not { } core) return;
-        if (core.Source == "about:blank" && Address is { } url) core.Navigate(url.AbsoluteUri);
+        if (core.Source == "about:blank" && Address is { } url) Open(core, url);
         else core.Reload();
     }
 

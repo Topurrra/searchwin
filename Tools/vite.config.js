@@ -1,46 +1,46 @@
 import { defineConfig } from "vite";
 import { sveltekit } from "@sveltejs/kit/vite";
+import { fileURLToPath } from "node:url";
 
-const host = process.env.TAURI_DEV_HOST;
+// The pages were written against Tauri; in Search they run in a tab, and
+// every Tauri module they import is answered by the shim (src/shim), which
+// talks to the Search tab holding the page.
+const shim = (file) => fileURLToPath(new URL(`./src/shim/${file}`, import.meta.url));
 
-// https://vite.dev/config/
-export default defineConfig(async () => ({
+const tauri = {
+  "@tauri-apps/api/core": "core.ts",
+  "@tauri-apps/api/event": "event.ts",
+  "@tauri-apps/api/path": "path.ts",
+  "@tauri-apps/api/app": "plugins.ts",
+  "@tauri-apps/api/dpi": "window.ts",
+  "@tauri-apps/api/window": "window.ts",
+  "@tauri-apps/api/webview": "window.ts",
+  "@tauri-apps/api/webviewWindow": "window.ts",
+  "@tauri-apps/plugin-dialog": "plugins.ts",
+  "@tauri-apps/plugin-fs": "plugins.ts",
+  "@tauri-apps/plugin-opener": "plugins.ts",
+  "@tauri-apps/plugin-notification": "plugins.ts",
+  "@tauri-apps/plugin-autostart": "plugins.ts",
+};
+
+export default defineConfig({
   plugins: [sveltekit()],
-  optimizeDeps: {
-    // Lazy-loaded screens introduce some package entrypoints only on first open.
-    // Pre-bundling them upfront avoids Vite's one-time full reload in dev when a
-    // user opens a tool for the first time after startup.
-    include: [
-      "@lucide/svelte",
-      "@tauri-apps/api/core",
-      "@tauri-apps/api/event",
-      "@tauri-apps/api/webview",
-      "@tauri-apps/plugin-autostart",
-      "@tauri-apps/plugin-dialog",
-      "@tauri-apps/plugin-fs",
-      "marked",
-    ],
+  resolve: {
+    alias: Object.entries(tauri).map(([module, file]) => ({
+      find: new RegExp(`^${module.replace(/[/-]/g, "\\$&")}$`),
+      replacement: shim(file),
+    })),
   },
-
-  // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
-  //
-  // 1. prevent Vite from obscuring rust errors
-  clearScreen: false,
-  // 2. tauri expects a fixed port, fail if that port is not available
+  optimizeDeps: {
+    include: ["@lucide/svelte", "marked"],
+  },
+  build: {
+    // Loaded from disk by the browser, not over a network: size matters
+    // less than it would on the web, but keep the warning meaningful.
+    chunkSizeWarningLimit: 1500,
+  },
   server: {
     port: 1420,
     strictPort: true,
-    host: host || false,
-    hmr: host
-      ? {
-          protocol: "ws",
-          host,
-          port: 1421,
-        }
-      : undefined,
-    watch: {
-      // 3. tell Vite to ignore watching `src-tauri`
-      ignored: ["**/src-tauri/**"],
-    },
   },
-}));
+});

@@ -20,6 +20,8 @@ public static class Address
         if (split >= 0)
         {
             var scheme = text[..split].ToLowerInvariant();
+            // search:// is Search's own: the tool pages (see ToolsHost).
+            if (scheme == "search") return ToolsHost.Resolve(text);
             if (!Ours.Contains(scheme)) return null;
             return Uri.TryCreate(text, UriKind.Absolute, out var u) ? u : null;
         }
@@ -70,6 +72,7 @@ public static class Address
     /// with the parts nobody reads taken off.
     public static string Pretty(Uri url)
     {
+        if (ToolsHost.IsTools(url)) return ToolsHost.Pretty(url);
         if (!url.IsAbsoluteUri || string.IsNullOrEmpty(url.Host)) return url.OriginalString;
         var host = url.Host;
         var bare = host.StartsWith("www.") ? host[4..] : host;

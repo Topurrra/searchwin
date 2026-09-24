@@ -17,4 +17,12 @@
     <WarningsAsErrors>$(WarningsAsErrors);IL2026;IL2046;IL2057;IL2067;IL2070;IL2072;IL2075;IL3050;IL3051</WarningsAsErrors>
   </PropertyGroup>
 
+  <ItemGroup>
+    <!--
+      FishCatcher's tables, made by Extensions/fishcatcher/parity/convert-data.mjs.
+      Read on first use, on a worker thread (FishCatcher.Warm), never at startup.
+    -->
+    <EmbeddedResource Include="FishCatcher\Data\*.json;FishCatcher\Data\*.bin" LogicalName="FishCatcher/%(Filename)%(Extension)" />
+  </ItemGroup>
+
 </Project>

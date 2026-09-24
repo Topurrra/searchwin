@@ -21,4 +21,9 @@
     <Using Include="Xunit" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- FishCatcher parity data from Extensions/fishcatcher/parity/golden.mjs. -->
+    <None Include="FishCatcher\*.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

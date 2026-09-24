@@ -59,7 +59,7 @@ public sealed partial class Browser : IPageHost
                 Fail(tab, core, e.WebErrorStatus);
                 return;
             }
-            tab.Failure = null;
+            if (tab.Failure is not { Kind: TroubleKind.Scam }) tab.Failure = null;
             tab.Uncover();
             TellStore(tab);
             // A page that arrived after a password went out: did the sign-in

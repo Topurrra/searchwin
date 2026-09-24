@@ -175,7 +175,7 @@ public sealed class Bench
     private static readonly string[] Commands =
     [
         "tabs", "open", "go", "close", "wait", "sleep", "select", "text", "eval", "click", "type", "submit", "tap",
-        "shot", "probe", "key", "press", "resize", "hit", "space", "strip", "column", "ui",
+        "shot", "probe", "key", "press", "resize", "hit", "space", "strip", "column", "ui", "fish",
     ];
 
     /// What a script may open: anything the field would take, and an
@@ -291,6 +291,28 @@ public sealed class Bench
                 if (!Store.Testing) { answer(Error("select only works on a --test run — it would take your window over")); return; }
                 if (Find(request) is not { } tab) { answer(Missing(request)); return; }
                 b.Select(tab);
+                answer(Describe(tab));
+                break;
+            }
+
+            case "fish":
+            {
+                // A scam warning's buttons, pressed: back, continue, real (go
+                // to the real site), ok (close the quiet line). They act on
+                // the tab in front, so the tab is brought there first — test
+                // runs only, like select.
+                if (!Store.Testing) { answer(Error("fish only works on a --test run — it takes your window over")); return; }
+                if (Find(request) is not { } tab) { answer(Missing(request)); return; }
+                b.Select(tab);
+                switch (Str(request, "act"))
+                {
+                    case "back": b.LeaveScam(); break;
+                    case "continue": b.ContinueToScam(); break;
+                    case "real": b.OpenRealSite(); break;
+                    case "ok": b.QuietCaution(); break;
+                    default: answer(Error("fish needs back, continue, real or ok")); return;
+                }
+                Starting(tab);
                 answer(Describe(tab));
                 break;
             }
@@ -510,7 +532,28 @@ public sealed class Bench
         ["active"] = tab.Id == browser?.ActiveID,
         ["asleep"] = tab.Asleep,
         ["dozing"] = tab.Dozing,
+        ["trouble"] = tab.Failure?.Kind.ToString(),
+        ["fish"] = Fish(tab),
     };
+
+    /// FishCatcher's verdict on the tab's page, for scripts testing it: the
+    /// level, the score, the reasons in words, and how long the address
+    /// check took.
+    private static JsonObject? Fish(Tab tab)
+    {
+        if (tab.Fish is not { } verdict) return null;
+        return new JsonObject
+        {
+            ["level"] = verdict.Level.ToString().ToLowerInvariant(),
+            ["score"] = verdict.Score,
+            ["reasons"] = new JsonArray([.. verdict.Reasons.Select(r => (JsonNode)r)]),
+            ["keys"] = new JsonArray([.. verdict.Signals.Select(s => (JsonNode)s.Key)]),
+            ["realSite"] = verdict.RealSite,
+            ["warns"] = verdict.Warns,
+            ["caution"] = tab.Caution?.Text,
+            ["ms"] = Math.Round(tab.FishMs, 3),
+        };
+    }
 
     /// True when the view holds nothing — never loaded, or emptied — while
     /// the tab still names a page. The white page, in other words.
@@ -530,6 +573,9 @@ public sealed class Bench
 
     private void Starting(Tab tab)
     {
+        // Stopped before the engine heard of it (a scam warning): nothing
+        // is going to start.
+        if (tab.Failure != null) return;
         starting[tab.Id] = DateTime.UtcNow;
         void Watch(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
         {

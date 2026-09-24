@@ -28,7 +28,11 @@ Drive the Search you already have open, from the shell.
                                            switch to the Nth, delete this one,
                                            two fingers DX points sideways over the column (hold: not let go yet),
                                            move this one to Nth
-    ./bench.ps1 hit X Y                    what a press at X Y (points from the window's top left) lands on
+    ./bench.ps1 fish ID back|continue|real|ok
+                                           a scam warning's buttons on that tab (brought to the front):
+                                           Go back, Continue anyway, Go to the real site, close the quiet line
+                                           — --test runs only. `tabs`/`wait` show FishCatcher's verdict as "fish"
+    ./bench.ps1 hit X Y                  what a press at X Y (points from the window's top left) lands on
     ./bench.ps1 ui KEY VALUE               settings/passwords/welcome/history/downloads/bookmarks/hidden on|off,
                                            look light|dark|system, sidebar on|off, spaces on|off, hides on|off,
                                            folded on|off, peek on|off
@@ -189,6 +193,10 @@ switch ($verb) {
         elseif ($what -eq 'move' -and $rest.Count -eq 2) { $request.action = 'move'; $request.index = Whole $rest[1] }
         elseif ($what) { Usage 'space [new NAME [fresh] | go N | delete | swipe DX | hold DX | release | move N]' }
     }
+    'fish' {
+        if ($rest.Count -ne 2 -or $rest[1] -notin @('back', 'continue', 'real', 'ok')) { Usage 'fish ID back|continue|real|ok' }
+        $request.id = $rest[0]; $request.act = $rest[1]
+    }
     'hit' {
         if ($rest.Count -ne 2) { Usage 'hit X Y' }
         $request.x = Number $rest[0]; $request.y = Number $rest[1]
@@ -225,7 +233,8 @@ switch ($verb) {
             $mark = if ($tab.bench) { '⚗' } elseif ($tab.active) { '●' } else { ' ' }
             $state = if ($tab.loading) { ' …' } elseif ($tab.asleep -or $tab.dozing) { ' z' } else { '' }
             $title = if ($tab.title) { $tab.title } else { '—' }
-            Write-Output "$mark $($tab.id)  $title  $($tab.url)$state"
+            $fish = if ($tab.fish -and $tab.fish.level -ne 'low') { "  [$($tab.fish.level) $($tab.fish.score)]" } else { '' }
+            Write-Output "$mark $($tab.id)  $title  $($tab.url)$state$fish"
         }
     }
     default { Write-Output ($answer | ConvertTo-Json -Depth 32) }

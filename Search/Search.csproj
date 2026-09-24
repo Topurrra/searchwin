@@ -54,6 +54,9 @@
 
   <ItemGroup>
     <Content Include="Assets\**" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Page scripts Search injects travel inside the executable, read the
+         first time a page needs them. -->
+    <EmbeddedResource Include="Assets\js\fish-probe.js" LogicalName="js/fish-probe.js" />
   </ItemGroup>
 
   <ItemGroup>

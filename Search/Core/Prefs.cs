@@ -36,6 +36,8 @@ public sealed partial class Preferences : Model
         glyph = store.String("glyph") == "icons" ? Glyph.Icons : Glyph.Letters;
         sleepsTabs = store.OptionalBool("tabs.sleep") ?? true;
         shielded = store.OptionalBool("shield") ?? true;
+        warnsOfScams = store.OptionalBool("fishcatcher") ?? true;
+        scamFeed = store.Bool("fishcatcher.feed");
         // WebView2 does passkeys through Windows Hello out of the box, so a
         // build here can always offer them.
         passkeys = store.OptionalBool("passkeys") ?? true;
@@ -85,6 +87,17 @@ public sealed partial class Preferences : Model
     private bool shielded;
     /// The ad blocker. On unless turned off; there is nothing else to it.
     public bool Shielded { get => shielded; set { if (Set(ref shielded, value)) store.Set("shield", value); } }
+
+    private bool warnsOfScams;
+    /// FishCatcher: a warning before a scam or phishing site loads. On
+    /// unless turned off; it reads addresses on this computer and asks
+    /// nobody about them.
+    public bool WarnsOfScams { get => warnsOfScams; set { if (Set(ref warnsOfScams, value)) store.Set("fishcatcher", value); } }
+
+    private bool scamFeed;
+    /// FishCatcher's daily list of newly reported scam sites. It is the one
+    /// network call FishCatcher makes, so it is off unless asked for.
+    public bool ScamFeed { get => scamFeed; set { if (Set(ref scamFeed, value)) store.Set("fishcatcher.feed", value); } }
 
     private bool passkeys;
     /// Whether sites may ask for a passkey here. Off sends them to the

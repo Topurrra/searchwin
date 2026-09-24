@@ -12,6 +12,7 @@ public sealed partial class Browser
     {
         FormRelay.PasskeysOffered = Prefs.Passkeys;
         StartShield();
+        StartFish();
         StartCurtain();
         StartPasswords();
         StartExtensions();
@@ -31,6 +32,7 @@ public sealed partial class Browser
     private void AttachFeatures(Tab tab, CoreWebView2 core)
     {
         AttachShield(tab, core);
+        AttachFish(tab, core);
         AttachCurtain(tab, core);
         AttachPasswords(tab, core);
         AttachExtensions(tab, core);
@@ -38,6 +40,7 @@ public sealed partial class Browser
     }
 
     partial void StartShield();
+    partial void StartFish();
     partial void StartCurtain();
     partial void StartPasswords();
     partial void StartExtensions();
@@ -50,6 +53,7 @@ public sealed partial class Browser
     partial void PrepareExtensions(Tab tab);
 
     partial void AttachShield(Tab tab, CoreWebView2 core);
+    partial void AttachFish(Tab tab, CoreWebView2 core);
     partial void AttachCurtain(Tab tab, CoreWebView2 core);
     partial void AttachPasswords(Tab tab, CoreWebView2 core);
     partial void AttachExtensions(Tab tab, CoreWebView2 core);

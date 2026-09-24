@@ -34,11 +34,27 @@ public static class Web
             // Nothing of Edge's own that talks to Microsoft about the pages
             // you visit, and no shopping or hub popups over them.
             AdditionalBrowserArguments =
-                "--disable-features=msSmartScreenProtection,msEdgeShoppingUI,msWebOOUI,msPdfOOUI,msHubApps",
+                "--disable-features=msSmartScreenProtection,msEdgeShoppingUI,msWebOOUI,msPdfOOUI,msHubApps" + TestArguments(),
             // Crash dumps stay on this machine: nothing is sent anywhere.
             IsCustomCrashReportingEnabled = true,
         };
         return await CoreWebView2Environment.CreateWithOptionsAsync(null, DataFolder, options);
+    }
+
+    /// Test runs only: SEARCH_HOST_RULES sends names wherever a test says
+    /// (Chromium's --host-resolver-rules, e.g. "MAP paypa1-login.com
+    /// 127.0.0.1:8766"), so a test can watch from its own little server
+    /// whether a warned-about site was ever contacted; SEARCH_NET_LOG writes
+    /// the engine's network log to a file.
+    private static string TestArguments()
+    {
+        if (!Store.Testing) return "";
+        var more = "";
+        if (System.Environment.GetEnvironmentVariable("SEARCH_HOST_RULES") is { Length: > 0 } rules && !rules.Contains('"'))
+            more += $" --host-resolver-rules=\"{rules}\"";
+        if (System.Environment.GetEnvironmentVariable("SEARCH_NET_LOG") is { Length: > 0 } log && !log.Contains('"'))
+            more += $" --log-net-log=\"{log}\"";
+        return more;
     }
 
     /// The stage every page lives on (see Stage). A page is put here the moment

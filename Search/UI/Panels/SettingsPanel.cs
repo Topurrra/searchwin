@@ -401,6 +401,14 @@ public sealed partial class SettingsPanel : Grid
             new Pill("Forget choices", browser.ForgetCaptureChoices)));
         body.Children.Add(card);
 
+        // FishCatcher. The address check is all on this computer, so it's on;
+        // the daily list is a download, so it's yours to ask for.
+        body.Children.Add(Parts.Card(
+            new Line("Warn about scam and phishing sites", "Look-alike addresses and fake sign-in pages, checked on this computer before they load",
+                new Switch(prefs.WarnsOfScams, on => prefs.WarnsOfScams = on)),
+            new Line("Daily list of reported scam sites", FishFeed.Said() ?? "Downloaded once a day from FishCatcher's registry, and only used if its signature checks out",
+                new Switch(prefs.ScamFeed, on => prefs.ScamFeed = on))));
+
         body.Children.Add(Parts.Card(
             new Line("History", "Every address you have been to", new Pill("Clear", browser.ClearHistory)),
             new Line("Cookies and sign-ins", "Signs you out of every site", new Pill("Sign out of everything", browser.ClearSites)),

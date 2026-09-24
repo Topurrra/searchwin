@@ -35,6 +35,10 @@ public static class PageScripts
         // turning it off there turns it off everywhere on the page.
         if (Browser.Shared is { Prefs.Spelling: false })
             yield return new(Spelling.Off, MainFrameOnly: false, AtEnd: false);
+        // FishCatcher's probe: what the page asks for, once it has drawn
+        // (Fish). It waits for the document itself.
+        if (Browser.Shared is { Prefs.WarnsOfScams: true })
+            yield return new(FishProbe.Script, MainFrameOnly: true, AtEnd: false);
         // This site's stylesheet of hidden things, before the body exists.
         if (css.Length > 0)
             yield return new(Veiling.Style(css), MainFrameOnly: true, AtEnd: false);

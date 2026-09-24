@@ -14,7 +14,9 @@ public sealed partial class Bars : StackPanel
     private readonly TextBlock announcementText = Kit.Text("", 12);
     private readonly Border capture = new();
     private readonly Border offer = new();
+    private readonly Border caution = new();
     private readonly Border hint;
+    private Tab? watched;
 
     public Bars(Browser browser)
     {
@@ -28,6 +30,7 @@ public sealed partial class Bars : StackPanel
         Children.Add(announcement);
         Children.Add(capture);
         Children.Add(offer);
+        Children.Add(caution);
         Children.Add(new StoreOffer(browser));
         hint = Hint("Click anything to hide it   Ctrl+Z undo   Esc done");
         Children.Add(hint);
@@ -42,8 +45,51 @@ public sealed partial class Bars : StackPanel
                 case nameof(Browser.Asking): Ask(); break;
                 case nameof(Browser.Offering): Offer(); break;
                 case nameof(Browser.Veiling): hint.Visibility = browser.Veiling ? Visibility.Visible : Visibility.Collapsed; break;
+                case nameof(Browser.Active): Watch(); break;
             }
         });
+        Watch();
+    }
+
+    /// The live tab's quiet line follows the live tab.
+    private void Watch()
+    {
+        if (watched != null) watched.PropertyChanged -= OnTab;
+        watched = browser.Active;
+        if (watched != null) watched.PropertyChanged += OnTab;
+        Caution();
+    }
+
+    private void OnTab(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(Tab.Caution)) Caution();
+    }
+
+    /// A site with a few unusual signs — not enough to stop for, enough to
+    /// say so. Quiet on purpose: the page is there and usable, and the line
+    /// only asks you to look at the address before you trust it with
+    /// anything. Closing it holds for the site until Search quits.
+    private void Caution()
+    {
+        if (watched?.Caution is not { } note)
+        {
+            caution.Visibility = Visibility.Collapsed;
+            return;
+        }
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12 };
+        var mark = Icons.Make(Icons.Warning, 12, Palette.Muted);
+        mark.VerticalAlignment = VerticalAlignment.Center;
+        row.Children.Add(mark);
+        var words = Kit.Text(note.Text, 12.5);
+        words.MaxWidth = 520;
+        words.TextTrimming = TextTrimming.CharacterEllipsis;
+        words.VerticalAlignment = VerticalAlignment.Center;
+        ToolTipService.SetToolTip(words, note.Text);
+        row.Children.Add(words);
+        if (note.RealSite is { Length: > 0 } real) row.Children.Add(Plain($"Go to {real}", browser.OpenCautionSite));
+        row.Children.Add(Plain("OK", browser.QuietCaution));
+        caution.Child = Capsule(row, new Thickness(14, 9, 14, 9));
+        caution.Visibility = Visibility.Visible;
     }
 
     /// The same white capsule, hairline and shadow for everything here.

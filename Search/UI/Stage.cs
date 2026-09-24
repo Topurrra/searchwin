@@ -22,6 +22,7 @@ public sealed partial class Stage : Grid
     private readonly TextBlock troubleDetail = Kit.Text("", 14, Palette.Muted);
     private readonly FontIcon troubleIcon = Icons.Make(Icons.Globe, 28, Palette.Muted);
     private readonly StackPanel troubleActions = new() { Orientation = Orientation.Horizontal, Spacing = 8 };
+    private readonly StackPanel troubleReasons = new() { Spacing = 6 };
     private PageTrouble? shownTrouble;
     private readonly Grid blank = new() { Background = Palette.Ground };
     private Tab? watched;
@@ -58,6 +59,9 @@ public sealed partial class Stage : Grid
         troubleDetail.TextWrapping = TextWrapping.Wrap;
         troubleDetail.LineHeight = 20;
         words.Children.Add(troubleDetail);
+        // A scam warning's reasons, one sentence each: the difference between
+        // "trust me" and something you can check for yourself.
+        words.Children.Add(troubleReasons);
         troubleActions.Margin = new Thickness(0, 8, 0, 0);
         words.Children.Add(troubleActions);
         trouble.Children.Add(words);
@@ -106,6 +110,27 @@ public sealed partial class Stage : Grid
         troubleIcon.Glyph = failure.Glyph;
         troubleText.Text = failure.Headline;
         troubleDetail.Text = failure.Detail;
+        troubleReasons.Children.Clear();
+        foreach (var reason in failure.Reasons)
+        {
+            // The dot hangs in its own column, so a reason that wraps lines
+            // up under its own first word.
+            var line = new Grid { ColumnSpacing = 8 };
+            line.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            line.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            var dot = Kit.Text("•", 13, Palette.Muted);
+            dot.VerticalAlignment = VerticalAlignment.Top;
+            dot.LineHeight = 19;
+            var words = Kit.Text(reason, 13, Palette.Muted);
+            words.TextWrapping = TextWrapping.Wrap;
+            words.LineHeight = 19;
+            Grid.SetColumn(words, 1);
+            line.Children.Add(dot);
+            line.Children.Add(words);
+            troubleReasons.Children.Add(line);
+        }
+        troubleReasons.Visibility = failure.Reasons.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        troubleIcon.Foreground = failure.Kind == TroubleKind.Scam ? Palette.Brush(Tone.Red, 0.9) : Palette.Muted;
         troubleActions.Children.Clear();
         switch (failure.Kind)
         {
@@ -120,6 +145,14 @@ public sealed partial class Stage : Grid
             case TroubleKind.Insecure:
                 troubleActions.Children.Add(Action("Go back", browser.LeaveTrouble, primary: true));
                 troubleActions.Children.Add(Action($"Continue to {failure.Host} anyway", browser.TrustAnyway, primary: false));
+                break;
+            case TroubleKind.Scam:
+                // Warned, never blocked: going on is always there, just not
+                // the button that looks like the answer.
+                troubleActions.Children.Add(Action("Go back", browser.LeaveScam, primary: true));
+                if (failure.RealSite is { Length: > 0 } real)
+                    troubleActions.Children.Add(Action($"Go to {real}", browser.OpenRealSite, primary: false));
+                troubleActions.Children.Add(Action("Continue anyway", browser.ContinueToScam, primary: false));
                 break;
             default:
                 troubleActions.Children.Add(Action("Try again", browser.TryAgain, primary: true));

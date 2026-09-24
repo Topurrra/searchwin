@@ -142,7 +142,9 @@ public sealed partial class Tab : Model
         core.Profile.PreferredColorScheme = Palette.Dark ? CoreWebView2PreferredColorScheme.Dark : CoreWebView2PreferredColorScheme.Light;
 
         // An error page's title is the engine's, not the site's.
-        core.DocumentTitleChanged += (_, _) => { if (Failure == null) Title = core.DocumentTitle ?? ""; };
+        // An empty tab (a scam warning answered with "Go back" and nothing to go
+        // back to) keeps no title from the blank page behind it.
+        core.DocumentTitleChanged += (_, _) => { if (Failure == null && Address != null) Title = core.DocumentTitle ?? ""; };
         core.SourceChanged += (_, _) =>
         {
             if (!Uri.TryCreate(core.Source, UriKind.Absolute, out var fresh)) return;
@@ -173,7 +175,9 @@ public sealed partial class Tab : Model
             // Search's trouble page stays up until real content arrives, and
             // covers the engine's error page from the moment it does — so
             // Edge's "can't reach this page" is never seen, not even in passing.
-            if (!e.IsErrorPage) Failure = null;
+            // A scam warning is the exception: it stays until you answer it
+            // or go somewhere else (see Browser.Fish).
+            if (!e.IsErrorPage) { if (Failure is not { Kind: TroubleKind.Scam }) Failure = null; }
             else if (Failure == null) Fail(new PageTrouble(TroubleKind.Broken, PageTrouble.HostOf(Address)));
         };
         core.DOMContentLoaded += (_, _) =>
@@ -343,8 +347,17 @@ public sealed partial class Tab : Model
         Pending = null;
         Cover = null;
         AdoptIcon();
+        if (Forewarned(url)) return;
         WhenReady(core => Open(core, url));
     }
+
+    /// Asked before an address is handed to the engine (see Browser.Fish):
+    /// true keeps it from the engine, and the tab shows why instead. The
+    /// engine starts talking to a site — its name, a connection — the moment
+    /// it is told where to go, before it asks anyone whether it may.
+    public static Func<Tab, Uri, bool>? Forewarn { get; set; }
+
+    private bool Forewarned(Uri url) => Forewarn?.Invoke(this, url) == true;
 
     private Uri? pending;
     /// Set on a tab brought back from the last session and not yet opened. It
@@ -387,7 +400,7 @@ public sealed partial class Tab : Model
         Reader = false;
         Typing = false;
         Immersed = false;
-        WhenReady(core => Open(core, url));
+        if (!Forewarned(url)) WhenReady(core => Open(core, url));
         return true;
     }
 

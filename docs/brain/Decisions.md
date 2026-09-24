@@ -164,3 +164,15 @@ Newest at the bottom.
 - **How:** `ContentLoading.IsErrorPage` covers the engine's error page the
   moment it arrives. `ServerCertificateErrorDetected` → Cancel shows our
   warning. `AreDefaultScriptDialogsEnabled = false` + `ScriptDialogOpening`, and `BasicAuthenticationRequested`.
+
+### D27 · FishCatcher warns by default; its feed is opt-in (2026-09-25)
+- **Decision:** "Warn about scam and phishing sites" is on for everyone: the
+  check is all on the computer and asks nobody. The daily signed feed is off
+  until turned on in Settings › Privacy, because it's a download (the
+  no-network rule; the extension made it opt-in too).
+- **Warn, never block:** High/Critical get Search's warning page with a quiet
+  "Continue anyway" (that host, until quit); Elevated gets a line at the
+  bottom; frames are left alone. Fail open on anything unexpected.
+- **How:** checked before `Navigate()`, in `NavigationStarting`, and at the
+  document request (`WebResourceRequested`), since the event alone doesn't
+  hold the request back (see [[Lessons Learned]]).

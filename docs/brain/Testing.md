@@ -50,6 +50,22 @@ speaks the same commands as the Mac's `./bench`:
 
 Add `--test` to talk to a debug build. Bench URLs may be `http(s)` or `chrome-extension://`.
 
+### Testing FishCatcher (scam warnings)
+
+- `tabs`, `wait` and `open` answer with `"fish"`: the verdict's level, score,
+  reasons (`reasons`, and the extension's keys in `keys`), `realSite`, the
+  quiet line's text (`caution`) and how long the address check took (`ms`).
+  `"trouble": "Scam"` means the warning page is up.
+- `./bench.ps1 fish <id> back|continue|real|ok` presses the warning's buttons
+  on that tab (test runs only; it brings the tab to the front).
+- **Was the site contacted?** In a test run, `SEARCH_HOST_RULES` passes
+  Chromium's `--host-resolver-rules` (e.g. `MAP paypa1-secure-login.com
+  127.0.0.1:8767`), so a lookalike name can point at a small local server that
+  logs every connection and request. `SEARCH_NET_LOG=C:/path/net.json` writes
+  the engine's network log. Both only work when `Store.Testing`.
+- `Get-DnsClientCache | Where-Object Entry -match <name>` shows whether a
+  name was looked up at all (a made-up name leaves a "9003" entry).
+
 ## Verifying on screen
 
 The bench can't see WinUI chrome (menus, dialogs, flyouts). To test those,

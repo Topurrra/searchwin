@@ -26,6 +26,7 @@ behave like the Mac app, with the same UI, keys and data.
 | [[Windows vs Mac]] | Where the port differs from the Mac app on purpose, and what's missing |
 | [[Decisions]] | Why things are the way they are (ADR log) |
 | [[Lessons Learned]] | Every gotcha we hit: symptom, cause, fix |
+| [[FishCatcher Port]] | Scam and phishing warnings: the C# engine (parity with the extension) and how the browser uses it |
 | [[Roadmap]] | What comes next: installer variant, C++ frame, signing, updates |
 | [[Ideas/Agentic Browser]] | Proposal: Brave-grade shields plus a private, visible AI agent |
 | [[Ideas/Built-in Tools]] | Brainstorm: converters, bangs, voice, clipboard, file search, FishCatcher, file manager, free AI — checked against the user's own projects |

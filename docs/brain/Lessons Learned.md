@@ -320,3 +320,26 @@ the fix lives. *(uncertain)* marks things that weren't proven.
   --tree-filter` over `origin/main..main`, with a backup branch first.
 - **`sed -i` in Git Bash strips CRLF.** Use `sed -b -i` to keep a Windows
   file's line endings, or the whole file shows as changed.
+
+### FishCatcher in the browser (2026-09-25)
+- **`NavigationStarting` is not a gate for the network.** A local server got
+  `GET /secret-path` 17 ms after `location.href=…`, while the handler was
+  still running (it slept 5 s to prove it); the netlog shows a preconnect and
+  the main-frame request starting alongside the event. Cancelling stops the
+  page, not the request. Fix: `WebResourceRequested` on document requests
+  (`Fish.cs`) answers the stopped request with an empty 204 before it leaves.
+- **`CoreWebView2.Navigate()` looks the name up before `NavigationStarting`**
+  too (a made-up name showed in `Get-DnsClientCache`). Fix: check before
+  handing the engine an address (`Tab.Forewarn`); then there is no lookup at all.
+- **Engine-started navigations still get a speculative TCP/TLS connection**
+  before any event reaches the host. `--disable-features=SpeculativePreconnect`
+  (gone from Chromium 153) and `LoadingPredictor` didn't stop it *(which
+  feature does is unknown)*.
+- **`--host-resolver-rules`** (test runs: `SEARCH_HOST_RULES`) points a
+  lookalike name at a local server, which then shows exactly which connections
+  and requests a site would have seen. `*.localhost` is no substitute: FishCatcher never scores it.
+- **Tools:** in this shell, `\x` inside a bash heredoc reached the file as a
+  real character (a Segoe glyph became "çBA"); put such constants in C# with the
+  Edit tool. The Edit tool also once dropped a space after `=` in a line it
+  matched. Check `git diff` for line endings after scripted edits: a CRLF file
+  (`Bench.cs`) came back LF.

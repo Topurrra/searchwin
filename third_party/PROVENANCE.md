@@ -9,6 +9,7 @@ Every tree copied into this repo from another project. The source repos are neve
 | `docs/workspace/` | KeepItLocal-Workspace README, KeepItLocal.md, roadmap, docs | `df919f2` | `CLAUDE.md`/`AGENTS.md` renamed `workspace-*.md` so agents don't load them as instructions |
 | `Extensions/fishcatcher/` | FishCatcher `src/`, LICENSE, README, CHANGELOG | `04f31ab` (2026-08-23) | MIT. `src/vendor/jsQR` is Apache-2.0 |
 | `Search.Kit/FishCatcher/Data/` | `Extensions/fishcatcher/src/data/`, via `parity/convert-data.mjs` | same | MIT. `psl.json` is the Public Suffix List (publicsuffix.org), MPL-2.0, unmodified |
+| `Search/Assets/js/fish-probe.js` | Adapted from `Extensions/fishcatcher/src/probe/probe.js` and the text matchers in `src/engine/aitm.js`, `devicecode.js`, `scampacks.js` | same | MIT. Only the page-fact collectors and matchers; the extension's banners, QR and link scan are left out |
 
 ## Third-party binaries (not in the repo yet)
 When the packs ship, add a NOTICE for each:

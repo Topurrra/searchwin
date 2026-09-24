@@ -56,6 +56,10 @@
     <Content Include="Assets\**" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\Search.Kit\Search.Kit.csproj" />
+  </ItemGroup>
+
   <!-- An unpackaged publish leaves out the app's resource index (Search.pri)
        and its compiled XAML, which a build puts beside the exe. Without the
        index WinUI can't find its own themes: dialogs come up square, fields

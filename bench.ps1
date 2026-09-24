@@ -193,6 +193,11 @@ switch ($verb) {
         if ($rest.Count -ne 2) { Usage 'hit X Y' }
         $request.x = Number $rest[0]; $request.y = Number $rest[1]
     }
+    'engine' {
+        if ($rest.Count -notin @(1, 2)) { Usage 'engine METHOD [PARAMS-JSON]' }
+        $request.method = $rest[0]
+        if ($rest.Count -eq 2) { $request.params = $rest[1] | ConvertFrom-Json -AsHashtable }
+    }
     { $_ -in @('tabs', 'probe') } { }
     default { Fail ('unknown command “' + $verb + '” — see bench.ps1 help') }
 }
@@ -206,6 +211,10 @@ switch ($verb) {
         if ($answer.truncated) { [Console]::Error.WriteLine("`n[… truncated]") }
     }
     'shot' { Write-Output $answer.path }
+    'engine' {
+        $value = $answer.result
+        if ($value -is [string]) { Write-Output $value } else { Write-Output ($value | ConvertTo-Json -Depth 32) }
+    }
     'open' { Write-Output $answer.id }
     'eval' {
         $value = $answer.value

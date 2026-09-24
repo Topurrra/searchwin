@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Search's logic that has nothing to do with drawing: the engine client, the
+    command registry, converters, shields, FishCatcher. No WinUI, no WebView2,
+    so it builds and tests anywhere .NET does, and the browser links it in.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <!-- Not "Search.Kit": the browser has a UI class called Kit in namespace Search. -->
+    <RootNamespace>SearchKit</RootNamespace>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <!-- The browser ships as Native AOT: anything here must survive it. -->
+    <IsAotCompatible>true</IsAotCompatible>
+    <WarningsAsErrors>$(WarningsAsErrors);IL2026;IL2046;IL2057;IL2067;IL2070;IL2072;IL2075;IL3050;IL3051</WarningsAsErrors>
+  </PropertyGroup>
+
+</Project>

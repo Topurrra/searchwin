@@ -205,6 +205,28 @@ public sealed class Bench
 
         switch (verb)
         {
+            // One call to the engine, as the tool pages will make them. Test
+            // runs only for now: its commands include ones that shred files.
+            case "engine":
+            {
+                if (!Store.Testing) { answer(Error("engine only works on a --test run for now")); return; }
+                if (Str(request, "method") is not { } method) { answer(Error("engine needs a method")); return; }
+                var args = request["params"]?.DeepClone();
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        var result = await Engine.Client.CallAsync(method, args);
+                        UI.Do(() => answer(new JsonObject { ["result"] = result }));
+                    }
+                    catch (Exception e)
+                    {
+                        UI.Do(() => answer(Error(e.Message)));
+                    }
+                });
+                break;
+            }
+
             case "tabs":
                 answer(new JsonObject { ["tabs"] = new JsonArray([.. b.Tabs.Select(t => (JsonNode)Describe(t))]) });
                 break;

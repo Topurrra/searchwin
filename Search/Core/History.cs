@@ -14,6 +14,8 @@ public enum SuggestionKind
     Known,
     /// Not a place at all — words, and an engine to ask.
     Search,
+    /// Something Search does (`>…`), from the command registry.
+    Command,
 }
 
 public sealed record Suggestion(string Key, string Title, Uri Url, SuggestionKind Kind, Guid? Tab = null)

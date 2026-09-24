@@ -49,6 +49,31 @@ if ($LASTEXITCODE -ne 0) { throw "build failed" }
 # it runs. The Mac keeps its dSYM the same way.
 Get-ChildItem $out -Filter *.pdb | Move-Item -Destination build -Force
 
+# The engine (Workspace's Rust core, Engine/) and the tool pages (Tools/)
+# travel beside Search.exe. Heavy engine features (voice, OCR, semantic…)
+# are packs and aren't built in here.
+if (Get-Command cargo -ErrorAction SilentlyContinue) {
+    Push-Location Engine
+    cargo build --release --no-default-features
+    $built = $LASTEXITCODE
+    Pop-Location
+    if ($built -ne 0) { throw "the engine didn't build" }
+    Copy-Item Engine\target\release\kil-engine.exe $out
+} else {
+    "No Rust toolchain here: building without the engine."
+}
+if (Get-Command pnpm -ErrorAction SilentlyContinue) {
+    Push-Location Tools
+    pnpm install --frozen-lockfile
+    pnpm build
+    $built = $LASTEXITCODE
+    Pop-Location
+    if ($built -ne 0) { throw "the tool pages didn't build" }
+    Copy-Item Tools\dist -Destination "$out\tools" -Recurse
+} else {
+    "No pnpm here: building without the tool pages."
+}
+
 $size = (Get-ChildItem $out -Recurse | Measure-Object Length -Sum).Sum / 1MB
 "built: $out\Search.exe  ({0:N0} MB)" -f $size
 

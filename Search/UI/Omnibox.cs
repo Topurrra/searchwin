@@ -331,6 +331,10 @@ public sealed partial class Omnibox : Grid
                 case SuggestionKind.Search:
                     line.Children.Add(Icons.Make(Icons.Search, 11));
                     break;
+                case SuggestionKind.Command:
+                    // Something Search does, rather than somewhere to go.
+                    line.Children.Add(Icons.Make("\uE756", 11));
+                    break;
                 case SuggestionKind.Open:
                     // Already open: naming it takes you back to it rather than
                     // opening a second copy.

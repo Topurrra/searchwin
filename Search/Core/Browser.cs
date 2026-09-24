@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using SearchKit.Commands;
 using Windows.ApplicationModel.DataTransfer;
 
 namespace Search;
@@ -150,6 +151,7 @@ public sealed partial class Browser : Model
     public Browser()
     {
         Shared = this;
+        Commands.Attach(this);
         Folded = Prefs.SideHides;
         Welcoming = !Prefs.Welcomed;
 
@@ -865,6 +867,29 @@ public sealed partial class Browser : Model
             return;
         }
 
+        // `>…` is a command and `!…` a bang: the list is what they could mean,
+        // the first already chosen so Enter does it.
+        switch (FieldInput.Read(Typed, Commands.Bangs))
+        {
+            case FieldInput.ToCommand command:
+                Offers = [.. Commands.Registry.Find(command.Query, 6).Select(match => new Suggestion(
+                    match.Argument.Length > 0 ? $"{match.Command.Title} “{match.Argument}”" : match.Command.Title,
+                    match.Command.Keys ?? match.Command.Group ?? "",
+                    Commands.Address(match.Command, match.Argument),
+                    SuggestionKind.Command))];
+                Ending = null;
+                Picked = Offers.Count == 0 ? null : 0;
+                Tell(nameof(Completed));
+                return;
+            case FieldInput.ToBang bang:
+                var there = bang.Query.Length == 0 ? bang.Bang.Home() : bang.Bang.For(bang.Query);
+                Offers = there == null ? [] : [new Suggestion(bang.Query.Length == 0 ? bang.Bang.Name : bang.Query, bang.Bang.Name, there, SuggestionKind.Search)];
+                Ending = null;
+                Picked = Offers.Count == 0 ? null : 0;
+                Tell(nameof(Completed));
+                return;
+        }
+
         // Three places and, if it can't be a place, a search. No open pages:
         // Ctrl+K exists for those.
         var list = History.Suggestions(Typed, 3);
@@ -901,6 +926,14 @@ public sealed partial class Browser : Model
     public void Take(Suggestion offer)
     {
         Summoning = false;
+        if (Commands.From(offer.Url) is { } chosen)
+        {
+            Editing = false;
+            Typed = "";
+            Picked = null;
+            Commands.Run(chosen.Command, chosen.Argument);
+            return;
+        }
         if (offer.Tab is { } id && Tabs.FirstOrDefault(t => t.Id == id) is { } tab) Select(tab);
         else if ((Active ?? Tabs.FirstOrDefault()) is { } here) Go(here, offer.Url);
         Editing = false;
@@ -978,6 +1011,21 @@ public sealed partial class Browser : Model
                 Editing = false;
                 return;
             }
+        }
+
+        // A command runs; a command that matches nothing is refused rather
+        // than searched for.
+        if (Picked is { } c && c < Offers.Count && Commands.From(Offers[c].Url) is { } chosen)
+        {
+            Editing = false;
+            Typed = "";
+            Commands.Run(chosen.Command, chosen.Argument);
+            return;
+        }
+        if (FieldInput.Read(Typed, Commands.Bangs) is FieldInput.ToCommand)
+        {
+            Refusals++;
+            return;
         }
 
         Uri? target;

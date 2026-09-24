@@ -612,12 +612,15 @@ public sealed partial class Browser : Model
         Typed = "";
     }
 
-    /// Ctrl+Shift+C. The address, in the clipboard, and a line that says so.
+    /// Ctrl+Shift+C. The address, in the clipboard, and a line that says so —
+    /// without its tracking tags, when those are being taken off, so the
+    /// link you pass on doesn't carry them either.
     public void CopyAddress()
     {
         if (Active?.Address is not { } url) return;
-        Copy(url.AbsoluteUri);
-        Announce("Address copied");
+        var clean = Prefs.TidiesLinks ? Shield.Shared.Tidy(url) : null;
+        Copy((clean ?? url).AbsoluteUri);
+        Announce(clean != null ? "Address copied, without its tracking tags" : "Address copied");
     }
 
     public static void Copy(string text)

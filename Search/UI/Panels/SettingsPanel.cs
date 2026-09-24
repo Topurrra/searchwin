@@ -228,7 +228,8 @@ public sealed partial class SettingsPanel : Grid
 
     private void Shielding(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(Shield.Trouble) && page == Page.Privacy) UI.Do(Show);
+        // The lists coming in (or going) change what the lines say.
+        if (e.PropertyName is nameof(Shield.Trouble) or nameof(Shield.List) && page == Page.Privacy) UI.Do(Show);
     }
 
     private void Browsing(object? sender, PropertyChangedEventArgs e)
@@ -374,11 +375,19 @@ public sealed partial class SettingsPanel : Grid
     private void Privacy(StackPanel body)
     {
         var card = Parts.Card(
-            new Line("Block ads and trackers", shield.Trouble ?? "Third parties whose only job is to watch",
+            new Line("Block ads and trackers", shield.Trouble ?? "Third parties whose only job is to watch, and the slots their ads go in",
                 new Switch(prefs.Shielded, on => prefs.Shielded = on)));
         if (shield.Trouble is { } trouble)
             card.Add(new Line(trouble, "Nothing is being blocked until this clears — try again, or restart Search",
                 new Pill("Try again", shield.Compile)));
+        // The lists are a download, so they're asked for, not assumed (D28).
+        card.Add(new Line("Full ad and tracker lists",
+            (shield.List != null ? ShieldLists.Said() : null) ?? "EasyList and EasyPrivacy, downloaded from easylist.to and checked once a day",
+            new Switch(prefs.ShieldLists, on => prefs.ShieldLists = on)));
+        card.Add(new Line("Remove tracking from links", "Tags like utm_ and fbclid, redirect wrappers, and AMP pages",
+            new Switch(prefs.TidiesLinks, on => prefs.TidiesLinks = on)));
+        card.Add(new Line("Dismiss cookie banners", "Says no for you where a site lets it — never yes",
+            new Switch(prefs.RejectsCookies, on => prefs.RejectsCookies = on)));
         if (browser.HereHost is { } host && shield.Trouble == null)
         {
             card.Add(new Line($"Block on {host}", "Turn off here if the site breaks — the page reloads",

@@ -57,6 +57,8 @@
     <!-- Page scripts Search injects travel inside the executable, read the
          first time a page needs them. -->
     <EmbeddedResource Include="Assets\js\fish-probe.js" LogicalName="js/fish-probe.js" />
+    <!-- Shields' page scripts: read once, when the first page is armed. -->
+    <EmbeddedResource Include="Assets\js\youtube-shield.js;Assets\js\cookie-reject.js;Assets\js\amp-canonical.js" LogicalName="js/%(Filename)%(Extension)" />
   </ItemGroup>
 
   <ItemGroup>

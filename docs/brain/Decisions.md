@@ -176,3 +176,24 @@ Newest at the bottom.
 - **How:** checked before `Navigate()`, in `NavigationStarting`, and at the
   document request (`WebResourceRequested`), since the event alone doesn't
   hold the request back (see [[Lessons Learned]]).
+
+### D28 · Shields: one "*" filter and our own matcher; the full lists are opt-in (2026-09-25)
+- **Decision:** the engine gets one request filter (`*`, all contexts, the
+  page's own requests) and every request is decided in `Shield.cs` against a
+  compiled list (`SearchKit.Shields.FilterList`), the spike's option B. One
+  filter per domain (the old way) costs more to add with every filter: 37 s
+  a tab at 10k filters, about an hour at 100k. The MV3 extension (option C)
+  stays the fallback if UI-thread contention ever shows.
+- **The lists are opt-in:** "Full ad and tracker lists" (EasyList +
+  EasyPrivacy from easylist.to, checked once a day) is **off** until turned on
+  in Settings › Privacy, because it's a download (the no-network rule in
+  CLAUDE.md; the Cloud Agent Brief calls filter lists "user-started
+  downloads"; D27 did the same for FishCatcher's feed). Without them the
+  built-in 44 domains and 9 slot selectors block, as before. **To make them
+  the default, flip `shield.lists` in `Prefs.cs`** — nothing else changes.
+- **On by default** (all on this computer, nothing asked of anyone): blocking,
+  "Remove tracking from links" (tags, redirect wrappers, AMP) and "Dismiss
+  cookie banners" (reject only, never accept).
+- **Cosmetics:** one shared stylesheet per list (the same for every page,
+  handed over once per tab and adopted by the page) plus a small per-site one
+  swapped in at each navigation. Pausing a site turns all of it off there.

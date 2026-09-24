@@ -85,6 +85,8 @@ public static class Bridge
     """;
 
     public static string Port(string script) =>
+        // Most scripts never say it, and some are 200 KB of stylesheet.
+        !script.Contains("window.webkit.", StringComparison.Ordinal) ? script :
         System.Text.RegularExpressions.Regex.Replace(
             script,
             @"window\.webkit\.messageHandlers\.(\w+)\.postMessage\(",

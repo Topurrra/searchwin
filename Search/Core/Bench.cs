@@ -534,6 +534,7 @@ public sealed class Bench
         ["dozing"] = tab.Dozing,
         ["trouble"] = tab.Failure?.Kind.ToString(),
         ["fish"] = Fish(tab),
+        ["shield"] = ShieldOf(tab),
     };
 
     /// FishCatcher's verdict on the tab's page, for scripts testing it: the
@@ -554,6 +555,19 @@ public sealed class Bench
             ["ms"] = Math.Round(tab.FishMs, 3),
         };
     }
+
+    /// Shields on the tab's page: requests refused since it started loading,
+    /// how many crossed over to be decided and the UI-thread time that took,
+    /// whether its site is paused, and how many rules the list in force has
+    /// (0: the built-in 44 domains).
+    private static JsonObject ShieldOf(Tab tab) => new()
+    {
+        ["blocked"] = tab.Blocked,
+        ["paused"] = Shield.Shared.IsPaused(Curtain.Host(tab.Address)),
+        ["seen"] = tab.ShieldSeen,
+        ["ms"] = Math.Round(tab.ShieldMs, 3),
+        ["rules"] = Shield.Shared.List is { } list ? list.Stats.NetworkRules + list.Stats.NetworkExceptions + list.Stats.CosmeticRules + list.Stats.CosmeticExceptions : 0,
+    };
 
     /// True when the view holds nothing — never loaded, or emptied — while
     /// the tab still names a page. The white page, in other words.

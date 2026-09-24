@@ -36,6 +36,9 @@ public sealed partial class Preferences : Model
         glyph = store.String("glyph") == "icons" ? Glyph.Icons : Glyph.Letters;
         sleepsTabs = store.OptionalBool("tabs.sleep") ?? true;
         shielded = store.OptionalBool("shield") ?? true;
+        shieldLists = store.Bool("shield.lists");
+        tidiesLinks = store.OptionalBool("shield.links") ?? true;
+        rejectsCookies = store.OptionalBool("shield.cookies") ?? true;
         warnsOfScams = store.OptionalBool("fishcatcher") ?? true;
         scamFeed = store.Bool("fishcatcher.feed");
         // WebView2 does passkeys through Windows Hello out of the box, so a
@@ -87,6 +90,23 @@ public sealed partial class Preferences : Model
     private bool shielded;
     /// The ad blocker. On unless turned off; there is nothing else to it.
     public bool Shielded { get => shielded; set { if (Set(ref shielded, value)) store.Set("shield", value); } }
+
+    private bool shieldLists;
+    /// EasyList and EasyPrivacy in place of the short built-in list. They
+    /// are downloads — the one network call the blocker makes, once a day —
+    /// so they are off unless asked for (see Decisions D28).
+    public bool ShieldLists { get => shieldLists; set { if (Set(ref shieldLists, value)) store.Set("shield.lists", value); } }
+
+    private bool tidiesLinks;
+    /// Tracking tags taken off addresses (utm_…, click ids), redirect
+    /// wrappers unwrapped, AMP pages swapped for the real one. On unless
+    /// turned off.
+    public bool TidiesLinks { get => tidiesLinks; set { if (Set(ref tidiesLinks, value)) store.Set("shield.links", value); } }
+
+    private bool rejectsCookies;
+    /// Cookie banners answered "no" where a page lets that be said, and
+    /// hidden where it doesn't. On unless turned off.
+    public bool RejectsCookies { get => rejectsCookies; set { if (Set(ref rejectsCookies, value)) store.Set("shield.cookies", value); } }
 
     private bool warnsOfScams;
     /// FishCatcher: a warning before a scam or phishing site loads. On

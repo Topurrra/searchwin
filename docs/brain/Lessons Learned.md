@@ -343,3 +343,29 @@ the fix lives. *(uncertain)* marks things that weren't proven.
   Edit tool. The Edit tool also once dropped a space after `=` in a line it
   matched. Check `git diff` for line endings after scripted edits: a CRLF file
   (`Bench.cs`) came back LF.
+
+### Shields 2.0 (2026-09-25)
+- **Every `WebResourceRequested` handler hears every request that matches
+  any filter on that view.** FishCatcher's document filter delivers to
+  Shield's handler and the other way round; each handler checks the context
+  itself.
+- **Real lists are mostly names:** 93k of EasyList + EasyPrivacy's 110k
+  network rules are `||domain^`. A name set instead of rule objects halved the
+  memory. Measure with the real list, not a synthetic one.
+- **One bad selector drops its whole CSS rule.** Chunk generic selectors (100
+  a rule) and refuse extended syntax (`:-abp-`, `:has-text(`…) and anything
+  that could close the rule (`{`, `}`, `;`, comments).
+- **`adoptedStyleSheets` works at document creation**, before
+  `documentElement` exists, and isn't blocked by a page's CSP the way an
+  injected `<style>` is.
+- **Auto-reject must not be clever.** Substring matching would click a
+  headline "Senate to reject the bill"; an unconditional CMP `RejectAll`
+  overrides the choice a person made on the site. Whole text, inside a
+  consent container, and only while consent is pending.
+- **Cleaning a URL is a navigation Search starts**, and those are allowed into
+  `tools.search`; never let a tidied (or unwrapped) address lead there.
+- **`pwsh -File x.ps1 -Modes a,b` passes one string.** A hashtable lookup on
+  it gave `$null`, the test world got an empty `settings.json`, and Search
+  quarantined it (`settings.unreadable-*.json`).
+- Stopping `Get-Process Search` would also stop a real Search; stop test
+  runs by PID.

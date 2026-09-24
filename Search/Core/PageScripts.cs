@@ -23,6 +23,11 @@ public static class PageScripts
 {
     public static IEnumerable<PageScript> For(Tab tab, string css)
     {
+        // Shields first: the ad-slot stylesheet, YouTube's player data
+        // pruned before YouTube reads it, cookie banners, AMP (Shield).
+        if (Browser.Shared is { } browser)
+            foreach (var script in Shield.Shared.Scripts(browser.Prefs))
+                yield return script;
         // The pointing mode that hides things (Curtain).
         yield return new(Veiling.Picker, MainFrameOnly: true, AtEnd: false);
         // Sign-ins: where they are, what was sent (Forms).

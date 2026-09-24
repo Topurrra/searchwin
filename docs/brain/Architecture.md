@@ -52,7 +52,8 @@ Every control is built in code.
 | `History.cs` / `Bookmarks.cs` / `Loot.cs` | `history.json` / `bookmarks.json` / `downloads.json` |
 | `Space.cs` | `spaces.json`, icons, profile names |
 | `Address.cs` | What the field's text means: address, search, refused scheme |
-| `Shield.cs` | The ad blocker: `WebResourceRequested` filters per domain |
+| `Shield.cs` | Shields: one `*` request filter decided against a compiled list (`SearchKit.Shields`), the shared and per-site ad-slot stylesheets, tracking tags and redirect wrappers off addresses (`Tab.Tidy`, `NavigationStarting`, Copy Address), the page scripts (YouTube, cookie banners, AMP), per-site pause |
+| `ShieldLists.cs` | EasyList + EasyPrivacy: opt-in download from easylist.to, daily check (ETag), compiled blob in `Shields\`, fails open to the built-in 44 domains |
 | `Fish.cs` | FishCatcher (scam and phishing warnings): the address check before the engine is told (`Tab.Forewarn`), in `NavigationStarting`, and as a gate on document requests; the probe's facts; the opt-in daily feed (`FishFeed`). See [[FishCatcher Port]] |
 | `Curtain.cs` | Hide elements for good (`hidden.json`), with the picker script |
 | `Reader.cs` | Reading mode (leaving it reloads the page) |
@@ -94,6 +95,7 @@ Every control is built in code.
 - `settings.json`, `session*.json`, `history.json`, `bookmarks.json`,
   `downloads.json`, `hidden.json`, `spaces.json`, an icons folder
 - `FishCatcher\`: the daily scam-site feed and its state, only once it's turned on
+- `Shields\`: EasyList/EasyPrivacy text, the compiled `lists.bin` and `lists.json` (tags, dates), only once the full lists are turned on
 - `WebView2\`: the engine's profiles (cookies, caches); one profile per space
 - `Extensions\`: unpacked extensions
 - Passwords are **not** on disk. They're in Credential Manager as generic credentials `Search:…`.

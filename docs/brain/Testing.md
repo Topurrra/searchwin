@@ -66,6 +66,22 @@ Add `--test` to talk to a debug build. Bench URLs may be `http(s)` or `chrome-ex
 - `Get-DnsClientCache | Where-Object Entry -match <name>` shows whether a
   name was looked up at all (a made-up name leaves a "9003" entry).
 
+### Testing Shields
+
+- `tabs`, `wait` and `open` answer with `"shield"`: requests refused on the
+  page since it started loading (`blocked`), requests that crossed over to be
+  decided (`seen`) and the UI-thread time spent deciding them (`ms`), whether
+  the site is paused, and how many rules the list in force has (`rules`; 0 is
+  the built-in 44 domains).
+- A test world gets the full lists with `"shield.lists": true` in its
+  `settings.json`; they download 20 s after launch (or at once when switched
+  on in Settings) into `Search (<world>)\Shields`. Copy that folder into
+  another world to skip the download; `lists.bin` loads in ~35 ms.
+- What was blocked: `performance.getEntriesByType('resource')` via `eval` —
+  a refused request is an entry with `responseStatus` 0.
+- `pwsh -File script.ps1 -Modes a,b` hands the script **one string**
+  `"a,b"`, not two; use the defaults or `-Command` for array parameters.
+
 ## Verifying on screen
 
 The bench can't see WinUI chrome (menus, dialogs, flyouts). To test those,

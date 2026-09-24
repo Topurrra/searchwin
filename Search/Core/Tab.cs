@@ -335,6 +335,10 @@ public sealed partial class Tab : Model
 
     public void Go(Uri url)
     {
+        // Tracking tags off and redirect wrappers opened before the engine
+        // hears of it, so the site never sees the dirty address at all (see
+        // Shield.Tidy).
+        url = Tidy?.Invoke(url) ?? url;
         // Set straight away rather than waiting for the engine: the tab has to
         // stop being blank in the same frame the field disappears, or the empty
         // state flashes back for an instant on its way out.
@@ -358,6 +362,15 @@ public sealed partial class Tab : Model
     public static Func<Tab, Uri, bool>? Forewarn { get; set; }
 
     private bool Forewarned(Uri url) => Forewarn?.Invoke(this, url) == true;
+
+    /// Asked before an address is handed to the engine: a cleaner one to go
+    /// to instead, or null to go where asked.
+    public static Func<Uri, Uri?>? Tidy { get; set; }
+
+    private int blocked;
+    /// Requests the blocker refused on this page, counted since it started
+    /// loading — for the bench now, for a shields sheet later.
+    public int Blocked { get => blocked; set => Set(ref blocked, value); }
 
     private Uri? pending;
     /// Set on a tab brought back from the last session and not yet opened. It

@@ -1,19 +1,30 @@
 using Microsoft.Web.WebView2.Core;
+using SearchKit.Shields;
 
 namespace Search;
 
-// The ad blocker. No settings, no counter, no shield icon going green — it is
-// put together once at launch and then it is simply true that the page is
-// lighter.
+// The ad blocker. No counter on the toolbar, no shield icon going green — it
+// is simply true that the page is lighter.
 //
 // The Mac hands WebKit a compiled content rule list, enforced inside its
-// networking before a request is made. WebView2 has no such list, so this is
-// the nearest thing that costs as little: one request filter per unwanted
-// domain, given to the engine itself. The engine matches every request against
-// them in its own network service, and only a request to one of these domains
-// ever crosses over to this process to be refused. Everything else — the page,
-// its pictures, its own scripts — never wakes the app at all, which is the
-// whole difference between this and a blocker written in JavaScript.
+// networking before a request is made. WebView2 has no such list. The first
+// version here gave the engine one request filter per unwanted domain, which
+// was as cheap as it gets for 44 domains — and hopeless for a real list:
+// each filter costs more to add than the last, so EasyList's hundred
+// thousand would take an hour per tab (see the spike in Lessons Learned).
+// So the engine is given one filter, "*", and every request a page makes
+// crosses over to be decided here, against a compiled list
+// (SearchKit.Shields.FilterList): about ten microseconds a request, on the
+// UI thread, which is why the check allocates as little as it can and never
+// waits on anything.
+//
+// The list itself: EasyList and EasyPrivacy when you've asked for them
+// (they're downloads — see ShieldLists), and otherwise the 44 domains below,
+// which are always there to fall back on. Around it, the rest of Shields:
+// a stylesheet for ad slots before the page draws, tracking tags taken off
+// addresses, YouTube's ads taken out of its player data, cookie banners
+// answered "no", AMP pages swapped for the real one — each of them off for
+// any site you pause.
 public sealed partial class Shield : Model
 {
     public static readonly Shield Shared = new();
@@ -22,7 +33,11 @@ public sealed partial class Shield : Model
     /// On unless somebody said otherwise. Every open page is told when this
     /// changes, so it takes effect on the next request rather than the next
     /// launch.
-    public bool Enabled { get => enabled; set => Set(ref enabled, value); }
+    public bool Enabled
+    {
+        get => enabled;
+        set { if (Set(ref enabled, value)) Changed(); }
+    }
 
     private string? trouble;
     /// Set the one time putting the list together didn't work. The toggle in
@@ -41,16 +56,31 @@ public sealed partial class Shield : Model
 
     /// Blocking off (or back on) for one site that breaks with it. Requests
     /// are decided as they are made, so it holds from the next one; the
-    /// stylesheet for ad slots follows at the next page, the way the Mac tunes
-    /// its rule list per page.
+    /// stylesheets and page scripts follow at the next page.
     public void Pause(string host, bool paused)
     {
         if (paused) this.paused.Add(host); else this.paused.Remove(host);
         Store.Settings.Set("shield.paused", this.paused.OrderBy(h => h, StringComparer.Ordinal));
+        Changed();
+    }
+
+    /// Anything a page's scripts or stylesheets depend on changed: the list,
+    /// a site paused, Shields on or off. Every open page is armed again (see
+    /// Browser.StartShield); each takes it from its next document.
+    public event Action? Rearm;
+
+    private void Changed()
+    {
+        pausedTest = null;
+        generic = null;
+        guarded.Clear();
+        siteCss.Clear();
+        Rearm?.Invoke();
     }
 
     /// Third parties whose only job is to watch or to sell. First-party
-    /// requests are untouched: a site's own scripts are the site.
+    /// requests are untouched: a site's own scripts are the site. What is
+    /// blocked until the full lists are there, and whenever they aren't.
     private static readonly string[] Unwanted =
     [
         "doubleclick.net", "googlesyndication.com", "googleadservices.com",
@@ -67,9 +97,10 @@ public sealed partial class Shield : Model
         "connect.facebook.net", "ads-twitter.com", "analytics.twitter.com",
     ];
 
-    /// The few slots that are reliably an advertisement and nothing else. Kept
-    /// deliberately short — a generous cosmetic list is how a blocker starts
-    /// eating the page it was meant to clean.
+    /// The few slots that are reliably an advertisement and nothing else —
+    /// the stylesheet when there is no list. Kept deliberately short: a
+    /// generous cosmetic list is how a blocker starts eating the page it was
+    /// meant to clean.
     private static readonly string[] Slots =
     [
         ".adsbygoogle", "ins.adsbygoogle", "[id^=\"google_ads_\"]",
@@ -78,128 +109,71 @@ public sealed partial class Shield : Model
         "iframe[src*=\"amazon-adsystem\"]",
     ];
 
-    private string[] filters = [];
     private HashSet<string> unwanted = [];
-    private string? cosmetic;
+    private string slotsLiteral = "\"\"";
 
-    /// The filters the engine matches on, and the stylesheet for the slots.
-    /// Two filters a domain: the engine's wildcard wants a dot before
-    /// `*.doubleclick.net`, so the bare domain needs one of its own. Neither is
-    /// trusted to be exact — a `*` matches slashes too — so a request that
-    /// arrives here is checked against the host again before it is refused.
+    /// The built-in list: the domains and the slots. Tiny, and ready before
+    /// the first page.
     public void Compile()
     {
-        if (filters.Length > 0) return;
+        if (unwanted.Count > 0) return;
         Trouble = null;
         try
         {
             unwanted = [.. Unwanted];
-            filters = Unwanted.SelectMany(d => new[] { $"*://{d}/*", $"*://*.{d}/*" }).ToArray();
-            var css = string.Join(", ", Slots) + " { display: none !important; }";
-            cosmetic = $$"""
-            (function () {
-              if (document.getElementById('office-shield')) return;
-              var sheet = document.createElement('style');
-              sheet.id = 'office-shield';
-              sheet.textContent = {{Bridge.Literal(css)}};
-              (document.head || document.documentElement).appendChild(sheet);
-            })();
-            """;
+            slotsLiteral = Bridge.Literal(string.Join(",", Slots) + "{display:none!important}");
         }
         catch (Exception e)
         {
-            filters = [];
+            unwanted = [];
             Trouble = "Couldn't build the block list: " + e.Message;
         }
     }
 
+    private FilterList? list;
+    private string? listLiteral;
+
+    /// The downloaded lists, compiled, when there are any.
+    public FilterList? List => list;
+
+    /// The lists in, or out (null: back to the built-in 44). `literal` is the
+    /// list's shared stylesheet already written as a script string — 200 KB,
+    /// so it is made on the worker that loaded the list (Prepare), not here.
+    public void Use(FilterList? list, string? literal)
+    {
+        this.list = list;
+        listLiteral = list == null ? null : literal ?? Prepare(list);
+        Tell(nameof(List));
+        Changed();
+    }
+
+    /// The part of Use that costs something, for the worker to do first.
+    public static string Prepare(FilterList list) => Bridge.Literal(list.GenericCss);
+
     /// Whether a page on `site` is being protected at all.
     public bool Guards(string? site) => Enabled && Trouble == null && !IsPaused(site);
 
-    /// Every page asks for it once, when its engine starts. `site` is where
-    /// the page is going, decided at each navigation — a rule list on the Mac
-    /// is swapped in at the same moment, which is what makes "off for this
-    /// site" true for the whole page rather than for the second half of it.
+    // MARK: - requests
+
+    /// Every page asks for it once, when its engine starts.
     internal void Protect(Tab tab, CoreWebView2 core)
     {
-        if (filters.Length == 0) return;
-        var site = Curtain.Host(tab.Address);
-        string? slotsId = null;
-        var adding = false;
+        var ward = tab.Ward = new Ward(this, tab, core);
+        Tune(tab, core);
+        core.WebResourceRequested += ward.Requested;
+        core.NavigationStarting += ward.Starting;
+        core.ContentLoading += ward.Loading;
+        ward.Dress(tab.Address);
+    }
 
+    /// Switched on or off for a page that is already open: the engine's own
+    /// tracking prevention, and whether its requests cross over here at all.
+    internal void Tune(Tab tab, CoreWebView2 core)
+    {
         // The engine's own tracking prevention is the nearest thing Windows has
         // to what WebKit does underneath every page on the Mac. Balanced, not
         // Strict: Strict is Edge's own warning that sign-ins and embeds will
-        // break, and this list is kept short for the same reason.
-        Tune(core);
-
-        // Only the page and its frames. A service worker's requests are raised
-        // on every page with a filter that matches them, so a list on every
-        // tab would hear each one once per tab.
-        try
-        {
-            foreach (var filter in filters)
-                core.AddWebResourceRequestedFilter(filter, CoreWebView2WebResourceContext.All, CoreWebView2WebResourceRequestSourceKinds.Document);
-        }
-        catch
-        {
-            // A runtime too old to be told where a request comes from hears
-            // them all, which only costs the duplicates.
-#pragma warning disable CS0618
-            foreach (var filter in filters)
-                core.AddWebResourceRequestedFilter(filter, CoreWebView2WebResourceContext.All);
-#pragma warning restore CS0618
-        }
-
-        core.WebResourceRequested += (sender, e) =>
-        {
-            if (!Guards(site)) return;
-            if (!Uri.TryCreate(e.Request.Uri, UriKind.Absolute, out var url)) return;
-            if (url.Scheme is not ("http" or "https")) return;
-            var host = Address.Host(url);
-            if (host == null || !IsUnwanted(host)) return;
-            // Third parties only, as the Mac's rule list said with its load
-            // type. A page that is itself on one of these domains is that
-            // site, and its own requests are the site's.
-            if (Site(host) == Site(site)) return;
-            e.Response = core.Environment.CreateWebResourceResponse(null, 403, "Blocked", "");
-        };
-
-        core.NavigationStarting += (sender, e) =>
-        {
-            if (!Uri.TryCreate(e.Uri, UriKind.Absolute, out var url)) return;
-            site = Curtain.Host(url);
-            // The stylesheet for the slots goes in with the page it belongs to
-            // and stays out of the ones it doesn't.
-            var wanted = Guards(site) && cosmetic != null;
-            if (wanted && slotsId == null && !adding) _ = Add();
-            else if (!wanted && slotsId != null)
-            {
-                core.RemoveScriptToExecuteOnDocumentCreated(slotsId);
-                slotsId = null;
-            }
-        };
-
-        async Task Add()
-        {
-            adding = true;
-            try { slotsId = await core.AddScriptToExecuteOnDocumentCreatedAsync(cosmetic!); }
-            catch { }
-            adding = false;
-            // Turned off while it was going in.
-            if (slotsId != null && !Guards(site))
-            {
-                try { core.RemoveScriptToExecuteOnDocumentCreated(slotsId); } catch { }
-                slotsId = null;
-            }
-        }
-        if (Guards(site) && cosmetic != null) _ = Add();
-    }
-
-    /// Switched on or off for every page that is already open. Requests are
-    /// decided as they happen, so only the engine's own level needs telling.
-    internal void Tune(CoreWebView2 core)
-    {
+        // break.
         try
         {
             core.Profile.PreferredTrackingPreventionLevel = Enabled
@@ -207,7 +181,58 @@ public sealed partial class Shield : Model
                 : CoreWebView2TrackingPreventionLevel.None;
         }
         catch { }
+        if (tab.Ward is not { } ward) return;
+        var want = Enabled && Trouble == null;
+        if (ward.Filtered == want) return;
+        // One filter for everything the page and its frames ask for. Only the
+        // page's own requests: a service worker's are raised on every page
+        // with a filter that matches them, so they'd be heard once per tab.
+        try
+        {
+            if (want) core.AddWebResourceRequestedFilter("*", CoreWebView2WebResourceContext.All, CoreWebView2WebResourceRequestSourceKinds.Document);
+            else core.RemoveWebResourceRequestedFilter("*", CoreWebView2WebResourceContext.All, CoreWebView2WebResourceRequestSourceKinds.Document);
+        }
+        catch
+        {
+            // A runtime too old to be told where a request comes from hears
+            // them all, which only costs the duplicates.
+#pragma warning disable CS0618
+            try
+            {
+                if (want) core.AddWebResourceRequestedFilter("*", CoreWebView2WebResourceContext.All);
+                else core.RemoveWebResourceRequestedFilter("*", CoreWebView2WebResourceContext.All);
+            }
+            catch { return; }
+#pragma warning restore CS0618
+        }
+        ward.Filtered = want;
     }
+
+    /// Whether a request from a page on `pageHost` should be refused.
+    private bool Refuses(Uri url, string? pageHost, CoreWebView2WebResourceContext context)
+    {
+        if (list is { } rules) return rules.ShouldBlock(url, pageHost, Kind(context));
+        // The built-in list: third parties only, as the Mac's rule list said
+        // with its load type. A page that is itself on one of these domains
+        // is that site, and its own requests are the site's.
+        var host = Address.Host(url);
+        return host != null && IsUnwanted(host) && Site(host) != Site(pageHost);
+    }
+
+    private static ResourceKind Kind(CoreWebView2WebResourceContext context) => context switch
+    {
+        // Never the page itself — that is decided before it gets here — so
+        // a document is a frame's.
+        CoreWebView2WebResourceContext.Document => ResourceKind.Subdocument,
+        CoreWebView2WebResourceContext.Stylesheet => ResourceKind.Stylesheet,
+        CoreWebView2WebResourceContext.Image => ResourceKind.Image,
+        CoreWebView2WebResourceContext.Media => ResourceKind.Media,
+        CoreWebView2WebResourceContext.Font => ResourceKind.Font,
+        CoreWebView2WebResourceContext.Script => ResourceKind.Script,
+        CoreWebView2WebResourceContext.XmlHttpRequest or CoreWebView2WebResourceContext.Fetch
+            or CoreWebView2WebResourceContext.EventSource => ResourceKind.XmlHttpRequest,
+        _ => ResourceKind.Other,
+    };
 
     private bool IsUnwanted(string host)
     {
@@ -224,15 +249,354 @@ public sealed partial class Shield : Model
 
     /// The part of a host a person would call the site: the last two labels,
     /// or three under a country's own second level (bbc.co.uk, abc.net.au).
-    /// Good enough to tell a site from a stranger; no list of every suffix
-    /// in the world is worth shipping for the difference.
-    private static string? Site(string? host)
+    private static string? Site(string? host) => host == null ? null : SimpleRegistrableDomain.Instance.Of(host);
+
+    // MARK: - addresses
+
+    /// A cleaner address for `url`, or null when it is clean already:
+    /// a redirect wrapper (google.com/url?q=…, l.facebook.com, t.co's
+    /// cousins) opened to where it leads, and tracking tags (utm_…, fbclid,
+    /// gclid…) taken off. `from` is the page a link was followed from: a
+    /// site's links to itself keep their parameters — it can see where you
+    /// came from anyway, and its own are the ones most likely to matter —
+    /// so tags only come off on the way to another site.
+    public Uri? Tidy(Uri url, Uri? from = null)
     {
-        if (host == null) return null;
-        var labels = host.Split('.');
-        if (labels.Length <= 2) return host;
-        var take = labels[^1].Length == 2 && labels[^2].Length <= 3 ? 3 : 2;
-        return string.Join('.', labels[^take..]);
+        if (!Address.IsWeb(url) || Own(url) || IsPaused(Curtain.Host(url))) return null;
+        var target = url;
+        var changed = false;
+        if (Redirects.Unwrap(url) is { } inner && Address.IsWeb(inner) && !Own(inner))
+        {
+            target = inner;
+            changed = true;
+        }
+        var crossing = from == null || changed || Site(Address.Host(from)) != Site(Address.Host(target));
+        if (crossing && !IsPaused(Curtain.Host(target)) && Params.Clean(target) is { } clean && Address.IsWeb(clean))
+        {
+            target = clean;
+            changed = true;
+        }
+        return changed ? target : null;
+    }
+
+    /// Search's own pages (tools.search, files.search) are never a place a
+    /// tidied address may lead: going there as Search's own navigation is a
+    /// door a web page must not be able to open.
+    private static bool Own(Uri url) => url.Host.EndsWith(".search", StringComparison.OrdinalIgnoreCase);
+
+    // MARK: - what goes into pages
+
+    private string? pausedTest;
+    private string? generic;
+    private readonly Dictionary<string, string> guarded = [];
+    private readonly Dictionary<string, string> siteCss = new(StringComparer.Ordinal);
+
+    /// A test, in the page, for whether its site is paused — the site of the
+    /// page on screen, even from inside one of its frames (ancestorOrigins
+    /// names it) — or is one of Search's own (tools.search), which Shields
+    /// leaves alone.
+    private string PausedTest() => pausedTest ??=
+        "(function () { var h = location.hostname; try { var a = location.ancestorOrigins; if (a && a.length) h = new URL(a[a.length - 1]).hostname; } catch (e) {} " +
+        $"h = h.replace(/^www\\./, ''); return /\\.search$/.test(h) || [{string.Join(",", paused.Select(Bridge.Literal))}].indexOf(h) >= 0; }})()";
+
+    /// A page script that steps aside on a paused site.
+    private string Guarded(string name, string script)
+    {
+        if (guarded.TryGetValue(name, out var done)) return done;
+        if (script.Length == 0) return "";
+        return guarded[name] = $"(function () {{ if ({PausedTest()}) return;\n{script}\n}})();";
+    }
+
+    /// The stylesheet every page gets: the list's generic rules, or the
+    /// built-in slots. Handed over once per tab — the same text for every
+    /// site — and applied in the page unless the site is paused or asked for
+    /// no generic rules ($generichide). Adopted rather than put in a
+    /// `<style>`: that works before the document has an element to put it
+    /// in, and a page can't stumble on it in its own DOM.
+    private string Generic()
+    {
+        if (generic != null) return generic;
+        var hide = list == null ? "{}" : "{" + string.Join(",", list.GenericHideSites.Select(s => Bridge.Literal(s) + ":1")) + "}";
+        return generic = $$"""
+        (function () {
+          if ({{PausedTest()}}) return;
+          var hide = {{hide}};
+          for (var at = location.hostname; ; ) {
+            if (hide[at] === 1) return;
+            var dot = at.indexOf('.');
+            if (dot < 0) break;
+            at = at.slice(dot + 1);
+          }
+          try {
+            var sheet = new CSSStyleSheet();
+            sheet.replaceSync({{listLiteral ?? slotsLiteral}});
+            document.adoptedStyleSheets = document.adoptedStyleSheets.concat([sheet]);
+          } catch (e) {}
+        })();
+        """;
+    }
+
+    /// The scripts Shields puts in every page, for PageScripts.For.
+    public IEnumerable<PageScript> Scripts(Preferences prefs)
+    {
+        if (Enabled && Trouble == null)
+        {
+            yield return new(Generic(), MainFrameOnly: true, AtEnd: false);
+            // YouTube's ads come from YouTube's own servers, so no list can
+            // block them: its player data is pruned instead. The script
+            // checks for youtube.com itself; in frames too, for embeds.
+            yield return new(Guarded("youtube", ShieldScripts.YouTube), MainFrameOnly: false, AtEnd: false);
+        }
+        // Consent dialogs often live in a frame of their own, which the
+        // script recognises by its address.
+        if (prefs.RejectsCookies)
+            yield return new(Guarded("cookies", ShieldScripts.Cookies), MainFrameOnly: false, AtEnd: false);
+        if (prefs.TidiesLinks)
+            yield return new(Guarded("amp", ShieldScripts.Amp), MainFrameOnly: true, AtEnd: false);
+    }
+
+    /// What one site adds to the shared stylesheet: its own rules, and the
+    /// generic ones that depend on where they are. Worked out once per site
+    /// per list (under a millisecond; nothing for most sites).
+    private string SiteCss(string? host)
+    {
+        if (host == null || list is not { } rules || !Guards(host.StartsWith("www.", StringComparison.Ordinal) ? host[4..] : host)) return "";
+        if (siteCss.TryGetValue(host, out var css)) return css;
+        if (siteCss.Count > 500) siteCss.Clear();
+        return siteCss[host] = rules.SiteCss(host);
+    }
+
+    /// The per-site stylesheet as a page script, for that host only: a page
+    /// on another site that inherits it before it is swapped leaves it be.
+    private static string SiteScript(string host, string css) => $$"""
+    (function () {
+      if (location.hostname !== {{Bridge.Literal(host)}} || window.__searchShieldSite) return;
+      Object.defineProperty(window, '__searchShieldSite', { value: true });
+      try {
+        var sheet = new CSSStyleSheet();
+        sheet.replaceSync({{Bridge.Literal(css)}});
+        document.adoptedStyleSheets = document.adoptedStyleSheets.concat([sheet]);
+      } catch (e) {}
+    })();
+    """;
+
+    /// One tab's part in all this: its page's site, the per-site stylesheet
+    /// it holds, and the navigation it is waiting on.
+    internal sealed class Ward(Shield shield, Tab tab, CoreWebView2 core)
+    {
+        /// Whether the engine sends this page's requests here at all.
+        public bool Filtered;
+
+        private string? site = Curtain.Host(tab.Address);
+        private string? pageHost = Address.Host(tab.Address);
+
+        /// On one of Search's own pages, whose requests are its own.
+        private bool own = tab.Address is { } there && Own(there);
+
+        /// The top-level document on its way, whose own request is never
+        /// refused: a page you asked for is a page you get.
+        private Uri? top;
+
+        private string? sheetId;
+        private string sheetCss = "";
+        private string? wantHost;
+        private int version;
+
+        private string? tidied;
+        private long tidiedAt;
+
+        public void Requested(object? sender, CoreWebView2WebResourceRequestedEventArgs e)
+        {
+            // Timed for the bench: this is the cost every request pays.
+            var started = System.Diagnostics.Stopwatch.GetTimestamp();
+            try { Decide(e); }
+            finally
+            {
+                tab.ShieldSeen++;
+                tab.ShieldMs += System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds;
+            }
+        }
+
+        private void Decide(CoreWebView2WebResourceRequestedEventArgs e)
+        {
+            if (!shield.Enabled || shield.Trouble != null || shield.IsPaused(site) || own) return;
+            string raw;
+            CoreWebView2WebResourceContext context;
+            try
+            {
+                context = e.ResourceContext;
+                raw = e.Request.Uri;
+            }
+            catch { return; }
+            if (!raw.StartsWith("http", StringComparison.OrdinalIgnoreCase)) return;
+            var document = context == CoreWebView2WebResourceContext.Document;
+            if (document && IsTop(raw)) return;
+            if (!Uri.TryCreate(raw, UriKind.Absolute, out var url)) return;
+            bool refused;
+            try { refused = shield.Refuses(url, pageHost, context); }
+            catch { return; }
+            if (!refused) return;
+            if (!document)
+            {
+                Refuse(e);
+                return;
+            }
+            // A document the list would refuse is a frame's — unless it is
+            // the page itself and NavigationStarting just hasn't been heard
+            // yet. The answer waits one turn of the UI thread for it.
+            var deferral = e.GetDeferral();
+            UI.Soon(() =>
+            {
+                try { if (!IsTop(raw)) Refuse(e); }
+                catch { }
+                deferral.Complete();
+            });
+        }
+
+        private bool IsTop(string raw) =>
+            top != null && Uri.TryCreate(raw, UriKind.Absolute, out var url)
+            && Uri.Compare(top, url, UriComponents.HttpRequestUrl, UriFormat.UriEscaped, StringComparison.OrdinalIgnoreCase) == 0;
+
+        private void Refuse(CoreWebView2WebResourceRequestedEventArgs e)
+        {
+            e.Response = core.Environment.CreateWebResourceResponse(null, 403, "Blocked", "");
+            tab.Blocked++;
+        }
+
+        public void Starting(object? sender, CoreWebView2NavigationStartingEventArgs e)
+        {
+            // Cancelled already: an extension's sign-in coming back, a link
+            // handed to another app, a tool page a web page may not open.
+            if (e.Cancel || !Uri.TryCreate(e.Uri, UriKind.Absolute, out var url)) return;
+
+            // A cleaner address means this navigation gives way to one to
+            // it. Only a new document: going back, or reloading, goes where
+            // it went before.
+            if (e.NavigationKind == CoreWebView2NavigationKind.NewDocument && Tidied(url) is { } clean)
+            {
+                e.Cancel = true;
+                UI.Soon(() => Browser.Shared?.Go(tab, clean));
+                return;
+            }
+
+            top = url;
+            site = Curtain.Host(url);
+            pageHost = Address.Host(url);
+            own = Own(url);
+            tab.Blocked = 0;
+            tab.ShieldSeen = 0;
+            tab.ShieldMs = 0;
+            Dress(url);
+        }
+
+        /// The address this navigation should have had instead, if any.
+        private Uri? Tidied(Uri url)
+        {
+            if (Browser.Shared is not { Prefs.TidiesLinks: true }) return null;
+            Uri.TryCreate(core.Source, UriKind.Absolute, out var from);
+            if (shield.Tidy(url, Address.IsWeb(from) ? from : null) is not { } clean) return null;
+            // A site that sends the clean address straight back to the
+            // tagged one wants it that way; the second time, it has it.
+            var now = Environment.TickCount64;
+            if (tidied == clean.AbsoluteUri && now - tidiedAt < 10_000) return null;
+            tidied = clean.AbsoluteUri;
+            tidiedAt = now;
+            return clean;
+        }
+
+        /// The per-site stylesheet for the page at `url` goes in with it. The
+        /// new one is added before the old one goes, so no document starts
+        /// between them with neither.
+        public void Dress(Uri? url)
+        {
+            var host = Address.IsWeb(url) && !Own(url!) ? Address.Host(url) : null;
+            var css = shield.SiteCss(host);
+            wantHost = css.Length > 0 ? host : null;
+            if (css == sheetCss) return;
+            sheetCss = css;
+            _ = Swap(host, css);
+        }
+
+        private async Task Swap(string? host, string css)
+        {
+            var mine = ++version;
+            string? id = null;
+            if (host != null && css.Length > 0)
+            {
+                try { id = await core.AddScriptToExecuteOnDocumentCreatedAsync(Bridge.Wrap(SiteScript(host, css), mainFrameOnly: true, atEnd: false)); }
+                catch { }
+            }
+            if (mine != version)
+            {
+                // Overtaken by a newer page while it went in.
+                if (id != null) Remove(id);
+                return;
+            }
+            if (sheetId != null) Remove(sheetId);
+            sheetId = id;
+        }
+
+        private void Remove(string id)
+        {
+            try { core.RemoveScriptToExecuteOnDocumentCreated(id); } catch { }
+        }
+
+        /// The per-site stylesheet again, from outside the document, the
+        /// moment it starts arriving — for the page that came faster than
+        /// its stylesheet could be added. Harmless when it was in time: the
+        /// script does nothing twice.
+        public void Loading(object? sender, CoreWebView2ContentLoadingEventArgs e)
+        {
+            if (e.IsErrorPage || wantHost == null || sheetCss.Length == 0) return;
+            try { _ = core.ExecuteScriptAsync(SiteScript(wantHost, sheetCss)); } catch { }
+        }
+
+        /// Shields changed under an open page: its stylesheet follows. The
+        /// same stylesheet for the same site is the same script, so only a
+        /// different one is swapped in.
+        public void Refresh() =>
+            Dress(Uri.TryCreate(core.Source, UriKind.Absolute, out var here) && Address.IsWeb(here) ? here : tab.Address);
+    }
+}
+
+public sealed partial class Tab
+{
+    /// Shields' hold on this tab's page (see Shield.Ward).
+    internal Shield.Ward? Ward { get; set; }
+
+    /// Requests of this page that crossed over to be decided, and the time
+    /// spent deciding them on the UI thread — for the bench.
+    internal int ShieldSeen { get; set; }
+    internal double ShieldMs { get; set; }
+}
+
+/// Shields' page scripts, as shipped in Search/Assets/js: read from the
+/// executable the first time a page is armed, which is after the first
+/// window.
+public static class ShieldScripts
+{
+    private static string? youTube, cookies, amp;
+
+    public static string YouTube => youTube ??= Load("js/youtube-shield.js");
+    public static string Cookies => cookies ??= Load("js/cookie-reject.js");
+    public static string Amp => amp ??= Load("js/amp-canonical.js");
+
+    /// What amp-canonical.js posts: the page's real address.
+    public const string AmpName = "shield.amp";
+
+    private static string Load(string name)
+    {
+        try
+        {
+            using var stream = typeof(ShieldScripts).Assembly.GetManifestResourceStream(name);
+            if (stream == null) return "";
+            using var reader = new StreamReader(stream);
+            return reader.ReadToEnd();
+        }
+        catch
+        {
+            return "";
+        }
     }
 }
 
@@ -242,14 +606,58 @@ public sealed partial class Browser
     {
         Shield.Shared.Enabled = Prefs.Shielded;
         Shield.Shared.Compile();
-        // Settings says on or off; every page already open hears it (see
-        // Follow, which says so out loud).
-        Shield.Shared.On(nameof(Shield.Enabled), () =>
+        Tab.Tidy = url => Prefs.TidiesLinks ? Shield.Shared.Tidy(url) : null;
+        Bridge.Handlers[ShieldScripts.AmpName] = LeaveAmp;
+
+        // Shields on or off, a site paused, the lists in: every page already
+        // open hears it, from its next request and its next document.
+        Shield.Shared.Rearm += () =>
         {
             foreach (var tab in Tabs.Concat(ParkedTabs))
-                if (tab.Core is { } core) Shield.Shared.Tune(core);
+            {
+                tab.Arm(Curtain.Css(Curtain.Host(tab.Address)), force: true);
+                if (tab.Core is { } core) Shield.Shared.Tune(tab, core);
+                tab.Ward?.Refresh();
+            }
+        };
+        Prefs.On(nameof(Preferences.TidiesLinks), RearmAll);
+        Prefs.On(nameof(Preferences.RejectsCookies), RearmAll);
+        Prefs.On(nameof(Preferences.ShieldLists), () =>
+        {
+            if (Prefs.ShieldLists) ShieldLists.Refresh(force: true);
+            else ShieldLists.Forget();
         });
+        ShieldLists.Schedule();
+    }
+
+    private void RearmAll()
+    {
+        foreach (var tab in Tabs.Concat(ParkedTabs))
+            tab.Arm(Curtain.Css(Curtain.Host(tab.Address)), force: true);
     }
 
     partial void AttachShield(Tab tab, CoreWebView2 core) => Shield.Shared.Protect(tab, core);
+
+    /// An AMP page said where its real one is (amp-canonical.js). The page
+    /// replaces itself with it, so Back doesn't land on the AMP page and
+    /// bounce straight forward again; and only once per AMP page, in case the
+    /// real one sends phones back.
+    private void LeaveAmp(Tab tab, System.Text.Json.JsonElement body)
+    {
+        if (!Prefs.TidiesLinks || body.ValueKind != System.Text.Json.JsonValueKind.Object) return;
+        if (!body.TryGetProperty("canonical", out var said) || said.ValueKind != System.Text.Json.JsonValueKind.String) return;
+        if (!Uri.TryCreate(said.GetString(), UriKind.Absolute, out var canonical) || !Address.IsWeb(canonical)) return;
+        if (!Uri.TryCreate(tab.Core?.Source, UriKind.Absolute, out var here) || !Address.IsWeb(here)) return;
+        if (Shield.Shared.IsPaused(Curtain.Host(here)) || canonical.Host.EndsWith(".search", StringComparison.OrdinalIgnoreCase)) return;
+        if (tab.LeftAmp == here.AbsoluteUri) return;
+        tab.LeftAmp = here.AbsoluteUri;
+        var target = Shield.Shared.Tidy(canonical) ?? canonical;
+        tab.Run($"location.replace({Bridge.Literal(target.AbsoluteUri)})");
+    }
+}
+
+public sealed partial class Tab
+{
+    /// The AMP page this tab last left for its real one.
+    internal string? LeftAmp { get; set; }
 }

@@ -4,3 +4,9 @@ obj/
 build/
 *.user
 .vs/
+
+# Engine (Rust) and Tools (Svelte)
+target/
+node_modules/
+.svelte-kit/
+Tools/dist/

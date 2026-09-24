@@ -1,0 +1,4056 @@
+<script lang="ts">
+    /*
+      Settings — rebuilt to match the 10 categories from the user's old
+      Settings references (zip: 11 categories merged into 10 sections via
+      Local Storage → Storage & Privacy, Activity → Activity & Diagnostics).
+
+      Section list (one per sidebar item):
+        Voice                  — engine + Vosk models + voice command hotkey + PTT + dictation output + VAD
+        Tool Packs             — installer-style pack grid with save/discard + restart banner
+        Appearance             — language, theme, font (rich preview cards)
+        System & Search        — Launch on startup, search overlay hotkey, bang shortcuts
+        Clipboard Overlay      — dedicated hotkey, auto-paste, collision tip
+        Indexing & Data        — renders the existing FileSearchIndex screen inline
+        Storage & Privacy      — on-disk totals + breakdown + "Where this lives" paths + wipe
+        Activity & Diagnostics — tabbed: activity log + error log
+        Onboarding & Tips      — replay tour, hotkey popup
+        Reset                  — reset all settings to defaults
+    */
+    import { onMount, untrack } from 'svelte';
+    import { invoke } from '@tauri-apps/api/core';
+    import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+    import { open as openFileDialog } from '@tauri-apps/plugin-dialog';
+    import { revealItemInDir } from '@tauri-apps/plugin-opener';
+    import { appDataDir, join } from '@tauri-apps/api/path';
+    import {
+        enable as enableAutostart,
+        disable as disableAutostart,
+        isEnabled as isAutostartEnabled,
+    } from '@tauri-apps/plugin-autostart';
+    import {
+        Mic,
+        WandSparkles,
+        Package as PackageIcon,
+        Palette,
+        Monitor,
+        Clipboard as ClipboardIcon,
+        Database,
+        FileText,
+        HardDrive,
+        ListChecks,
+        BookOpen,
+        RotateCcw,
+        Trash2,
+        Download,
+        Check,
+        Copy as CopyIcon,
+        FolderOpen,
+        Save as SaveIcon,
+        Upload,
+        RefreshCw,
+        AlertTriangle,
+        Search as SearchIcon,
+        Boxes,
+        Keyboard,
+        Type as TypeIcon,
+        SlidersHorizontal,
+        PieChart,
+        X,
+        StickyNote,
+        Video,
+        AppWindow,
+        Plus,
+    } from '@lucide/svelte';
+    import { writeTextFile, readTextFile } from '@tauri-apps/plugin-fs';
+    import { save as saveFileDialog } from '@tauri-apps/plugin-dialog';
+
+    import {
+        settings,
+        applyFont,
+        THEME_OPTIONS,
+        FONT_OPTIONS,
+        settingsVoiceModelDownloadBusy,
+        settingsVoiceModelDownloadProgress,
+        settingsBackgroundRemovalModelDownloadBusy,
+        settingsBackgroundRemovalModelDownloadProgress,
+        settingsBackgroundRemovalModelStatus,
+        type BackgroundRemovalModelStatus,
+        type Theme,
+        type UiFont,
+        type AppHotkeyBinding,
+    } from '$lib/stores/settings';
+    import {
+        settingsInstalledApps,
+        settingsInstalledAppsLoading,
+        settingsStorageInsights,
+        settingsStoragePaths,
+        settingsStorageBusy,
+        settingsExportBusy,
+        settingsImportBusy,
+    } from '$lib/stores/settingsRuntime';
+    import {
+        enabledPackIds,
+        pendingEnabledPackIds,
+        toolPackRestartRequired,
+        setPendingToolPack,
+        savePendingToolPacks,
+        discardPendingToolPackChanges,
+    } from '$lib/stores/toolPacks';
+    import { HIDDEN_PACK_IDS } from '$lib/appScreens';
+
+    // ─── Reactive Tool Pack change detection ───────────────────────
+    // `hasToolPackChange()` in the store reads pendingEnabledPackIds /
+    // enabledPackIds via non-reactive `get(...)`. Calling it as a function
+    // in template attributes (e.g. `disabled={!hasToolPackChange()}`) does
+    // NOT register a Svelte reactive dependency, so the Save button stayed
+    // stuck "disabled" even after the user toggled a checkbox. Using a
+    // `$derived` that reads the stores via `$` re-runs whenever either
+    // store updates — Save + Discard become live.
+    let hasToolPackChangeReactive = $derived.by(() => {
+        const active = [...$enabledPackIds].sort().join('|');
+        const pending = [...$pendingEnabledPackIds].sort().join('|');
+        return active !== pending || $toolPackRestartRequired;
+    });
+    import {
+        listActivity,
+        clearActivity,
+        type ActivityEntry,
+    } from '$lib/stores/activityLog';
+    import {
+        listLogEntries,
+        clearLogEntries,
+        getLogFolder,
+        exportLogText,
+        formatLogTime,
+        type LogEntry,
+    } from '$lib/stores/errorLog';
+    import { confirm } from '$lib/stores/confirmDialog';
+    import { toast } from '$lib/stores/toasts';
+    import { errorToast } from '$lib/stores/errorToast';
+    import { _ } from 'svelte-i18n';
+    import { t } from '$lib/i18n';
+    import { Toggle, Button, CollapsibleCard } from '$lib/ui';
+    import FileSearchIndex from './FileSearchIndex.svelte';
+    import ShortcutPicker from '$lib/components/ShortcutPicker.svelte';
+    import {
+        recPreset,
+        recSaveFolder,
+        presetParams,
+        type RecPreset,
+    } from '$lib/stores/screenRecorder';
+    import VoiceCommandsEditor from '$lib/components/VoiceCommandsEditor.svelte';
+    import BuiltinCommandsEditor from '$lib/components/BuiltinCommandsEditor.svelte';
+    import { settingsTarget } from '$lib/stores/settingsTarget';
+    import {
+        commandAppearance,
+        setCommandOpacity,
+        setCommandAccent,
+        setCommandDesktopBlur,
+        resetCommandAppearance,
+    } from '$lib/stores/commandAppearance';
+    /** Default swatch shown in the accent color picker when the user hasn't
+     *  overridden it (so the input has something to display). Matches the
+     *  default dark-theme accent — crimson since the 2026-07-06 rebrand. */
+    const PALETTE_ACCENT_PLACEHOLDER = '#b5352c';
+    import { get } from 'svelte/store';
+
+    // ─── Editable hotkeys — two-way bound to the settings store ───
+    // Each ShortcutPicker uses `bind:value={localState}`. The patterns
+    // below are DELIBERATELY untrack-walled so they cannot accidentally
+    // re-fire the settings store's `scheduleHotkeyApply()` on mount or
+    // as a consequence of their own writes:
+    //
+    //   1. `$effect` mirrors the STORE into local state — but writes
+    //      through `untrack(...)` so the local-state write does NOT
+    //      become a dependency that would re-run the effect.
+    //   2. A separate `$effect` watches LOCAL STATE and pushes back
+    //      into the store IFF different — and reads the store under
+    //      `untrack(...)` so this effect only re-runs on local edits
+    //      (i.e., the user commits a new chord), never on store fans-out.
+    //
+    // Without these untrack walls, the bidirectional sync would trip
+    // `scheduleHotkeyApply()` on every Settings mount → unregistering +
+    // re-registering all 4 global shortcuts in a window where Ctrl+Alt+S
+    // would silently fail. The user reported this exact symptom; the
+    // walls eliminate it deterministically.
+    let voiceShortcut = $state('');
+    let pttShortcut = $state('');
+    let searchShortcut = $state('');
+    let clipboardShortcut = $state('');
+    let commandShortcut = $state('');
+    let noteShortcut = $state('');
+    let recordingShortcut = $state('');
+    // Win11+ rounds window corners for the acrylic palette; on Win10 the
+    // acrylic shows square edges, so we hide the experimental blur toggle
+    // there. Resolved from the backend on mount (UA can't tell 10 from 11).
+    let commandBlurSupported = $state(false);
+
+    // Defaults — used by the picker's Reset button (the small arrow icon).
+    // Keep in sync with DEFAULTS in $lib/stores/settings.ts.
+    const DEFAULT_VOICE_SHORTCUT = 'CommandOrControl+Alt+V';
+    const DEFAULT_PTT_SHORTCUT = 'CommandOrControl+Alt+Space';
+    const DEFAULT_SEARCH_SHORTCUT = 'CommandOrControl+Alt+S';
+    const DEFAULT_CLIPBOARD_SHORTCUT = 'CommandOrControl+Shift+V';
+    const DEFAULT_COMMAND_SHORTCUT = 'CommandOrControl+Alt+K';
+    const DEFAULT_NOTE_SHORTCUT = 'CommandOrControl+Alt+N';
+    const DEFAULT_RECORDING_SHORTCUT = 'CommandOrControl+Alt+R';
+
+    // ── Store → Local (read-only mirror; write is untracked) ────────
+    $effect(() => {
+        const v = $settings.voiceOverlayShortcut ?? DEFAULT_VOICE_SHORTCUT;
+        untrack(() => { voiceShortcut = v; });
+    });
+    $effect(() => {
+        const v = $settings.pushToTalkShortcut ?? DEFAULT_PTT_SHORTCUT;
+        untrack(() => { pttShortcut = v; });
+    });
+    $effect(() => {
+        const v = $settings.overlayHotkeyShortcut ?? DEFAULT_SEARCH_SHORTCUT;
+        untrack(() => { searchShortcut = v; });
+    });
+    $effect(() => {
+        const v = $settings.clipboardOverlayShortcut ?? DEFAULT_CLIPBOARD_SHORTCUT;
+        untrack(() => { clipboardShortcut = v; });
+    });
+    $effect(() => {
+        const v = $settings.commandOverlayShortcut ?? DEFAULT_COMMAND_SHORTCUT;
+        untrack(() => { commandShortcut = v; });
+    });
+    $effect(() => {
+        const v = $settings.quickNoteHotkeyShortcut ?? DEFAULT_NOTE_SHORTCUT;
+        untrack(() => { noteShortcut = v; });
+    });
+    $effect(() => {
+        const v = $settings.screenRecordingHotkeyShortcut ?? DEFAULT_RECORDING_SHORTCUT;
+        untrack(() => { recordingShortcut = v; });
+    });
+
+    // ── Local → Store (only re-runs when the LOCAL chord changes) ───
+    // Reads the store under `untrack` so external store updates do not
+    // re-run this effect. Combined with the strict-equality guard this
+    // means a fresh mount will NOT call settings.update at all (the local
+    // state was just initialized FROM the store; values are equal).
+    $effect(() => {
+        const local = voiceShortcut;
+        untrack(() => {
+            const stored = $settings.voiceOverlayShortcut;
+            if (local && local !== stored) {
+                settings.update((s) => ({ ...s, voiceOverlayShortcut: local }));
+            }
+        });
+    });
+    $effect(() => {
+        const local = pttShortcut;
+        untrack(() => {
+            const stored = $settings.pushToTalkShortcut;
+            if (local && local !== stored) {
+                settings.update((s) => ({ ...s, pushToTalkShortcut: local }));
+            }
+        });
+    });
+    $effect(() => {
+        const local = searchShortcut;
+        untrack(() => {
+            const stored = $settings.overlayHotkeyShortcut;
+            if (local && local !== stored) {
+                settings.update((s) => ({ ...s, overlayHotkeyShortcut: local }));
+            }
+        });
+    });
+    $effect(() => {
+        const local = clipboardShortcut;
+        untrack(() => {
+            const stored = $settings.clipboardOverlayShortcut;
+            if (local && local !== stored) {
+                settings.update((s) => ({ ...s, clipboardOverlayShortcut: local }));
+            }
+        });
+    });
+    $effect(() => {
+        const local = commandShortcut;
+        untrack(() => {
+            const stored = $settings.commandOverlayShortcut;
+            if (local && local !== stored) {
+                settings.update((s) => ({ ...s, commandOverlayShortcut: local }));
+            }
+        });
+    });
+    $effect(() => {
+        const local = noteShortcut;
+        untrack(() => {
+            const stored = $settings.quickNoteHotkeyShortcut;
+            if (local && local !== stored) {
+                settings.update((s) => ({ ...s, quickNoteHotkeyShortcut: local }));
+            }
+        });
+    });
+    $effect(() => {
+        const local = recordingShortcut;
+        untrack(() => {
+            const stored = $settings.screenRecordingHotkeyShortcut;
+            if (local && local !== stored) {
+                settings.update((s) => ({ ...s, screenRecordingHotkeyShortcut: local }));
+            }
+        });
+    });
+
+    let { selected = $bindable() }: { selected: string } = $props();
+
+    // ─── Sidebar section model ─────────────────────────────────────
+    // Order + labels per user (2026-05-20): System and Search Overlay
+    // are now separate sections; Voice Engine → Voice Settings; Indexing
+    // & Data → Search Index; Activity & Diagnostics → Activity Diagnostics.
+    type SectionId =
+        | 'system'
+        | 'appearance'
+        | 'shortcuts'
+        | 'voice'
+        | 'imageModels'
+        | 'recording'
+        | 'fileIndex'
+        | 'contentIndex'
+        | 'toolpacks'
+        | 'onboarding'
+        | 'storage'
+        | 'logs'
+        | 'reset';
+
+    interface Section {
+        id: SectionId;
+        label: string;
+        icon: any;
+    }
+
+    const sections: Section[] = [
+        { id: 'system', label: 'System', icon: Monitor },
+        { id: 'appearance', label: 'Appearance', icon: Palette },
+        { id: 'shortcuts', label: 'Shortcuts', icon: Keyboard },
+        { id: 'voice', label: 'Voice Settings', icon: Mic },
+        { id: 'imageModels', label: 'Image models', icon: WandSparkles },
+        { id: 'recording', label: 'Recording', icon: Video },
+        { id: 'fileIndex', label: 'File Index', icon: Database },
+        { id: 'contentIndex', label: 'Content Index', icon: FileText },
+        { id: 'toolpacks', label: 'Tool Packs', icon: PackageIcon },
+        { id: 'onboarding', label: 'Onboarding', icon: BookOpen },
+        { id: 'storage', label: 'Storage & Privacy', icon: HardDrive },
+        { id: 'logs', label: 'Activity Diagnostics', icon: ListChecks },
+        { id: 'reset', label: 'Reset', icon: RotateCcw },
+    ];
+
+    // ─── Recording section ─────────────────────────────────────────
+    const RECORDING_PRESETS: RecPreset[] = ['small', 'balanced', 'high'];
+    async function pickRecFolder() {
+        try {
+            const picked = await openFileDialog({ directory: true, multiple: false });
+            if (typeof picked === 'string' && picked) {
+                // The picker can return a Windows verbatim path (\\?\C:\...). Strip
+                // the prefix so the shell "open"/"reveal" APIs accept the final file.
+                let clean = picked;
+                if (clean.startsWith('\\\\?\\UNC\\')) clean = '\\\\' + clean.slice(8);
+                else if (clean.startsWith('\\\\?\\')) clean = clean.slice(4);
+                recSaveFolder.set(clean);
+            }
+        } catch {
+            /* cancelled or unavailable — keep the current setting */
+        }
+    }
+
+    // Honor a deep-link request from elsewhere in the app (e.g. router
+    // redirecting an uninstalled tool click to Settings → Tool Packs).
+    // Reading `get(settingsTarget)` is a one-shot — the store is cleared
+    // immediately so subsequent mounts of Settings start at the default.
+    function consumeInitialSection(): SectionId {
+        const requested = get(settingsTarget);
+        if (requested) {
+            settingsTarget.set(null);
+            // Legacy alias: the old single "Search Index" section is now two
+            // (File Index / Content Index). Land legacy deep-links on File Index.
+            if (requested === 'indexing') return 'fileIndex';
+            // These per-feature hotkeys/toggles were consolidated into the
+            // unified Shortcuts section; land legacy deep-links there.
+            if (requested === 'note' || requested === 'searchOverlay' || requested === 'clipboard')
+                return 'shortcuts';
+            return requested;
+        }
+        return 'system';
+    }
+    let activeSection = $state<SectionId>(consumeInitialSection());
+
+    // (Shortcut display helpers were removed once all four hotkey rows
+    //  migrated to ShortcutPicker, which renders + edits its own chips.)
+
+    // ─── VOICE section ─────────────────────────────────────────────
+    /** Matches the Rust `VoiceModelSpec` shape returned by
+     *  `voice_list_downloadable_models`. Frontend never invents model
+     *  IDs — they come from the canonical Rust catalog. */
+    interface VoiceModelSpec {
+        id: string;
+        label: string;
+        description: string;
+        size_label: string;
+        engine: string;
+        url: string;
+        filename: string;
+        recommended: boolean;
+        heavy: boolean;
+        ram_label: string;
+    }
+
+    let voiceModels = $state<VoiceModelSpec[]>([]);
+    const modelDownloadBusy = settingsVoiceModelDownloadBusy;
+    // Installed (downloaded + extracted) models, so the user picks from a list
+    // instead of a raw folder file-picker. Refreshed on mount + after a download.
+    let installedModels = $state<{ name: string; path: string; size_bytes: number }[]>([]);
+    // Live download progress per model id, fed by the `voice-model-download-progress`
+    // backend event so the card shows a real bar instead of a blind spinner.
+    const modelDownloadProgress = settingsVoiceModelDownloadProgress;
+    // The folder models are saved to (shown to the user + "Open folder").
+    let modelsDir = $state('');
+    let modelProgressUnlisten: UnlistenFn | null = null;
+
+    // ─── IMAGE MODELS section ─────────────────────────────────────
+    let backgroundRemovalModelStatusChecked = $state(false);
+    let backgroundModelProgressUnlisten: UnlistenFn | null = null;
+    const backgroundModelDownloadBusy = settingsBackgroundRemovalModelDownloadBusy;
+    const backgroundModelDownloadProgress = settingsBackgroundRemovalModelDownloadProgress;
+    const backgroundModelStatus = settingsBackgroundRemovalModelStatus;
+    const fullModelInstalled = $derived($backgroundModelStatus?.available === true);
+    const fullModelProgress = $derived($backgroundModelDownloadProgress);
+    const backgroundModelCanResume = $derived(
+        !$backgroundModelStatus?.available
+            && (($backgroundModelStatus?.sizeBytes ?? 0) > 0 || ($backgroundModelDownloadProgress?.downloaded ?? 0) > 0),
+    );
+    const backgroundModelProgressPercent = $derived.by(() => {
+        const progress = $backgroundModelDownloadProgress;
+        return progress?.total
+            ? Math.min(100, Math.round((progress.downloaded / progress.total) * 100))
+            : null;
+    });
+
+    async function refreshBackgroundRemovalModelStatus(notifyOnError = true): Promise<boolean> {
+        try {
+            backgroundModelStatus.set(await invoke<BackgroundRemovalModelStatus>('background_removal_model_status'));
+            backgroundRemovalModelStatusChecked = true;
+            return true;
+        } catch (error) {
+            backgroundRemovalModelStatusChecked = true;
+            if (notifyOnError) {
+                errorToast("Couldn't check the Full U²-Net model status", error, {
+                    hint: 'Open Image models again to retry.',
+                });
+            }
+            return false;
+        }
+    }
+
+    async function downloadBackgroundRemovalModel() {
+        if ($backgroundModelDownloadBusy) return;
+
+        backgroundModelDownloadBusy.set(true);
+        backgroundModelDownloadProgress.set({ downloaded: 0, total: 0 });
+        try {
+            await invoke('download_background_removal_model');
+            if (await refreshBackgroundRemovalModelStatus(false)) {
+                toast('Full U²-Net is ready for high quality background removal.', 'success', 3500);
+            }
+        } catch (error) {
+            errorToast("Couldn't download the Full U²-Net model", error, {
+                hint: 'Try Download again to resume the local download.',
+                durationMs: 6000,
+            });
+            await refreshBackgroundRemovalModelStatus(false);
+        } finally {
+            backgroundModelDownloadBusy.set(false);
+            backgroundModelDownloadProgress.set(null);
+        }
+    }
+
+    async function openBackgroundRemovalModelFolder() {
+        const path = $backgroundModelStatus?.path;
+        if (!path) return;
+        try {
+            await revealItemInDir(path);
+        } catch (error) {
+            errorToast("Couldn't open the Full U²-Net folder", error, {
+                hint: 'Try downloading the model again if the folder was moved or deleted.',
+            });
+        }
+    }
+
+    /** Resolve the default download/extract directory for voice models —
+     *  `<appDataDir>/vosk-models`. The user can also pick a folder manually
+     *  via Choose folder…; that path becomes the active voskModelPath. */
+    async function resolveModelTargetDir(): Promise<string> {
+        const root = await appDataDir();
+        return join(root, 'vosk-models');
+    }
+
+    async function refreshVoiceModels() {
+        try {
+            voiceModels = await invoke<VoiceModelSpec[]>('voice_list_downloadable_models');
+        } catch (error) {
+            voiceModels = [];
+            toast(t('settings.voiceSection.toastCatalogError', { error: String(error) }), 'error', 4500);
+        }
+    }
+
+    async function downloadVoiceModel(modelId: string) {
+        if ($modelDownloadBusy[modelId]) return;
+        modelDownloadBusy.update((current) => ({ ...current, [modelId]: true }));
+        modelDownloadProgress.update((current) => ({ ...current, [modelId]: { downloaded: 0, total: 0 } }));
+        try {
+            const targetDir = await resolveModelTargetDir();
+            // Rust signature: voice_download_model(model_id, target_dir)
+            // → Tauri converts camelCase params to snake_case automatically.
+            // Progress arrives via the 'voice-model-download-progress' event.
+            const extracted = await invoke<string>('voice_download_model', {
+                modelId,
+                targetDir,
+            });
+            // The Rust command returns the extracted model folder; point
+            // the settings store at it so Voice tools start using it.
+            if (typeof extracted === 'string' && extracted.length) {
+                settings.update((s) => ({ ...s, voskModelPath: extracted }));
+            }
+            await refreshInstalledModels();
+            toast(t('settings.voiceSection.toastModelInstalled', { model: modelId }), 'success', 3500);
+        } catch (error) {
+            toast(t('settings.voiceSection.toastModelDownloadError', { error: String(error) }), 'error', 6000);
+        } finally {
+            modelDownloadBusy.update((current) => {
+                const next = { ...current };
+                delete next[modelId];
+                return next;
+            });
+            modelDownloadProgress.update((current) => {
+                const next = { ...current };
+                delete next[modelId];
+                return next;
+            });
+        }
+    }
+    async function pickVoiceModelFolder() {
+        try {
+            const picked = await openFileDialog({ directory: true, multiple: false });
+            if (typeof picked === 'string' && picked.length) {
+                settings.update((s) => ({ ...s, voskModelPath: picked }));
+                toast(t('settings.voiceSection.toastFolderSet'), 'success', 2500);
+            }
+        } catch (error) {
+            toast(t('settings.voiceSection.toastFolderPickError', { error: String(error) }), 'error', 4000);
+        }
+    }
+    /** Scan installed model folders so the UI can offer "pick a model" instead
+     *  of a folder file-picker. */
+    async function refreshInstalledModels() {
+        try {
+            installedModels = await invoke<{ name: string; path: string; size_bytes: number }[]>(
+                'voice_list_installed_models',
+            );
+        } catch {
+            installedModels = [];
+        }
+    }
+    /** Folder a catalog model extracts to (its zip name without the extension). */
+    function installedFolderName(model: VoiceModelSpec): string {
+        return model.filename.replace(/\.zip$/i, '');
+    }
+    /** The installed entry for a catalog model, or null when not downloaded. */
+    function installedFor(model: VoiceModelSpec) {
+        const name = installedFolderName(model);
+        return installedModels.find((m) => m.name === name) ?? null;
+    }
+    /** Whether a model folder path is the currently-active voskModelPath. */
+    function isActiveModel(path: string): boolean {
+        const strip = (p: string) => p.replace(/[\\/]+$/, '').toLowerCase();
+        return strip($settings.voskModelPath ?? '') === strip(path);
+    }
+    /** Activate an already-installed model — the normal "pick a model" path. */
+    function selectInstalledModel(path: string) {
+        settings.update((s) => ({ ...s, voskModelPath: path }));
+        toast(t('settings.voiceSection.toastModelSelected'), 'success', 2500);
+    }
+    function fmtModelBytes(n: number): string {
+        if (!n) return '';
+        const mb = n / (1024 * 1024);
+        return mb >= 1024 ? `${(mb / 1024).toFixed(1)} GB` : `${Math.round(mb)} MB`;
+    }
+    async function openModelsFolder() {
+        try {
+            const dir = modelsDir || (await resolveModelTargetDir());
+            await invoke('open_search_result_path', { path: dir });
+        } catch (error) {
+            toast(t('settings.voiceSection.toastFolderPickError', { error: String(error) }), 'error', 4000);
+        }
+    }
+
+    // Load the model catalog + installed models, resolve the storage folder, and
+    // subscribe to live download progress. Cleanup unlistens on destroy.
+    onMount(() => {
+        let cancelled = false;
+        void (async () => {
+            await refreshVoiceModels();
+            modelsDir = await resolveModelTargetDir();
+            await refreshInstalledModels();
+            const unlisten = await listen<{ model_id: string; downloaded: number; total: number }>(
+                'voice-model-download-progress',
+                (event) => {
+                    const { model_id, downloaded, total } = event.payload;
+                    modelDownloadProgress.update((current) => ({
+                        ...current,
+                        [model_id]: { downloaded, total },
+                    }));
+                },
+            );
+            if (cancelled) unlisten();
+            else modelProgressUnlisten = unlisten;
+        })();
+        return () => {
+            cancelled = true;
+            modelProgressUnlisten?.();
+            modelProgressUnlisten = null;
+        };
+    });
+
+    // The Full U²-Net is a separate optional model. Keep its transfer state
+    // in the shared settings store, then reconnect this view to progress when
+    // Settings remounts after a workspace switch.
+    onMount(() => {
+        let cancelled = false;
+        void (async () => {
+            if (!$backgroundModelDownloadBusy) {
+                await refreshBackgroundRemovalModelStatus();
+            }
+            const unlisten = await listen<{ downloaded: number; total: number }>(
+                'background-removal-model-download-progress',
+                (event) => backgroundModelDownloadProgress.set(event.payload),
+            );
+            if (cancelled) unlisten();
+            else backgroundModelProgressUnlisten = unlisten;
+        })();
+        return () => {
+            cancelled = true;
+            backgroundModelProgressUnlisten?.();
+            backgroundModelProgressUnlisten = null;
+        };
+    });
+
+    function setVoiceVad(value: boolean) {
+        settings.update((s) => ({ ...s, voiceVadEnabled: value }));
+    }
+    function setPushToTalk(value: boolean) {
+        settings.update((s) => ({ ...s, pushToTalkEnabled: value }));
+    }
+    function setRestoreClipboard(value: boolean) {
+        settings.update((s) => ({ ...s, restoreClipboardAfterPaste: value }));
+    }
+    /** Dictation output mode — Paste (clipboard + Ctrl+V) vs Type out
+     * (synth keystrokes). Stored in settings.voiceOutputMode. */
+    function setDictationMode(mode: 'paste' | 'type') {
+        settings.update((s) => ({ ...s, voiceOutputMode: mode }));
+    }
+
+    // ─── Collapsible-card header summaries ─────────────────────────
+    // Each Voice / Storage group is collapsed by default; the summary
+    // surfaces its current value in the header so the page reads at a
+    // glance without expanding everything.
+    /** Humanize a stored chord ("CommandOrControl+Alt+V" → "Ctrl + Alt + V"). */
+    function humanizeShortcut(s: string): string {
+        if (!s) return '';
+        return s
+            .replace(/CommandOrControl/g, 'Ctrl')
+            .replace(/\bControl\b/g, 'Ctrl')
+            .replace(/\bMeta\b/g, 'Win')
+            .replace(/\s*\+\s*/g, ' + ');
+    }
+    /** Last path segment of a model folder, for the collapsed summary. */
+    function lastPathSegment(p: string | undefined | null): string {
+        if (!p) return '';
+        const parts = p.replace(/[\\/]+$/, '').split(/[\\/]/);
+        return parts[parts.length - 1] ?? '';
+    }
+    let voiceModelSummary = $derived(
+        $settings.voskModelPath
+            ? lastPathSegment($settings.voskModelPath)
+            : $_('settings.voiceSection.summaryNoModel'),
+    );
+    let voiceOutputSummary = $derived(
+        $settings.voiceOutputMode === 'type'
+            ? $_('settings.voiceSection.outputModeTypeLabel')
+            : $_('settings.voiceSection.outputModePasteLabel'),
+    );
+
+    // ─── TOOL PACKS section ────────────────────────────────────────
+    interface PackMeta {
+        id: string;
+        name: string;
+        description: string;
+        toolCount: number;
+        required?: boolean;
+    }
+    const PACK_META: PackMeta[] = [
+        {
+            id: 'core',
+            name: 'Core Pack',
+            description: 'File Search and required KeepItLocal pages. Search overlay, About, Documentation, Privacy Guide.',
+            toolCount: 0,
+            required: true,
+        },
+        {
+            id: 'utils',
+            name: 'Utilities Pack',
+            description: 'Hashing, encoders, QR, calculators, passwords, and format helpers.',
+            toolCount: 7,
+        },
+        {
+            id: 'development',
+            name: 'Development Pack',
+            description: 'JWT, SQL, regex, diff, JSON, fake data, IDs, and Markdown helpers.',
+            toolCount: 10,
+        },
+        {
+            id: 'privacy',
+            name: 'Privacy Pack',
+            description: 'Metadata inspection/sanitizing, redaction, and shredding tools.',
+            toolCount: 4,
+        },
+        {
+            id: 'document',
+            name: 'Documents Pack',
+            description: 'Word, CSV, spreadsheet, and document conversion/cleanup tools.',
+            toolCount: 7,
+        },
+        {
+            id: 'image',
+            name: 'Image Pack',
+            description: 'Image conversion, compression, resizing, favicons, Base64, and watermarking.',
+            toolCount: 6,
+        },
+        {
+            id: 'media',
+            name: 'Media Pack',
+            description: 'Screen recording, audio extraction, and video compression on your device.',
+            toolCount: 2,
+        },
+        {
+            id: 'file',
+            name: 'File Tools Pack',
+            description: 'Cleaner/analyzer, duplicate finder, and bulk rename workflows.',
+            toolCount: 3,
+        },
+        {
+            id: 'automation',
+            name: 'Automation Pack',
+            description: 'Local automation recipe builder.',
+            toolCount: 1,
+        },
+        {
+            id: 'time-focus',
+            name: 'Time & Focus Pack',
+            description: 'Reminders and a focus session that nudges you off distracting apps and websites.',
+            toolCount: 2,
+        },
+    ];
+
+    function togglePack(id: string, value: boolean) {
+        setPendingToolPack(id as any, value);
+    }
+    async function saveToolPacks() {
+        await savePendingToolPacks();
+    }
+    function discardToolPacks() {
+        discardPendingToolPackChanges();
+    }
+    async function restartApp() {
+        try {
+            await invoke('restart_keepitlocal_command');
+        } catch (error) {
+            errorToast("Couldn't restart KeepItLocal", error, {
+                hint: 'Close any open dialogs and try again, or quit from the tray icon and reopen.',
+            });
+        }
+    }
+    /** Restart specifically to apply the App mode change. The settings save
+     *  is debounced; without force-flushing it first, a fast Restart click can
+     *  beat the pending save and the new app_mode never reaches disk. */
+    async function restartToApplyAppMode() {
+        try {
+            await invoke('save_app_settings', { settings: get(settings) });
+            await invoke('restart_keepitlocal_command');
+        } catch (error) {
+            errorToast("Couldn't restart KeepItLocal", error, {
+                hint: 'Close any open dialogs and try again, or quit from the tray icon and reopen.',
+            });
+        }
+    }
+
+    // ─── APPEARANCE setters ────────────────────────────────────────
+    function setTheme(value: Theme) {
+        settings.update((s) => ({ ...s, theme: value }));
+        document.documentElement.dataset.theme = value;
+    }
+    function setFont(value: UiFont) {
+        settings.update((s) => ({ ...s, uiFont: value }));
+        applyFont(value);
+    }
+
+    // ─── SYSTEM & SEARCH ───────────────────────────────────────────
+    let startOnLoginState = $state(false);
+    let startOnLoginBusy = $state(false);
+
+    onMount(async () => {
+        try {
+            startOnLoginState = await isAutostartEnabled();
+        } catch {
+            // Autostart unavailable — toggle stays off.
+        }
+        try {
+            commandBlurSupported =
+                (await invoke<boolean>('supports_window_corner_rounding')) === true;
+        } catch {
+            commandBlurSupported = false;
+        }
+        // Initial fetches.
+        void refreshActivity();
+        void refreshDiagnostics();
+        void refreshLogFolder();
+        void refreshVoiceModels();
+        void refreshStorage();
+    });
+
+    async function setStartOnLogin(value: boolean) {
+        if (startOnLoginBusy) return;
+        startOnLoginBusy = true;
+        try {
+            if (value) await enableAutostart();
+            else await disableAutostart();
+            startOnLoginState = value;
+        } catch (error) {
+            errorToast("Couldn't change the start-on-login setting", error, {
+                hint: 'Windows may have blocked the change. Try running KeepItLocal as administrator once and toggling again.',
+            });
+            startOnLoginState = !value;
+        } finally {
+            startOnLoginBusy = false;
+        }
+    }
+    function setWebSearch(value: boolean) {
+        settings.update((s) => ({ ...s, webSearchEnabled: value }));
+    }
+    function setBrowserSearch(value: boolean) {
+        settings.update((s) => ({
+            ...s,
+            browserSearchEnabled: value,
+            // Turning the master switch off must also drop history, so a
+            // later re-enable doesn't silently resume including it.
+            browserHistoryEnabled: value ? s.browserHistoryEnabled : false,
+        }));
+        // Delete the temp snapshot immediately on disable — don't leave a copy
+        // of the user's browsing data sitting in temp until its TTL expires.
+        if (!value) void invoke('clear_browser_snapshot').catch(() => {});
+    }
+    function setBrowserHistory(value: boolean) {
+        settings.update((s) => ({ ...s, browserHistoryEnabled: value }));
+        // The snapshot's contents depend on this flag (Chromium history DBs
+        // are only copied when it's on), so force a rebuild.
+        void invoke('clear_browser_snapshot').catch(() => {});
+    }
+
+    // ─── CLIPBOARD OVERLAY ─────────────────────────────────────────
+    function setClipboardOverlayEnabled(value: boolean) {
+        settings.update((s) => ({ ...s, clipboardOverlayEnabled: value }));
+    }
+    function setQuickNoteHotkeyEnabled(value: boolean) {
+        settings.update((s) => ({ ...s, quickNoteHotkeyEnabled: value }));
+    }
+    function setScreenRecordingHotkeyEnabled(value: boolean) {
+        settings.update((s) => ({ ...s, screenRecordingHotkeyEnabled: value }));
+    }
+
+    /* ─── PER-APP HOTKEYS ───────────────────────────────────────────
+       A REPEATABLE list, unlike every other card in this section: each
+       row binds one global chord to one installed app. Press it anywhere
+       → the app's window is focused, or minimized if it was already in
+       front, or the app is launched when it has no window at all.
+
+       The app picker is a plain <select> over the launcher's own app
+       index (the same `search_launch_targets` cache the palette browses),
+       so a binding's `target` is a path the backend already trusts —
+       these rows can't be used to start something off-index.
+    */
+    let installedApps = $derived($settingsInstalledApps);
+    let installedAppsLoading = $derived($settingsInstalledAppsLoading);
+
+    async function loadInstalledApps() {
+        if (installedApps.length || installedAppsLoading) return;
+        settingsInstalledAppsLoading.set(true);
+        try {
+            const result = await invoke<{ results: { name: string; path: string }[] }>(
+                'search_launch_targets',
+                { options: { query: '', limit: 400, browseAll: true } },
+            );
+            // The index holds one record per shortcut, so the same app can
+            // appear several times (Start Menu .lnk + Desktop .lnk + .exe).
+            // Keep the first of each name so the dropdown reads like an app
+            // list rather than a shortcut dump.
+            const seen = new Set<string>();
+            settingsInstalledApps.set((result?.results ?? [])
+                .filter((a) => {
+                    const key = a.name.toLowerCase();
+                    if (seen.has(key)) return false;
+                    seen.add(key);
+                    return true;
+                })
+                .sort((a, b) => a.name.localeCompare(b.name)));
+        } catch (error) {
+            console.warn('loadInstalledApps failed:', error);
+        } finally {
+            settingsInstalledAppsLoading.set(false);
+        }
+    }
+
+    // Load the app list the first time the user opens the Shortcuts section —
+    // it's a disk-cache read, but there's no reason to pay it on every mount.
+    $effect(() => {
+        if (activeSection === 'shortcuts') void loadInstalledApps();
+    });
+
+    function addAppHotkey() {
+        settings.update((s) => ({
+            ...s,
+            appHotkeys: [
+                ...(s.appHotkeys ?? []),
+                {
+                    id: `app-hotkey-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+                    shortcut: '',
+                    target: '',
+                    name: '',
+                    // Starts disabled: a blank row has nothing to bind, and
+                    // enabling it before both fields are set would only make
+                    // the backend report a failure.
+                    enabled: false,
+                },
+            ],
+        }));
+    }
+
+    function updateAppHotkey(id: string, patch: Partial<AppHotkeyBinding>) {
+        settings.update((s) => ({
+            ...s,
+            appHotkeys: (s.appHotkeys ?? []).map((b) =>
+                b.id === id ? { ...b, ...patch } : b,
+            ),
+        }));
+    }
+
+    function removeAppHotkey(id: string) {
+        settings.update((s) => ({
+            ...s,
+            appHotkeys: (s.appHotkeys ?? []).filter((b) => b.id !== id),
+        }));
+    }
+
+    function setAppHotkeyTarget(id: string, target: string) {
+        const app = installedApps.find((a) => a.path === target);
+        updateAppHotkey(id, { target, name: app?.name ?? '' });
+    }
+
+    /** A row can only go live once it has both a chord and an app. */
+    function appHotkeyReady(binding: AppHotkeyBinding): boolean {
+        return Boolean(binding.shortcut && binding.target);
+    }
+    function setClipboardAutoPaste(value: boolean) {
+        settings.update((s) => ({ ...s, clipboardAutoPaste: value }));
+    }
+
+    // ─── STORAGE & PRIVACY ─────────────────────────────────────────
+    /** Maps to the Rust `StorageInsightsPayload`. Tauri serializes the
+     *  snake_case Rust fields as camelCase JSON. */
+    interface StorageInsights {
+        preferencesDbBytes: number;
+        clipboardImagesBytes: number;
+        clipboardImagesCount: number;
+        fileSearchIndexBytes: number;
+        automationBytes: number;
+        totalBytes: number;
+        quarantineCount: number;
+        quarantineBytes: number;
+    }
+    /** Maps to the Rust `AppStoragePathsPayload`. */
+    interface AppStoragePaths {
+        appDataDir: string;
+        preferencesDatabase: string;
+        automationDir: string;
+        automationDatabase: string;
+        automationActivityDb: string;
+        fileSearchIndexDir: string;
+        fileSearchDatabase: string;
+        clipboardImagesDir: string;
+        clipboardHistoryJson: string;
+    }
+    let storageInsights = $derived($settingsStorageInsights);
+    let storagePaths = $derived($settingsStoragePaths);
+    let storageBusy = $derived($settingsStorageBusy);
+
+    function formatBytes(bytes: number): string {
+        if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
+        const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+        let i = 0;
+        let n = bytes;
+        while (n >= 1024 && i < units.length - 1) {
+            n /= 1024;
+            i++;
+        }
+        return `${n.toFixed(n < 10 && i > 0 ? 1 : 0)} ${units[i]}`;
+    }
+
+    async function refreshStorage() {
+        if (storageBusy) return;
+        settingsStorageBusy.set(true);
+        try {
+            // Both backend commands already exist in Rust — get_storage_insights
+            // gives sizes, get_app_storage_paths gives the path list for the
+            // Local Storage cards.
+            const [insights, paths] = await Promise.all([
+                invoke<StorageInsights>('get_storage_insights'),
+                invoke<AppStoragePaths>('get_app_storage_paths'),
+            ]);
+            settingsStorageInsights.set(insights);
+            settingsStoragePaths.set(paths);
+        } catch (error) {
+            errorToast("Couldn't read storage usage", error, {
+                hint: 'This can happen during the first launch while indexes are still being built. Try again in a moment.',
+            });
+        } finally {
+            settingsStorageBusy.set(false);
+        }
+    }
+
+    async function copyPath(path: string) {
+        try {
+            await navigator.clipboard.writeText(path);
+            toast('Path copied.', 'success', 2000);
+        } catch {
+            toast('Clipboard unavailable.', 'error', 3000);
+        }
+    }
+
+    async function wipeAllData() {
+        const ok = await confirm(
+            'Permanently delete clipboard history, the search index, preferences, and automation data. Your own files are not touched. KeepItLocal will restart from a fresh install state.',
+            { title: 'Wipe all KeepItLocal data', kind: 'warning' },
+        );
+        if (!ok) return;
+        try {
+            await invoke<void>('reset_all_data');
+            toast('All data wiped. Restarting…', 'success', 3000);
+            // Short pause so the toast is visible before the window closes.
+            await new Promise<void>((resolve) => setTimeout(resolve, 1200));
+            await restartApp();
+        } catch (error) {
+            errorToast("Couldn't wipe KeepItLocal data", error, {
+                hint: 'A background task may still be running. Close any open tools and try again.',
+                durationMs: 5500,
+            });
+        }
+    }
+
+    // ─── DATA BACKUP / RESTORE ────────────────────────────────────
+    let exportBusy = $derived($settingsExportBusy);
+    let importBusy = $derived($settingsImportBusy);
+
+    async function exportData() {
+        if (exportBusy) return;
+        settingsExportBusy.set(true);
+        try {
+            const bundleJson = await invoke<string>('export_app_data');
+            // Let the user pick where to save the file. Default name
+            // includes today's date so multiple backups don't clobber
+            // each other.
+            const now = new Date();
+            const stamp =
+                `${now.getFullYear()}-` +
+                `${String(now.getMonth() + 1).padStart(2, '0')}-` +
+                `${String(now.getDate()).padStart(2, '0')}`;
+            const path = await saveFileDialog({
+                title: 'Save KeepItLocal backup',
+                defaultPath: `keepitlocal-backup-${stamp}.json`,
+                filters: [{ name: 'JSON backup', extensions: ['json'] }],
+            });
+            if (!path) return; // user cancelled
+            await writeTextFile(path, bundleJson);
+            toast('Backup saved successfully.', 'success', 4000);
+        } catch (error) {
+            errorToast("Couldn't export your backup", error, {
+                hint: 'Try a different folder — the destination may be read-only or out of space.',
+                durationMs: 5500,
+            });
+        } finally {
+            settingsExportBusy.set(false);
+        }
+    }
+
+    async function importData() {
+        if (importBusy) return;
+        const ok = await confirm(
+            'Importing will overwrite your current settings, profiles, tool packs, onboarding state, and snippets with the values from the backup file. This cannot be undone.',
+            { title: 'Import KeepItLocal backup', kind: 'warning' },
+        );
+        if (!ok) return;
+        settingsImportBusy.set(true);
+        try {
+            const path = await openFileDialog({
+                title: 'Open KeepItLocal backup',
+                filters: [{ name: 'JSON backup', extensions: ['json'] }],
+                multiple: false,
+            });
+            if (!path) return; // user cancelled
+            const bundleJson = await readTextFile(path as string);
+            const summary = await invoke<string>('import_app_data', { bundleJson });
+            toast(`Import complete. ${summary}. Restart KeepItLocal to apply all changes.`, 'success', 7000);
+        } catch (error) {
+            errorToast("Couldn't import this backup", error, {
+                hint: 'Check that the file was created by a recent KeepItLocal version. Older backups may need a fresh export.',
+                durationMs: 6500,
+            });
+        } finally {
+            settingsImportBusy.set(false);
+        }
+    }
+
+    // ─── ACTIVITY & DIAGNOSTICS ────────────────────────────────────
+    let logsTab = $state<'activity' | 'diagnostics'>('activity');
+    let activityEntries = $state<ActivityEntry[]>([]);
+    let diagnosticsEntries = $state<LogEntry[]>([]);
+    let logFolder = $state<string>('');
+    let expandedDiag = $state<Record<number, boolean>>({});
+
+    // ── Pagination — render in pages of LOG_PAGE so a long history
+    //    doesn't dump hundreds of rows at once (cognitive + perf load).
+    //    "Load more" grows the visible window; Refresh resets it.
+    const LOG_PAGE = 25;
+    let activityLimit = $state(LOG_PAGE);
+    let diagLimit = $state(LOG_PAGE);
+    let visibleActivity = $derived(activityEntries.slice(0, activityLimit));
+    let visibleDiagnostics = $derived(diagnosticsEntries.slice(0, diagLimit));
+
+    async function refreshActivity() {
+        try {
+            activityEntries = await listActivity();
+            activityLimit = LOG_PAGE;
+        } catch {
+            activityEntries = [];
+        }
+    }
+    async function refreshDiagnostics() {
+        try {
+            diagnosticsEntries = await listLogEntries(100);
+            diagLimit = LOG_PAGE;
+            expandedDiag = {};
+        } catch {
+            diagnosticsEntries = [];
+        }
+    }
+    async function refreshLogFolder() {
+        try {
+            logFolder = await getLogFolder();
+        } catch {
+            logFolder = '';
+        }
+    }
+    async function doClearActivity() {
+        const ok = await confirm('Clear the activity audit log?', { title: 'Clear activity', kind: 'warning' });
+        if (!ok) return;
+        try {
+            await clearActivity();
+            activityEntries = [];
+        } catch (error) {
+            errorToast("Couldn't clear the activity log", error, {
+                hint: 'A background task may still be writing to it — try again in a moment.',
+            });
+        }
+    }
+    async function doClearDiagnostics() {
+        const ok = await confirm('Clear the diagnostics error log?', { title: 'Clear diagnostics', kind: 'warning' });
+        if (!ok) return;
+        try {
+            await clearLogEntries();
+            diagnosticsEntries = [];
+        } catch (error) {
+            errorToast("Couldn't clear the diagnostics log", error, {
+                hint: 'A background task may still be writing to it — try again in a moment.',
+            });
+        }
+    }
+    async function copyDiagnostics() {
+        try {
+            const text = await exportLogText();
+            await navigator.clipboard.writeText(text);
+            toast('Log copied to clipboard.', 'success', 2500);
+        } catch (error) {
+            errorToast("Couldn't copy the diagnostics log", error, {
+                hint: 'Another app may be holding the clipboard. Try copying again.',
+            });
+        }
+    }
+    async function openLogFolder() {
+        if (!logFolder) {
+            toast('Log folder unavailable.', 'error', 3000);
+            return;
+        }
+        try {
+            // open_search_result_path is the existing generic "open this
+            // file/folder in the OS" command (used by the search overlay
+            // for opening result paths). Reusing it avoids adding a new
+            // Rust command just for the log folder.
+            await invoke('open_search_result_path', { path: logFolder });
+        } catch (error) {
+            errorToast("Couldn't open the log folder", error, {
+                hint: 'The folder may have been deleted by a cleanup tool — restart KeepItLocal to recreate it.',
+            });
+        }
+    }
+    function relativeTime(ms: number): string {
+        if (!ms) return '';
+        const diff = Date.now() - ms;
+        const sec = Math.floor(diff / 1000);
+        if (sec < 60) return 'just now';
+        const min = Math.floor(sec / 60);
+        if (min < 60) return `${min}m ago`;
+        const hr = Math.floor(min / 60);
+        if (hr < 24) return `${hr}h ago`;
+        const day = Math.floor(hr / 24);
+        return `${day}d ago`;
+    }
+
+    // ─── ONBOARDING & RESET ────────────────────────────────────────
+    function replayTour() {
+        settings.update((s) => ({ ...s, tourCompleted: false }));
+        toast('Welcome tour will replay the next time you open a tool.', 'success', 3000);
+    }
+    async function resetAllSettings() {
+        const ok = await confirm(
+            'Restore application settings to defaults? This affects in-memory settings only — it does not delete any files on disk.',
+            { title: 'Reset all settings', kind: 'warning' },
+        );
+        if (!ok) return;
+        settings.update((s) => ({
+            ...s,
+            theme: 'dark' as Theme,
+            uiFont: 'inter' as UiFont,
+            sidebarCollapsed: false,
+            webSearchEnabled: false,
+            browserSearchEnabled: false,
+            browserHistoryEnabled: false,
+            voiceVadEnabled: false,
+            restoreClipboardAfterPaste: true,
+            clipboardAutoPaste: true,
+        }));
+        toast('Settings reset to defaults.', 'success', 3000);
+    }
+</script>
+
+<div class="settings-page" data-screen-kind="settings">
+    <!-- ─── Left nav — sized to match the main app sidebar exactly ─ -->
+    <aside class="settings-nav" aria-label="Settings sections">
+        <div class="settings-title">Settings</div>
+        {#each sections as section (section.id)}
+            {@const Icon = section.icon}
+            <button
+                type="button"
+                class="settings-nav-item"
+                class:is-active={activeSection === section.id}
+                onclick={() => (activeSection = section.id)}
+                aria-current={activeSection === section.id ? 'page' : undefined}
+            >
+                <Icon class="settings-nav-ico" />
+                <span class="settings-nav-label">{section.label}</span>
+            </button>
+        {/each}
+    </aside>
+
+    {#if activeSection === 'fileIndex'}
+        <!-- File Index — the FileSearchIndex screen pinned to the File tab. -->
+        <div class="settings-content-host">
+            <FileSearchIndex fixedTab="file" bind:selected />
+        </div>
+    {:else if activeSection === 'contentIndex'}
+        <!-- Content Index — the FileSearchIndex screen pinned to the Content tab. -->
+        <div class="settings-content-host">
+            <FileSearchIndex fixedTab="content" bind:selected />
+        </div>
+    {:else}
+        <main class="settings-content">
+            {#if activeSection === 'voice'}
+                <section class="settings-section">
+                    <header class="section-head">
+                        <h2>{$_('settings.voiceSection.title')}</h2>
+                        <p>{$_('settings.voiceSection.hint')}</p>
+                    </header>
+
+                    <!-- ─── Speech model ──────────────────────────────────── -->
+                    <CollapsibleCard
+                        title={$_('settings.voiceSection.voskStep2')}
+                        icon={Boxes}
+                        summary={voiceModelSummary}
+                    >
+                        <div class="kc-pad">
+                            <p>{$_('settings.voiceSection.modelDesc')}</p>
+
+                            <div class="model-list">
+                                {#if voiceModels.length === 0}
+                                    <div class="meta-text">{$_('settings.voiceSection.loadingCatalog')}</div>
+                                {/if}
+                                {#each voiceModels as model (model.id)}
+                                    {@const installed = installedFor(model)}
+                                    {@const active = installed ? isActiveModel(installed.path) : false}
+                                    {@const prog = $modelDownloadProgress[model.id]}
+                                    {@const pct = prog && prog.total
+                                        ? Math.min(100, Math.round((prog.downloaded / prog.total) * 100))
+                                        : null}
+                                    <div class="model-row" class:is-current={active}>
+                                        <div class="model-row-info">
+                                            <div class="model-row-title">
+                                                <span>{model.label}</span>
+                                                {#if active}
+                                                    <span class="chip-current">{$_('settings.voiceSection.currentBadge')}</span>
+                                                {:else if installed}
+                                                    <span class="chip-current">{$_('settings.voiceSection.installedBadge')}</span>
+                                                {:else if model.recommended}
+                                                    <span class="chip-recommended">{$_('settings.voiceSection.recommendedBadge')}</span>
+                                                {/if}
+                                            </div>
+                                            <div class="model-row-meta">
+                                                <span>{installed && installed.size_bytes ? fmtModelBytes(installed.size_bytes) : model.size_label}</span>
+                                                <span class="meta-dot">·</span>
+                                                <span>{model.ram_label}</span>
+                                                {#if model.heavy && !installed}
+                                                    <span class="chip-heavy">{$_('settings.voiceSection.heavyModelWarning')}</span>
+                                                {/if}
+                                            </div>
+                                            <div class="model-row-desc">{model.description}</div>
+                                            {#if $modelDownloadBusy[model.id]}
+                                                <div class="model-progress">
+                                                    <div class="model-progress-track">
+                                                        <div
+                                                            class="model-progress-fill"
+                                                            class:indeterminate={pct === null}
+                                                            style={pct !== null ? `width:${pct}%` : ''}
+                                                        ></div>
+                                                    </div>
+                                                    <span class="model-progress-label">
+                                                        {#if prog && prog.total}
+                                                            {fmtModelBytes(prog.downloaded)} / {fmtModelBytes(prog.total)} · {pct}%
+                                                        {:else if prog && prog.downloaded}
+                                                            {fmtModelBytes(prog.downloaded)} downloaded…
+                                                        {:else}
+                                                            {$_('settings.voiceSection.downloading')}
+                                                        {/if}
+                                                    </span>
+                                                </div>
+                                            {/if}
+                                        </div>
+                                        {#if active}
+                                            <span class="chip-current model-action-chip">{$_('settings.voiceSection.currentBadge')}</span>
+                                        {:else if installed}
+                                            <Button variant="primary" size="sm" icon={Check} onclick={() => selectInstalledModel(installed.path)}>
+                                                {$_('settings.voiceSection.useThisModel')}
+                                            </Button>
+                                        {:else}
+                                            <Button
+                                                variant="secondary"
+                                                size="sm"
+                                                icon={Download}
+                                                loading={$modelDownloadBusy[model.id]}
+                                                onclick={() => downloadVoiceModel(model.id)}
+                                            >
+                                                {$_('settings.voiceSection.download')}
+                                            </Button>
+                                        {/if}
+                                    </div>
+                                {/each}
+                            </div>
+
+                            {#if modelsDir}
+                                <div class="model-storage-row">
+                                    <span class="model-storage-label">{$_('settings.voiceSection.storedInLabel')}</span>
+                                    <code class="inline-code model-storage-path">{modelsDir}</code>
+                                    <Button variant="ghost" size="sm" icon={FolderOpen} onclick={openModelsFolder}>
+                                        {$_('settings.voiceSection.openFolder')}
+                                    </Button>
+                                </div>
+                            {/if}
+
+                            <div class="manual-pick-row">
+                                <Button variant="ghost" size="sm" icon={FolderOpen} onclick={pickVoiceModelFolder}>
+                                    {$_('settings.voiceSection.advancedManualToggle')}
+                                </Button>
+                                <span class="manual-pick-desc">
+                                    {$_('settings.voiceSection.manualPickDesc', {
+                                        values: {
+                                            url: 'alphacephei.com/vosk/models',
+                                            folders: 'am/, conf/, graph/, ivector/',
+                                        },
+                                    })}
+                                </span>
+                            </div>
+
+                            {#if !$settings.voskModelPath}
+                                <div class="warning-banner">
+                                    <AlertTriangle class="warn-ico" />
+                                    {$_('settings.voiceSection.voskNoModel')}
+                                </div>
+                            {:else}
+                                <div class="model-current">
+                                    {$_('settings.voiceSection.currentModelLabel')}
+                                    <code class="inline-code">{$settings.voskModelPath}</code>
+                                </div>
+                            {/if}
+                        </div>
+                    </CollapsibleCard>
+
+                    <!-- ─── Output & clipboard ────────────────────────────── -->
+                    <CollapsibleCard
+                        title={$_('settings.voiceSection.outputGroup')}
+                        icon={TypeIcon}
+                        summary={voiceOutputSummary}
+                    >
+                        <div class="field is-stacked">
+                            <div class="settings-row-info">
+                                <div class="settings-row-title">{$_('settings.voiceSection.outputMode')}</div>
+                                <div class="settings-row-desc">{$_('settings.voiceSection.outputModeHint')}</div>
+                            </div>
+                            <div class="settings-row-control">
+                                <div class="settings-chip-row">
+                                    <button
+                                        type="button"
+                                        class="big-chip"
+                                        class:is-active={$settings.voiceOutputMode !== 'type'}
+                                        onclick={() => setDictationMode('paste')}
+                                    >
+                                        <div class="big-chip-title">{$_('settings.voiceSection.outputModePasteLabel')}</div>
+                                        <div class="big-chip-desc">{$_('settings.voiceSection.outputModePasteShort')}</div>
+                                    </button>
+                                    <button
+                                        type="button"
+                                        class="big-chip"
+                                        class:is-active={$settings.voiceOutputMode === 'type'}
+                                        onclick={() => setDictationMode('type')}
+                                    >
+                                        <div class="big-chip-title">{$_('settings.voiceSection.outputModeTypeLabel')}</div>
+                                        <div class="big-chip-desc">{$_('settings.voiceSection.outputModeTypeShort')}</div>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="field">
+                            <div class="settings-row-info">
+                                <div class="settings-row-title">{$_('settings.voiceSection.restoreClipboard')}</div>
+                                <div class="settings-row-desc">{$_('settings.voiceSection.restoreClipboardHint')}</div>
+                            </div>
+                            <div class="settings-row-control">
+                                <Toggle
+                                    checked={$settings.restoreClipboardAfterPaste !== false}
+                                    onchange={setRestoreClipboard}
+                                    ariaLabel={$_('settings.voiceSection.restoreClipboard')}
+                                />
+                            </div>
+                        </div>
+                    </CollapsibleCard>
+
+                    <!-- ─── Advanced (VAD + custom commands) ──────────────── -->
+                    <CollapsibleCard
+                        title={$_('settings.voiceSection.advancedGroup')}
+                        icon={SlidersHorizontal}
+                    >
+                        <div class="field">
+                            <div class="settings-row-info">
+                                <div class="settings-row-title">{$_('settings.voiceSection.vadExperimental')}</div>
+                                <div class="settings-row-desc">{$_('settings.voiceSection.vadExperimentalHint')}</div>
+                            </div>
+                            <div class="settings-row-control">
+                                <Toggle
+                                    checked={$settings.voiceVadEnabled === true}
+                                    onchange={setVoiceVad}
+                                    ariaLabel={$_('settings.voiceSection.vadExperimental')}
+                                />
+                            </div>
+                        </div>
+
+                        <div class="kc-pad">
+                            <div class="settings-row-title">{$_('settings.voiceSection.userCommandsTitle')}</div>
+                            <VoiceCommandsEditor />
+                        </div>
+
+                        <div class="kc-pad">
+                            <div class="settings-row-title">{$_('settings.voiceSection.biTitle')}</div>
+                            <BuiltinCommandsEditor />
+                        </div>
+                    </CollapsibleCard>
+                </section>
+            {:else if activeSection === 'imageModels'}
+                <section class="settings-section">
+                    <header class="section-head">
+                        <h2>Image models</h2>
+                        <p>Manage local models used for image background removal.</p>
+                    </header>
+
+                    <div class="model-list">
+                        <div class="model-row is-current">
+                            <div class="model-row-info">
+                                <div class="model-row-title">
+                                    <span>Fast U2NETP</span>
+                                    <span class="chip-current inline-flex items-center gap-1">
+                                        <Check class="h-3 w-3" />
+                                        Ready offline
+                                    </span>
+                                </div>
+                                <div class="model-row-meta">
+                                    <span>Bundled</span>
+                                    <span class="meta-dot">·</span>
+                                    <span>Fast background removal</span>
+                                </div>
+                                <div class="model-row-desc">
+                                    Included with KeepItLocal. It works locally with no download required.
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="model-row" class:is-current={fullModelInstalled}>
+                            <div class="model-row-info">
+                                <div class="model-row-title">
+                                    <span>Full U²-Net</span>
+                                    {#if fullModelInstalled}
+                                        <span class="chip-current inline-flex items-center gap-1">
+                                            <Check class="h-3 w-3" />
+                                            Installed
+                                        </span>
+                                    {:else if !backgroundRemovalModelStatusChecked}
+                                        <span class="chip-recommended">Checking status</span>
+                                    {:else if $backgroundModelStatus}
+                                        <span class="chip-recommended">Optional</span>
+                                    {:else}
+                                        <span class="chip-heavy">Status unavailable</span>
+                                    {/if}
+                                </div>
+                                <div class="model-row-meta">
+                                    <span>{fullModelInstalled && $backgroundModelStatus?.sizeBytes ? fmtModelBytes($backgroundModelStatus.sizeBytes) : '≈176 MB download'}</span>
+                                    <span class="meta-dot">·</span>
+                                    <span>Uses several hundred MB of RAM while processing</span>
+                                </div>
+                                <div class="model-row-desc">
+                                    Optional high quality removal for finer edges and detail. Processing remains local.
+                                </div>
+                                {#if $backgroundModelDownloadBusy}
+                                    <div class="model-progress" role="status" aria-live="polite">
+                                        <div class="model-progress-track">
+                                            <div
+                                                class="model-progress-fill"
+                                                class:indeterminate={backgroundModelProgressPercent === null}
+                                                style={backgroundModelProgressPercent !== null ? `width:${backgroundModelProgressPercent}%` : ''}
+                                            ></div>
+                                        </div>
+                                        <span class="model-progress-label">
+                                            {#if fullModelProgress?.total}
+                                                {fmtModelBytes(fullModelProgress.downloaded)} / {fmtModelBytes(fullModelProgress.total)} · {backgroundModelProgressPercent}%
+                                            {:else if fullModelProgress?.downloaded}
+                                                {fmtModelBytes(fullModelProgress.downloaded)} downloaded…
+                                            {:else}
+                                                Preparing download…
+                                            {/if}
+                                        </span>
+                                    </div>
+                                {/if}
+                            </div>
+
+                            {#if fullModelInstalled && $backgroundModelStatus?.path}
+                                <Button variant="ghost" size="sm" icon={FolderOpen} onclick={openBackgroundRemovalModelFolder}>
+                                    Open folder
+                                </Button>
+                            {:else}
+                                <Button
+                                    variant="secondary"
+                                    size="sm"
+                                    icon={Download}
+                                    loading={$backgroundModelDownloadBusy}
+                                    onclick={downloadBackgroundRemovalModel}
+                                >
+                                    {backgroundModelCanResume ? 'Download again (resume)' : 'Download'}
+                                </Button>
+                            {/if}
+                        </div>
+                    </div>
+                </section>
+            {:else if activeSection === 'toolpacks'}
+                <section class="settings-section">
+                    <header class="section-head">
+                        <h2>Tool Packs</h2>
+                        <p>
+                            Installer-style feature packs saved locally. Core Pack is always installed; optional
+                            packs apply after restarting KeepItLocal.
+                        </p>
+                    </header>
+
+                    <div class="pack-grid">
+                        <!-- Hidden packs (Automation — moved to v2) are filtered
+                             here too. Settings was the last surface still
+                             advertising, and letting the user *enable*, a pack the
+                             sidebar and Tool Packs browser both refuse to show. -->
+                        {#each PACK_META.filter((p) => !HIDDEN_PACK_IDS.has(p.id as any)) as pack (pack.id)}
+                            {@const enabledPending = $pendingEnabledPackIds.includes(pack.id as any)}
+                            <label
+                                class="pack-card"
+                                class:is-active={enabledPending}
+                                class:is-required={pack.required}
+                            >
+                                <input
+                                    type="checkbox"
+                                    class="pack-check"
+                                    disabled={pack.required}
+                                    checked={enabledPending}
+                                    onchange={(e) => togglePack(pack.id, e.currentTarget.checked)}
+                                />
+                                <div class="pack-body">
+                                    <div class="pack-head">
+                                        <span class="pack-name">{pack.name}</span>
+                                        {#if pack.required}
+                                            <span class="chip-required">REQUIRED</span>
+                                        {/if}
+                                    </div>
+                                    <div class="pack-desc">{pack.description}</div>
+                                    {#if pack.toolCount > 0}
+                                        <div class="pack-meta">{pack.toolCount} tools</div>
+                                    {/if}
+                                </div>
+                            </label>
+                        {/each}
+                    </div>
+
+                    <div class="pack-actions">
+                        <Button
+                            variant="primary"
+                            icon={SaveIcon}
+                            disabled={!hasToolPackChangeReactive}
+                            onclick={saveToolPacks}
+                        >
+                            Save enabled packs
+                        </Button>
+                        <Button
+                            variant="secondary"
+                            disabled={!hasToolPackChangeReactive}
+                            onclick={discardToolPacks}
+                        >
+                            Discard changes
+                        </Button>
+                    </div>
+
+                    <p class="meta-text">
+                        Installer can create the same enabled-pack state during setup; Settings lets users change
+                        it later.
+                    </p>
+
+                    {#if $toolPackRestartRequired}
+                        <div class="warning-banner">
+                            <AlertTriangle class="warn-ico" />
+                            <div>
+                                <div class="warn-title">Tool pack changes are saved.</div>
+                                <div class="warn-body">Restart KeepItLocal to reload the enabled-pack list.</div>
+                            </div>
+                            <Button variant="primary" size="sm" onclick={restartApp}>Restart KeepItLocal</Button>
+                        </div>
+                    {/if}
+                </section>
+            {:else if activeSection === 'appearance'}
+                <section class="settings-section">
+                    <header class="section-head">
+                        <h2>Appearance</h2>
+                        <p>Theme and visual defaults.</p>
+                    </header>
+
+                    <!-- Theme / Font / Command Palette are collapsible (all
+                         collapsed by default) so Appearance opens as a calm
+                         list. (The app ships English-only; no language picker.) -->
+                    <CollapsibleCard
+                        title="Theme"
+                        icon={Palette}
+                        summary={THEME_OPTIONS.find((o) => o.id === $settings.theme)?.label ?? ''}
+                    >
+                        <div class="kc-pad">
+                            <div class="theme-card-row">
+                                {#each THEME_OPTIONS as opt (opt.id)}
+                                    <button
+                                        type="button"
+                                        class="theme-card"
+                                        class:is-active={$settings.theme === opt.id}
+                                        onclick={() => setTheme(opt.id)}
+                                    >
+                                        <div class="theme-swatch theme-swatch-{opt.id}" aria-hidden="true">
+                                            <span class="sw sw-a"></span>
+                                            <span class="sw sw-b"></span>
+                                            <span class="sw sw-c"></span>
+                                        </div>
+                                        <div class="theme-card-title">
+                                            <span>{opt.label}</span>
+                                            {#if $settings.theme === opt.id}
+                                                <span class="chip-active">ACTIVE</span>
+                                            {/if}
+                                        </div>
+                                        <div class="theme-card-desc">{opt.description ?? ''}</div>
+                                    </button>
+                                {/each}
+                            </div>
+                        </div>
+                    </CollapsibleCard>
+
+                    <CollapsibleCard
+                        title="Font"
+                        icon={TypeIcon}
+                        summary={FONT_OPTIONS.find((o) => o.id === $settings.uiFont)?.label ?? ''}
+                    >
+                        <div class="kc-pad">
+                            <div class="font-card-row">
+                                {#each FONT_OPTIONS as opt (opt.id)}
+                                    <button
+                                        type="button"
+                                        class="font-card"
+                                        class:is-active={$settings.uiFont === opt.id}
+                                        onclick={() => setFont(opt.id)}
+                                    >
+                                        <div class="font-preview" data-font-id={opt.id}>Aa Gg 123</div>
+                                        <div class="theme-card-title">
+                                            <span>{opt.label}</span>
+                                            {#if $settings.uiFont === opt.id}
+                                                <span class="chip-active">ACTIVE</span>
+                                            {/if}
+                                        </div>
+                                        <div class="theme-card-desc">{opt.description ?? ''}</div>
+                                    </button>
+                                {/each}
+                            </div>
+                        </div>
+                    </CollapsibleCard>
+
+                    <CollapsibleCard
+                        title="Command Palette"
+                        icon={SearchIcon}
+                        summary={`${Math.round($commandAppearance.opacity * 100)}% opacity`}
+                    >
+                        <div class="field">
+                            <div class="settings-row-info">
+                                <div class="settings-row-title">Background opacity</div>
+                                <div class="settings-row-desc">
+                                    How solid the palette surface is. Lower lets more of
+                                    what's behind tint through.
+                                </div>
+                            </div>
+                            <div class="settings-row-control cmd-appearance-control">
+                                <input
+                                    type="range"
+                                    min="60"
+                                    max="100"
+                                    step="1"
+                                    value={Math.round($commandAppearance.opacity * 100)}
+                                    oninput={(e) =>
+                                        setCommandOpacity(Number(e.currentTarget.value) / 100)}
+                                    class="cmd-range"
+                                    aria-label="Command palette background opacity"
+                                />
+                                <span class="cmd-range-val">
+                                    {Math.round($commandAppearance.opacity * 100)}%
+                                </span>
+                            </div>
+                        </div>
+                        <div class="field">
+                            <div class="settings-row-info">
+                                <div class="settings-row-title">Accent color</div>
+                                <div class="settings-row-desc">
+                                    Highlight color used inside the palette. Reset to follow
+                                    the theme accent.
+                                </div>
+                            </div>
+                            <div class="settings-row-control cmd-appearance-control">
+                                <input
+                                    type="color"
+                                    value={$commandAppearance.accent ?? PALETTE_ACCENT_PLACEHOLDER}
+                                    oninput={(e) => setCommandAccent(e.currentTarget.value)}
+                                    class="cmd-color"
+                                    aria-label="Command palette accent color"
+                                />
+                                {#if $commandAppearance.accent}
+                                    <button
+                                        type="button"
+                                        class="cmd-reset-btn"
+                                        onclick={() => setCommandAccent(null)}
+                                    >
+                                        Reset
+                                    </button>
+                                {/if}
+                            </div>
+                        </div>
+                        {#if commandBlurSupported}
+                            <div class="field">
+                                <div class="settings-row-info">
+                                    <div class="settings-row-title">
+                                        Blur the desktop behind <span class="chip-exp">EXPERIMENTAL</span>
+                                    </div>
+                                    <div class="settings-row-desc">
+                                        Uses Windows 11 acrylic so the desktop behind the palette is
+                                        truly blurred (not just dimmed), with rounded corners. Only
+                                        offered on Windows 11 — Windows 10 can't round the acrylic
+                                        corners, so it's hidden there.
+                                    </div>
+                                </div>
+                                <div class="settings-row-control">
+                                    <Toggle
+                                        checked={$commandAppearance.desktopBlur}
+                                        onchange={(v) => setCommandDesktopBlur(v)}
+                                        ariaLabel="Blur the desktop behind the command palette"
+                                    />
+                                </div>
+                            </div>
+                        {/if}
+                        <div class="field">
+                            <div class="settings-row-info">
+                                <div class="settings-row-title">Reset palette appearance</div>
+                                <div class="settings-row-desc">
+                                    Restore opacity, accent, and blur to their defaults.
+                                </div>
+                            </div>
+                            <div class="settings-row-control">
+                                <Button variant="ghost" size="sm" onclick={resetCommandAppearance}>
+                                    Reset to defaults
+                                </Button>
+                            </div>
+                        </div>
+                    </CollapsibleCard>
+                </section>
+            {:else if activeSection === 'system'}
+                <section class="settings-section">
+                    <header class="section-head">
+                        <h2>System</h2>
+                        <p>Your name, startup, and background behavior.</p>
+                    </header>
+
+                    <div class="settings-row">
+                        <div class="settings-row-info">
+                            <div class="settings-row-title">Your name</div>
+                            <div class="settings-row-desc">
+                                Personalizes the Home greeting and fills the
+                                <code class="inline-code">{'{{name}}'}</code> snippet variable. Stays on
+                                this machine — never sent anywhere.
+                            </div>
+                        </div>
+                        <div class="settings-row-control">
+                            <input
+                                class="settings-name-input"
+                                type="text"
+                                maxlength="40"
+                                placeholder="Your first name"
+                                value={$settings.userName}
+                                oninput={(e) =>
+                                    settings.update((s) => ({ ...s, userName: e.currentTarget.value }))}
+                                spellcheck="false"
+                                autocomplete="off"
+                                aria-label="Your name"
+                            />
+                        </div>
+                    </div>
+
+                    <div class="settings-row">
+                        <div class="settings-row-info">
+                            <div class="settings-row-title">Launch on system startup</div>
+                            <div class="settings-row-desc">Starts KeepItLocal automatically after login.</div>
+                        </div>
+                        <div class="settings-row-control">
+                            <Toggle
+                                checked={startOnLoginState}
+                                disabled={startOnLoginBusy}
+                                onchange={setStartOnLogin}
+                                ariaLabel="Launch on system startup"
+                            />
+                        </div>
+                    </div>
+
+                    <div class="settings-row">
+                        <div class="settings-row-info">
+                            <div class="settings-row-title">Automatic privacy audit</div>
+                            <div class="settings-row-desc">
+                                Off by default. When on, the Privacy Audit runs on this
+                                schedule — entirely on this machine, never uploaded — and only
+                                notifies you when it finds issues.
+                            </div>
+                        </div>
+                        <div class="settings-row-control">
+                            <select
+                                class="settings-select"
+                                value={$settings.privacyAuditSchedule}
+                                onchange={(e) =>
+                                    settings.update((s) => ({
+                                        ...s,
+                                        privacyAuditSchedule: e.currentTarget
+                                            .value as typeof s.privacyAuditSchedule,
+                                    }))}
+                                aria-label="Automatic privacy audit schedule"
+                            >
+                                <option value="off">Off</option>
+                                <option value="launch">On app launch</option>
+                                <option value="daily">Daily</option>
+                                <option value="weekly">Weekly</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="app-mode-block">
+                        <div class="app-mode-head">
+                            <div class="settings-row-title">App mode</div>
+                            <div class="settings-row-desc">
+                                How KeepItLocal opens. Saves immediately; takes effect on the next
+                                launch — use Restart below to apply now.
+                            </div>
+                        </div>
+                        <div class="mode-cards">
+                            <button
+                                class="mode-card"
+                                class:is-active={$settings.appMode === 'both'}
+                                onclick={() => settings.update((s) => ({ ...s, appMode: 'both' }))}
+                                aria-pressed={$settings.appMode === 'both'}
+                            >
+                                <div class="mode-card-title">Main app + palette</div>
+                                <div class="mode-card-desc">
+                                    The full app window opens on launch, plus the global palette
+                                    hotkey. The default.
+                                </div>
+                            </button>
+                            <button
+                                class="mode-card"
+                                class:is-active={$settings.appMode === 'palette-only'}
+                                onclick={() => settings.update((s) => ({ ...s, appMode: 'palette-only' }))}
+                                aria-pressed={$settings.appMode === 'palette-only'}
+                            >
+                                <div class="mode-card-title">Palette only</div>
+                                <div class="mode-card-desc">
+                                    Stay tray-resident, Raycast-style. Reach the main window from
+                                    the tray or palette when you need it.
+                                </div>
+                            </button>
+                        </div>
+                        {#if $settings.appMode === 'palette-only'}
+                            <div class="app-mode-hint">
+                                To switch back, click the KeepItLocal tray icon to reopen the main
+                                window — or open the palette and type
+                                <code class="inline-code">open settings</code>.
+                            </div>
+                        {/if}
+                        <div class="app-mode-actions">
+                            <Button
+                                variant="secondary"
+                                size="sm"
+                                icon={RefreshCw}
+                                onclick={restartToApplyAppMode}
+                            >
+                                Restart KeepItLocal to apply
+                            </Button>
+                        </div>
+                    </div>
+                </section>
+            {:else if activeSection === 'shortcuts'}
+                <section class="settings-section">
+                    <header class="section-head">
+                        <h2>Shortcuts</h2>
+                        <p>Every global hotkey in one place — summon overlays, dictation, sticky notes, and recording from anywhere in Windows.</p>
+                    </header>
+
+                    <CollapsibleCard
+                        title="Voice"
+                        icon={Mic}
+                        summary={humanizeShortcut(voiceShortcut) +
+                            ($settings.pushToTalkEnabled ? ` · ${$_('settings.voiceSection.summaryPtt')}` : '')}
+                    >
+                        <div class="field">
+                            <div class="settings-row-info">
+                                <div class="settings-row-title">{$_('settings.voiceSection.voiceHotkey')}</div>
+                                <div class="settings-row-desc">{$_('settings.voiceSection.voiceHotkeyDesc')}</div>
+                            </div>
+                            <div class="settings-row-control">
+                                <ShortcutPicker
+                                    bind:value={voiceShortcut}
+                                    defaultShortcut={DEFAULT_VOICE_SHORTCUT}
+                                />
+                            </div>
+                        </div>
+
+                        <div class="field">
+                            <div class="settings-row-info">
+                                <div class="settings-row-title">{$_('settings.voiceSection.pushToTalkEnableShort')}</div>
+                                <div class="settings-row-desc">{$_('settings.voiceSection.pushToTalkEnableShortHint')}</div>
+                            </div>
+                            <div class="settings-row-control">
+                                <Toggle
+                                    checked={$settings.pushToTalkEnabled}
+                                    onchange={setPushToTalk}
+                                    ariaLabel={$_('settings.voiceSection.pushToTalkEnableShort')}
+                                />
+                            </div>
+                        </div>
+
+                        {#if $settings.pushToTalkEnabled}
+                            <div class="field">
+                                <div class="settings-row-info">
+                                    <div class="settings-row-title">{$_('settings.voiceSection.pushToTalkHotkey')}</div>
+                                    <div class="settings-row-desc">{$_('settings.voiceSection.pushToTalkHotkeyDesc')}</div>
+                                </div>
+                                <div class="settings-row-control">
+                                    <ShortcutPicker
+                                        bind:value={pttShortcut}
+                                        defaultShortcut={DEFAULT_PTT_SHORTCUT}
+                                    />
+                                </div>
+                            </div>
+                        {/if}
+                    </CollapsibleCard>
+
+                    <CollapsibleCard
+                        title="Command palette"
+                        icon={SearchIcon}
+                        summary={humanizeShortcut(commandShortcut)}
+                    >
+                        <div class="field">
+                            <div class="settings-row-info">
+                                <div class="settings-row-title">Command palette hotkey</div>
+                                <div class="settings-row-desc">
+                                    Summons the unified command palette (search · launch · clipboard ·
+                                    voice). Click to record a new chord — e.g.&nbsp;Ctrl+Alt+K. Applies
+                                    immediately — no restart needed.
+                                </div>
+                            </div>
+                            <div class="settings-row-control">
+                                <ShortcutPicker
+                                    bind:value={commandShortcut}
+                                    defaultShortcut={DEFAULT_COMMAND_SHORTCUT}
+                                />
+                            </div>
+                        </div>
+
+                        <div class="field">
+                            <div class="settings-row-info">
+                                <div class="settings-row-title">Bang shortcuts (web search)</div>
+                                <div class="settings-row-desc">
+                                    When on, prefixes like <code class="inline-code">g chrome</code>,
+                                    <code class="inline-code">?meaning of life</code>,
+                                    <code class="inline-code">gh tantivy</code>,
+                                    <code class="inline-code">yt rust tutorial</code>,
+                                    <code class="inline-code">r/rust</code> show a web-search row in the overlay.
+                                    Queries open in your default browser — nothing leaves your machine until you
+                                    explicitly click the result.
+                                    <br /><br />
+                                    Supported: Google, DuckDuckGo, Bing, Brave, Kagi, Startpage · Wikipedia,
+                                    Google Translate/Maps/Images · GitHub, Stack Overflow, MDN, crates.io, docs.rs,
+                                    npm, PyPI · YouTube, Amazon, Reddit. Off by default — KeepItLocal is local-first;
+                                    this is an explicit opt-in.
+                                </div>
+                            </div>
+                            <div class="settings-row-control">
+                                <Toggle
+                                    checked={$settings.webSearchEnabled === true}
+                                    onchange={setWebSearch}
+                                    ariaLabel="Bang shortcuts"
+                                />
+                            </div>
+                        </div>
+
+                        <div class="settings-row">
+                            <div class="settings-row-main">
+                                <div class="settings-row-title">Browser bookmarks &amp; history</div>
+                                <div class="settings-row-desc">
+                                    Adds a <strong>Web</strong> chip to the command palette that searches your
+                                    bookmarks across Chrome, Edge, Brave, Vivaldi and Firefox — every profile, no
+                                    browser window needed.
+                                    <br /><br />
+                                    Reads those browsers' local bookmark files on this PC. Nothing is stored by
+                                    KeepItLocal and nothing leaves your machine. Private/incognito browsing is never
+                                    written to these files by the browsers themselves, so it can never appear here.
+                                    Off by default.
+                                </div>
+                            </div>
+                            <div class="settings-row-control">
+                                <Toggle
+                                    checked={$settings.browserSearchEnabled === true}
+                                    onchange={setBrowserSearch}
+                                    ariaLabel="Browser bookmarks and history search"
+                                />
+                            </div>
+                        </div>
+
+                        {#if $settings.browserSearchEnabled}
+                            <div class="settings-row">
+                                <div class="settings-row-main">
+                                    <div class="settings-row-title">…also include browsing history</div>
+                                    <div class="settings-row-desc">
+                                        Bookmarks are things you chose to keep; history is everywhere you've been.
+                                        This is a separate, deliberate opt-in for that reason. Still local, still
+                                        never stored — but consider whether you want it appearing in a palette you
+                                        might screen-share. URLs are shown without their query strings, since those
+                                        often carry access tokens.
+                                    </div>
+                                </div>
+                                <div class="settings-row-control">
+                                    <Toggle
+                                        checked={$settings.browserHistoryEnabled === true}
+                                        onchange={setBrowserHistory}
+                                        ariaLabel="Include browsing history"
+                                    />
+                                </div>
+                            </div>
+                        {/if}
+                    </CollapsibleCard>
+
+                    <CollapsibleCard
+                        title="Clipboard overlay"
+                        icon={ClipboardIcon}
+                        summary={humanizeShortcut(clipboardShortcut)}
+                    >
+                        <div class="field">
+                            <div class="settings-row-info">
+                                <div class="settings-row-title">Enable dedicated clipboard hotkey</div>
+                                <div class="settings-row-desc">
+                                    When on, a global keyboard shortcut summons a focused clipboard-history overlay
+                                    anywhere in Windows. Different from the main search overlay — single-purpose list
+                                    with arrow-key navigation and Enter-to-paste. Off-state disables the hotkey but
+                                    history continues capturing in the background.
+                                </div>
+                            </div>
+                            <div class="settings-row-control">
+                                <Toggle
+                                    checked={$settings.clipboardOverlayEnabled}
+                                    onchange={setClipboardOverlayEnabled}
+                                    ariaLabel="Clipboard overlay"
+                                />
+                            </div>
+                        </div>
+
+                        <div class="field">
+                            <div class="settings-row-info">
+                                <div class="settings-row-title">Clipboard overlay hotkey</div>
+                                <div class="settings-row-desc">
+                                    Click to record a new chord. Modifiers + a non-modifier key
+                                    (e.g.&nbsp;Ctrl+Shift+V). Takes effect immediately — no restart needed.
+                                </div>
+                            </div>
+                            <div class="settings-row-control">
+                                <ShortcutPicker
+                                    bind:value={clipboardShortcut}
+                                    defaultShortcut={DEFAULT_CLIPBOARD_SHORTCUT}
+                                />
+                            </div>
+                        </div>
+
+                        <div class="field">
+                            <div class="settings-row-info">
+                                <div class="settings-row-title">Auto-paste on Enter</div>
+                                <div class="settings-row-desc">
+                                    When on, pressing Enter on a clipboard entry automatically pastes into the window
+                                    you were using before opening the overlay — like Win+V's native behavior. When off,
+                                    the entry is just copied back to your clipboard and you paste manually with
+                                    <code class="inline-code">Ctrl+V</code>.
+                                </div>
+                            </div>
+                            <div class="settings-row-control">
+                                <Toggle
+                                    checked={$settings.clipboardAutoPaste}
+                                    onchange={setClipboardAutoPaste}
+                                    ariaLabel="Auto-paste on Enter"
+                                />
+                            </div>
+                        </div>
+                    </CollapsibleCard>
+
+                    <CollapsibleCard
+                        title="Sticky note"
+                        icon={StickyNote}
+                        summary={humanizeShortcut(noteShortcut)}
+                    >
+                        <div class="field">
+                            <div class="settings-row-info">
+                                <div class="settings-row-title">Enable sticky note hotkey</div>
+                                <div class="settings-row-desc">
+                                    When on, a global keyboard shortcut summons a sticky quick-note
+                                    anywhere in Windows — even when KeepItLocal isn't focused. If a
+                                    blank note is already open, that one is brought to the front
+                                    instead of opening another.
+                                </div>
+                            </div>
+                            <div class="settings-row-control">
+                                <Toggle
+                                    checked={$settings.quickNoteHotkeyEnabled}
+                                    onchange={setQuickNoteHotkeyEnabled}
+                                    ariaLabel="Sticky note hotkey"
+                                />
+                            </div>
+                        </div>
+
+                        <div class="field">
+                            <div class="settings-row-info">
+                                <div class="settings-row-title">Sticky note hotkey</div>
+                                <div class="settings-row-desc">
+                                    Click to record a new chord. Modifiers + a non-modifier key
+                                    (e.g.&nbsp;Ctrl+Alt+N). Takes effect immediately — no restart needed.
+                                </div>
+                            </div>
+                            <div class="settings-row-control">
+                                <ShortcutPicker
+                                    bind:value={noteShortcut}
+                                    defaultShortcut={DEFAULT_NOTE_SHORTCUT}
+                                />
+                            </div>
+                        </div>
+                    </CollapsibleCard>
+
+                    <CollapsibleCard
+                        title="Per-app hotkeys"
+                        icon={AppWindow}
+                        summary={($settings.appHotkeys ?? []).filter((b) => b.enabled).length
+                            ? `${($settings.appHotkeys ?? []).filter((b) => b.enabled).length} active`
+                            : 'None yet'}
+                    >
+                        <div class="kc-pad">
+                            <p>
+                                Bind a chord to an app. Pressing it anywhere brings that app to the
+                                front — or minimizes it if it's already in front, or launches it if
+                                it isn't running. Only apps KeepItLocal already indexes can be
+                                bound.
+                            </p>
+                        </div>
+
+                        {#each $settings.appHotkeys ?? [] as binding (binding.id)}
+                            <div class="app-hotkey-row" class:is-active={binding.enabled}>
+                                <select
+                                    class="app-hotkey-picker"
+                                    value={binding.target}
+                                    aria-label="App to bind"
+                                    onchange={(event) =>
+                                        setAppHotkeyTarget(
+                                            binding.id,
+                                            (event.currentTarget as HTMLSelectElement).value,
+                                        )}
+                                >
+                                    <option value="">
+                                        {installedAppsLoading ? 'Loading apps…' : 'Choose an app…'}
+                                    </option>
+                                    {#if binding.target && !installedApps.some((a) => a.path === binding.target)}
+                                        <!-- The bound app is no longer in the index (moved or
+                                             uninstalled). Keep it selectable so the row doesn't
+                                             silently reset itself to blank. -->
+                                        <option value={binding.target}>
+                                            {binding.name || binding.target} (not found)
+                                        </option>
+                                    {/if}
+                                    {#each installedApps as app (app.path)}
+                                        <option value={app.path}>{app.name}</option>
+                                    {/each}
+                                </select>
+
+                                <div class="app-hotkey-chord">
+                                    <ShortcutPicker
+                                        value={binding.shortcut}
+                                        placeholder="Set chord"
+                                        onchange={(next: string) =>
+                                            updateAppHotkey(binding.id, { shortcut: next })}
+                                    />
+                                </div>
+
+                                <Toggle
+                                    checked={binding.enabled}
+                                    disabled={!appHotkeyReady(binding)}
+                                    onchange={(value) =>
+                                        updateAppHotkey(binding.id, { enabled: value })}
+                                    ariaLabel="Enable this per-app hotkey"
+                                />
+
+                                <button
+                                    type="button"
+                                    class="app-hotkey-remove"
+                                    aria-label="Remove this per-app hotkey"
+                                    title="Remove"
+                                    onclick={() => removeAppHotkey(binding.id)}
+                                >
+                                    <X size={15} />
+                                </button>
+                            </div>
+                        {/each}
+
+                        <div class="kc-pad">
+                            <Button variant="secondary" size="sm" icon={Plus} onclick={addAppHotkey}>
+                                Add app hotkey
+                            </Button>
+                        </div>
+                    </CollapsibleCard>
+
+                    <!-- Screen-recording hotkey remains unavailable until the
+                         visible recorder has a supported global start/stop flow.
+                         The backend does not register this chord at startup. -->
+                    {#if false}
+                    <CollapsibleCard
+                        title="Screen recording"
+                        icon={Video}
+                        summary={humanizeShortcut(recordingShortcut)}
+                    >
+                        <div class="field">
+                            <div class="settings-row-info">
+                                <div class="settings-row-title">Enable start / stop hotkey</div>
+                                <div class="settings-row-desc">
+                                    A global shortcut to start or stop a recording from anywhere —
+                                    even while KeepItLocal is minimized.
+                                </div>
+                            </div>
+                            <div class="settings-row-control">
+                                <Toggle
+                                    checked={$settings.screenRecordingHotkeyEnabled}
+                                    onchange={setScreenRecordingHotkeyEnabled}
+                                    ariaLabel="Screen recording hotkey"
+                                />
+                            </div>
+                        </div>
+
+                        <div class="field">
+                            <div class="settings-row-info">
+                                <div class="settings-row-title">Start / stop hotkey</div>
+                                <div class="settings-row-desc">
+                                    Click to record a new chord (modifiers + a key,
+                                    e.g.&nbsp;Ctrl+Alt+R). Takes effect immediately.
+                                </div>
+                            </div>
+                            <div class="settings-row-control">
+                                <ShortcutPicker
+                                    bind:value={recordingShortcut}
+                                    defaultShortcut={DEFAULT_RECORDING_SHORTCUT}
+                                />
+                            </div>
+                        </div>
+                    </CollapsibleCard>
+                    {/if}
+
+                    <div class="tip-banner">
+                        <strong>Tip:</strong> if a shortcut collides with another app (a browser's
+                        <code class="inline-code">Ctrl+Shift+V</code> = paste without formatting, for example),
+                        switch to something else here — the change applies right away.
+                    </div>
+                </section>
+            {:else if activeSection === 'recording'}
+                <section class="settings-section">
+                    <header class="section-head">
+                        <h2>Recording</h2>
+                        <p>Defaults for the Screen Recorder — quality and where files are saved.</p>
+                    </header>
+
+                    <div class="field-card">
+                        <div class="field">
+                            <div class="settings-row-info">
+                                <div class="settings-row-title">Quality preset</div>
+                                <div class="settings-row-desc">
+                                    {presetParams($recPreset).desc} — couples frame rate with file size.
+                                </div>
+                            </div>
+                            <div class="settings-row-control" style="display:flex; gap:6px;">
+                                {#each RECORDING_PRESETS as p}
+                                    <Button
+                                        variant={$recPreset === p ? 'primary' : 'ghost'}
+                                        size="sm"
+                                        onclick={() => recPreset.set(p)}
+                                    >
+                                        {presetParams(p).label}
+                                    </Button>
+                                {/each}
+                            </div>
+                        </div>
+
+                        <div class="field">
+                            <div class="settings-row-info">
+                                <div class="settings-row-title">Save recordings to</div>
+                                <div class="settings-row-desc">
+                                    {$recSaveFolder
+                                        ? $recSaveFolder
+                                        : 'Ask each time — a save dialog opens when you start a recording.'}
+                                </div>
+                            </div>
+                            <div class="settings-row-control" style="display:flex; gap:6px;">
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    icon={FolderOpen}
+                                    onclick={pickRecFolder}
+                                >
+                                    Choose folder…
+                                </Button>
+                                {#if $recSaveFolder}
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        icon={X}
+                                        onclick={() => recSaveFolder.set('')}
+                                    >
+                                        Clear
+                                    </Button>
+                                {/if}
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="tip-banner">
+                        <strong>Tip:</strong> with a folder set, recordings save instantly with an
+                        auto-timestamped name — no dialog.
+                    </div>
+                </section>
+            {:else if activeSection === 'storage'}
+                <section class="settings-section">
+                    <header class="section-head">
+                        <h2>Storage & Privacy</h2>
+                        <p>See exactly what we've collected, and wipe everything in one click.</p>
+                    </header>
+
+                    <div class="hero-card">
+                        <div class="hero-label">TOTAL ON DISK</div>
+                        <div class="hero-value">
+                            {storageInsights ? formatBytes(storageInsights.totalBytes) : '—'}
+                        </div>
+                        <div class="hero-meta">
+                            Everything below adds up to this. Nothing leaves this machine.
+                        </div>
+                        <div class="hero-action">
+                            <Button
+                                variant="secondary"
+                                size="sm"
+                                icon={RefreshCw}
+                                loading={storageBusy}
+                                onclick={refreshStorage}
+                            >
+                                Refresh
+                            </Button>
+                        </div>
+                    </div>
+
+                    <!-- ─── Breakdown by category (open by default) ──────── -->
+                    <CollapsibleCard title="Breakdown by category" icon={PieChart} open>
+                        {#if storageInsights}
+                            <div class="kc-pad">
+                                <div class="slice-grid">
+                                    <div class="slice-card">
+                                        <div class="slice-label">Preferences database</div>
+                                        <div class="slice-value">{formatBytes(storageInsights.preferencesDbBytes)}</div>
+                                        <div class="slice-desc">
+                                            Encrypted clipboard history, settings, profiles, tool packs.
+                                        </div>
+                                    </div>
+                                    <div class="slice-card">
+                                        <div class="slice-label">Clipboard images</div>
+                                        <div class="slice-value">
+                                            {formatBytes(storageInsights.clipboardImagesBytes)}
+                                            <span class="slice-sub">· {storageInsights.clipboardImagesCount} files</span>
+                                        </div>
+                                        <div class="slice-desc">
+                                            Auto-evicted at 256 MB. Pinned items stay.
+                                        </div>
+                                    </div>
+                                    <div class="slice-card">
+                                        <div class="slice-label">File search index</div>
+                                        <div class="slice-value">{formatBytes(storageInsights.fileSearchIndexBytes)}</div>
+                                        <div class="slice-desc">Search database of folders you chose to index — lets you find files instantly without scanning every time.</div>
+                                    </div>
+                                    <!-- Wave 7.5 (2026-05-28): Automation slice
+                                         hidden — Automation pack is v2-only
+                                         (not shipped in v1), so listing it
+                                         here misleads about the storage
+                                         picture. The backend still tracks
+                                         the bytes (so the count is
+                                         accurate once Automation ships);
+                                         we just don't surface it yet. -->
+                                    {#if storageInsights.quarantineCount > 0}
+                                        <div class="slice-card">
+                                            <div class="slice-label">Quarantine</div>
+                                            <div class="slice-value">
+                                                {formatBytes(storageInsights.quarantineBytes)}
+                                                <span class="slice-sub">· {storageInsights.quarantineCount} files</span>
+                                            </div>
+                                            <div class="slice-desc">
+                                                Recoverable artifacts from past corruption recovery — safe to ignore.
+                                            </div>
+                                        </div>
+                                    {/if}
+                                </div>
+                            </div>
+                        {:else}
+                            <div class="kc-pad"><p class="meta-text">Loading storage usage…</p></div>
+                        {/if}
+                    </CollapsibleCard>
+
+                    <!-- ─── Local storage paths (one click reveals all) ──── -->
+                    <CollapsibleCard
+                        title="Local storage paths"
+                        icon={FolderOpen}
+                        summary="Where your data lives on disk"
+                    >
+                        {#if storagePaths}
+                            {@const p = storagePaths}
+                            <div class="ls-row">
+                                <div class="ls-title">App data folder</div>
+                                <div class="ls-path">{p.appDataDir}</div>
+                                <Button variant="secondary" size="sm" icon={CopyIcon} onclick={() => copyPath(p.appDataDir)}>
+                                    Copy path
+                                </Button>
+                            </div>
+
+                            <div class="ls-row">
+                                <div class="ls-title">Preferences database</div>
+                                <div class="ls-path">{p.preferencesDatabase}</div>
+                                <Button variant="secondary" size="sm" icon={CopyIcon} onclick={() => copyPath(p.preferencesDatabase)}>
+                                    Copy path
+                                </Button>
+                            </div>
+
+                            <!-- Wave 7.5 (2026-05-28): Automation folder row
+                                 hidden — same reason as the storage slice
+                                 above. The path still exists on disk
+                                 (the v2 pack will populate it), we just
+                                 don't expose it in v1 settings. -->
+
+                            <div class="ls-row">
+                                <div class="ls-title">File Search index folder</div>
+                                <div class="ls-path">{p.fileSearchIndexDir}</div>
+                                <div class="ls-sub-path"><span class="ls-sub-label">Database:</span> {p.fileSearchDatabase}</div>
+                                <Button variant="secondary" size="sm" icon={CopyIcon} onclick={() => copyPath(p.fileSearchIndexDir)}>
+                                    Copy folder path
+                                </Button>
+                            </div>
+
+                            <div class="ls-row">
+                                <div class="ls-title">Clipboard storage</div>
+                                <div class="ls-sub-path"><span class="ls-sub-label">Images folder:</span> {p.clipboardImagesDir}</div>
+                                <div class="ls-sub-path"><span class="ls-sub-label">History (encrypted):</span> {p.clipboardHistoryJson}</div>
+                                <div class="ls-button-row">
+                                    <Button variant="secondary" size="sm" icon={CopyIcon} onclick={() => copyPath(p.clipboardImagesDir)}>
+                                        Copy images folder
+                                    </Button>
+                                    <Button variant="secondary" size="sm" icon={CopyIcon} onclick={() => copyPath(p.clipboardHistoryJson)}>
+                                        Copy history path
+                                    </Button>
+                                </div>
+                            </div>
+                        {:else}
+                            <div class="kc-pad"><p class="meta-text">Loading storage paths…</p></div>
+                        {/if}
+                    </CollapsibleCard>
+
+                    <!-- ─── Backup & Restore ─────────────────────────────── -->
+                    <header class="section-subhead">
+                        <h3>Backup & Restore</h3>
+                        <p>
+                            Export your settings, profiles, tool packs, and snippets to a JSON file.
+                            Import it later to restore the same setup — even after a full reset or on
+                            a new machine. Clipboard history and the search index are not included
+                            (they're large and device-specific).
+                        </p>
+                    </header>
+
+                    <div class="backup-card">
+                        <div class="backup-action">
+                            <div class="settings-row-info">
+                                <div class="settings-row-title">Export backup</div>
+                                <div class="settings-row-desc">
+                                    Save settings, profiles, tool packs, onboarding state, and snippets
+                                    to a <code>.json</code> file you choose.
+                                </div>
+                            </div>
+                            <Button
+                                variant="secondary"
+                                icon={SaveIcon}
+                                loading={exportBusy}
+                                onclick={exportData}
+                            >
+                                Export…
+                            </Button>
+                        </div>
+                        <div class="backup-action">
+                            <div class="settings-row-info">
+                                <div class="settings-row-title">Import backup</div>
+                                <div class="settings-row-desc">
+                                    Restore from a previously exported file. Overwrites current settings.
+                                    A restart is required to apply all changes.
+                                </div>
+                            </div>
+                            <Button
+                                variant="secondary"
+                                icon={Upload}
+                                loading={importBusy}
+                                onclick={importData}
+                            >
+                                Import…
+                            </Button>
+                        </div>
+                    </div>
+
+                    <header class="section-subhead">
+                        <h3>Wipe all KeepItLocal data</h3>
+                        <p>
+                            Erases clipboard history, search index, preferences, and automation.
+                            <strong>Does not touch</strong> the files you've processed with KeepItLocal — only the
+                            app's own state. KeepItLocal will restart from a fresh install state.
+                        </p>
+                    </header>
+
+                    <div class="danger-card">
+                        <div class="settings-row-info">
+                            <div class="settings-row-title">Destructive</div>
+                            <div class="settings-row-desc">This cannot be undone.</div>
+                        </div>
+                        <Button variant="danger" icon={Trash2} onclick={wipeAllData}>
+                            Wipe everything…
+                        </Button>
+                    </div>
+                </section>
+            {:else if activeSection === 'logs'}
+                <section class="settings-section">
+                    <header class="section-head">
+                        <h2>Activity & Diagnostics</h2>
+                        <p>
+                            Per-tool audit trail + the local error log. Both are local-only — nothing leaves your
+                            machine on its own.
+                        </p>
+                    </header>
+
+                    <div class="tab-row">
+                        <button
+                            type="button"
+                            class="tab"
+                            class:is-active={logsTab === 'activity'}
+                            onclick={() => (logsTab = 'activity')}
+                        >
+                            Activity
+                            <span class="tab-count">{activityEntries.length}</span>
+                        </button>
+                        <button
+                            type="button"
+                            class="tab"
+                            class:is-active={logsTab === 'diagnostics'}
+                            onclick={() => (logsTab = 'diagnostics')}
+                        >
+                            Diagnostics
+                            <span class="tab-count">{diagnosticsEntries.length}</span>
+                        </button>
+                    </div>
+
+                    {#if logsTab === 'activity'}
+                        <div class="log-actions">
+                            <span class="meta-text">
+                                {#if activityEntries.length > activityLimit}
+                                    Showing {visibleActivity.length} of {activityEntries.length} · most recent first
+                                {:else}
+                                    {activityEntries.length} entries · most recent first
+                                {/if}
+                            </span>
+                            <div class="log-action-buttons">
+                                <Button variant="secondary" size="sm" icon={RefreshCw} onclick={refreshActivity}>
+                                    Refresh
+                                </Button>
+                                <Button variant="secondary" size="sm" icon={Trash2} onclick={doClearActivity}>
+                                    Clear log
+                                </Button>
+                            </div>
+                        </div>
+
+                        {#if activityEntries.length === 0}
+                            <div class="empty-log">No activity recorded yet.</div>
+                        {:else}
+                            <div class="log-list">
+                                {#each visibleActivity as entry (entry.id)}
+                                    <div class="log-row" data-outcome={entry.outcome}>
+                                        <div class="log-icon">
+                                            {#if entry.outcome === 'success'}
+                                                ✓
+                                            {:else if entry.outcome === 'cancelled'}
+                                                ⊘
+                                            {:else}
+                                                ✕
+                                            {/if}
+                                        </div>
+                                        <div class="log-body">
+                                            <div class="log-summary">{entry.summary}</div>
+                                            {#if entry.details}
+                                                <div class="log-details">{entry.details}</div>
+                                            {/if}
+                                            <div class="log-meta">
+                                                <span class="tool-tag">{entry.toolId.toUpperCase()}</span>
+                                            </div>
+                                        </div>
+                                        <div class="log-time">{relativeTime(entry.timestampMs)}</div>
+                                    </div>
+                                {/each}
+                            </div>
+                            {#if activityEntries.length > activityLimit}
+                                <div class="load-more-row">
+                                    <Button variant="secondary" size="sm" onclick={() => (activityLimit += LOG_PAGE)}>
+                                        Load {Math.min(LOG_PAGE, activityEntries.length - activityLimit)} more
+                                    </Button>
+                                </div>
+                            {/if}
+                        {/if}
+                    {:else}
+                        <div class="log-actions">
+                            <span class="meta-text">
+                                {#if diagnosticsEntries.length > diagLimit}
+                                    Showing {visibleDiagnostics.length} of {diagnosticsEntries.length} · most recent first · 7-day retention
+                                {:else}
+                                    {diagnosticsEntries.length} entries · most recent first · 7-day retention
+                                {/if}
+                            </span>
+                            <div class="log-action-buttons">
+                                <Button variant="secondary" size="sm" icon={RefreshCw} onclick={refreshDiagnostics}>
+                                    Refresh
+                                </Button>
+                                <Button variant="secondary" size="sm" icon={CopyIcon} onclick={copyDiagnostics}>
+                                    Copy
+                                </Button>
+                                <Button variant="secondary" size="sm" icon={FolderOpen} onclick={openLogFolder}>
+                                    Open folder
+                                </Button>
+                                <Button variant="secondary" size="sm" icon={Trash2} onclick={doClearDiagnostics}>
+                                    Clear
+                                </Button>
+                            </div>
+                        </div>
+
+                        {#if diagnosticsEntries.length === 0}
+                            <div class="empty-log">No diagnostic entries yet.</div>
+                        {:else}
+                            <div class="log-list">
+                                {#each visibleDiagnostics as entry, i (i)}
+                                    <div class="log-row" data-level={entry.level}>
+                                        <div class="log-icon log-icon-level">{(entry.level ?? '').toUpperCase()}</div>
+                                        <div class="log-body">
+                                            <div class="log-summary">{entry.message}</div>
+                                            {#if entry.details}
+                                                <button
+                                                    type="button"
+                                                    class="log-toggle"
+                                                    onclick={() => (expandedDiag = { ...expandedDiag, [i]: !expandedDiag[i] })}
+                                                >
+                                                    {expandedDiag[i] ? '▾' : '▸'} Show details
+                                                </button>
+                                                {#if expandedDiag[i]}
+                                                    <pre class="log-details-pre">{entry.details}</pre>
+                                                {/if}
+                                            {/if}
+                                            <div class="log-meta">
+                                                <span class="tool-tag">{entry.source}</span>
+                                            </div>
+                                        </div>
+                                        <div class="log-time">{formatLogTime(entry.timestampMs)}</div>
+                                    </div>
+                                {/each}
+                            </div>
+                            {#if diagnosticsEntries.length > diagLimit}
+                                <div class="load-more-row">
+                                    <Button variant="secondary" size="sm" onclick={() => (diagLimit += LOG_PAGE)}>
+                                        Load {Math.min(LOG_PAGE, diagnosticsEntries.length - diagLimit)} more
+                                    </Button>
+                                </div>
+                            {/if}
+                        {/if}
+
+                        {#if logFolder}
+                            <p class="meta-text">
+                                Logs are written to <code class="inline-code">{logFolder}</code>, one file per day,
+                                kept for 7 days. They may include error messages and file paths — never the contents
+                                of your files.
+                            </p>
+                        {/if}
+                    {/if}
+                </section>
+            {:else if activeSection === 'onboarding'}
+                <section class="settings-section">
+                    <header class="section-head">
+                        <h2>Onboarding & Tips</h2>
+                        <p>First-run hints you can re-trigger anytime.</p>
+                    </header>
+
+                    <div class="field-card">
+                        <div class="field">
+                            <div class="settings-row-info">
+                                <div class="settings-row-title">Welcome tour</div>
+                                <div class="settings-row-desc">
+                                    Replays the 6-step product tour that introduces KeepItLocal's features, global
+                                    hotkeys, and where your data is stored. Auto-shown once on first install — click
+                                    here to revisit any time.
+                                </div>
+                            </div>
+                            <div class="settings-row-control">
+                                <Button variant="secondary" onclick={replayTour}>Replay tour</Button>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            {:else if activeSection === 'reset'}
+                <section class="settings-section">
+                    <header class="section-head">
+                        <h2>Reset</h2>
+                        <p>Restore application settings defaults (in-memory only — does not delete any files).</p>
+                    </header>
+
+                    <div class="settings-row">
+                        <div class="settings-row-info">
+                            <div class="settings-row-title">Reset all settings to defaults</div>
+                            <div class="settings-row-desc">
+                                Theme, font, voice settings, clipboard behavior, shortcuts — all return to their
+                                shipped defaults. Your data on disk (clipboard history, search index, etc.) is
+                                untouched. Use the Storage &amp; Privacy "Wipe everything" if you also want to
+                                erase data.
+                            </div>
+                        </div>
+                        <div class="settings-row-control">
+                            <Button variant="secondary" icon={RotateCcw} onclick={resetAllSettings}>
+                                Reset all to defaults
+                            </Button>
+                        </div>
+                    </div>
+                </section>
+            {/if}
+        </main>
+    {/if}
+</div>
+
+<style>
+    /* Make the .tool-host wrapper around this page fill its parent. */
+    :global(.tool-host[data-screen='settings']) {
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .settings-page {
+        display: grid;
+        grid-template-columns: 220px 1fr;
+        grid-template-rows: 1fr;
+        flex: 1;
+        min-height: 0;
+        min-height: calc(100vh - 76px);
+        background: var(--color-bg);
+    }
+
+    /* ─── Left nav ──────────────────────────────────────────────── */
+    .settings-nav {
+        display: flex;
+        flex-direction: column;
+        gap: 1px;
+        padding: 12px 10px 8px;
+        background: var(--color-panel);
+        border-right: 1px solid var(--color-border);
+        overflow-y: auto;
+    }
+    .settings-title {
+        margin: 2px 6px 10px;
+        font-size: 14px;
+        font-weight: 600;
+        letter-spacing: -0.012em;
+        color: var(--color-text);
+    }
+    .settings-nav-item {
+        /* `position: relative` is required for the `.is-active::before`
+           pill indicator (drawn below) to absolute-position against
+           the item, not against an ancestor. */
+        position: relative;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        width: 100%;
+        height: 30px;
+        padding: 0 8px;
+        background: transparent;
+        border: none;
+        border-radius: var(--radius-control, 8px);
+        color: var(--color-text);
+        font-size: 13px;
+        font-weight: 500;
+        text-align: left;
+        cursor: pointer;
+        transition: background-color var(--dur-micro, 130ms) var(--ease-out, ease),
+            color var(--dur-micro, 130ms) var(--ease-out, ease);
+    }
+    .settings-nav-item:hover:not(.is-active) {
+        background: var(--color-panel-2);
+    }
+    /* Selected/active item — canonical pattern (see
+       feedback_selected_item_pattern.md): neutral panel-2 background,
+       accent pill strip inset top/bottom via ::before, accent icon
+       (handled by `:global(.settings-nav-ico)` rule below), regular
+       text color. Accent stays reserved for the indicators. */
+    .settings-nav-item.is-active {
+        background: var(--color-panel-2);
+    }
+    .settings-nav-item.is-active::before {
+        content: '';
+        position: absolute;
+        left: 2px;
+        top: 6px;
+        bottom: 6px;
+        width: 3px;
+        border-radius: 999px;
+        background: var(--color-accent);
+    }
+    .settings-page :global(.settings-nav-ico) {
+        flex: none;
+        width: 16px;
+        height: 16px;
+        color: var(--color-text-secondary);
+    }
+    .settings-nav-item.is-active :global(.settings-nav-ico) {
+        color: var(--color-accent);
+    }
+    .settings-nav-label {
+        flex: 1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    /* ─── Content area ──────────────────────────────────────────── */
+    .settings-content {
+        min-width: 0;
+        overflow-y: auto;
+        padding: 32px 40px 64px;
+    }
+    .settings-content-host {
+        min-width: 0;
+        height: 100%;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+    }
+    .settings-content-host :global(> *) {
+        flex: 1;
+        min-height: 0;
+        overflow-y: auto;
+    }
+
+    .settings-section {
+        max-width: 820px;
+        margin: 0 0 36px;
+    }
+    .section-head {
+        margin: 0 0 18px;
+    }
+    .section-head h2 {
+        margin: 0;
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--color-text-secondary);
+    }
+    .section-head p {
+        margin: 4px 0 0;
+        font-size: 12.5px;
+        color: var(--color-muted);
+    }
+    .section-subhead {
+        margin: 28px 0 12px;
+    }
+    .section-subhead h3 {
+        margin: 0;
+        font-size: 14px;
+        font-weight: 600;
+        color: var(--color-text);
+    }
+    .section-subhead p {
+        margin: 4px 0 0;
+        font-size: 12.5px;
+        line-height: 1.5;
+        color: var(--color-text-secondary);
+    }
+
+    /* Every option = its own card. Replaces the previous "border-top
+       separator" look with discrete, consistent panels — matches the
+       look the user reviewed in the references and gives every page
+       (System, Search Overlay, Clipboard Overlay, Voice, Onboarding,
+       Reset, etc.) the same visual rhythm. */
+    .settings-row {
+        display: flex;
+        align-items: center;
+        gap: 24px;
+        padding: 14px 16px;
+        background: var(--color-panel);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-card, 12px);
+        margin-bottom: 8px;
+        transition: border-color var(--dur-micro, 130ms) var(--ease-out, ease);
+    }
+    .settings-row:hover {
+        border-color: color-mix(in srgb, var(--color-accent) 22%, var(--color-border));
+    }
+    /* Voice section has rows that contain wide controls (big-chip-row)
+       which would squeeze the label text if kept beside it — stack the
+       control on its own full-width line below the title/description. */
+    .field.is-stacked {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 12px;
+    }
+    .field.is-stacked .settings-row-control {
+        width: 100%;
+    }
+    .settings-row-info {
+        flex: 1;
+        min-width: 0;
+    }
+
+    /* ─── Grouped card: one panel, many flat field rows ──────────────
+       Replaces stacks of individually-bordered cards. A section reads as
+       one calm surface with hairline-separated rows instead of 3-4
+       competing panels. `.field` reuses .settings-row-info/title/desc/
+       control for its inner layout; only the row chrome differs. */
+    .field-card {
+        background: var(--color-panel);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-card, 12px);
+        margin-bottom: 12px;
+        overflow: hidden;
+        transition: border-color var(--dur-micro, 130ms) var(--ease-out, ease);
+    }
+    .field-card:hover {
+        border-color: color-mix(in srgb, var(--color-accent) 22%, var(--color-border));
+    }
+    .field {
+        display: flex;
+        align-items: center;
+        gap: 24px;
+        padding: 14px 16px;
+        border-top: 1px solid color-mix(in srgb, var(--color-border) 55%, transparent);
+    }
+    .field:first-child {
+        border-top: none;
+    }
+    /* Free-form (non-field) content inside a grouped/collapsible card —
+       gives it the same padding + divider rhythm as the field rows. */
+    .kc-pad {
+        padding: 14px 16px;
+        border-top: 1px solid color-mix(in srgb, var(--color-border) 55%, transparent);
+    }
+    .kc-pad:first-child {
+        border-top: none;
+    }
+    .kc-pad p {
+        margin: 0;
+        font-size: 12.5px;
+        line-height: 1.55;
+        color: var(--color-text-secondary);
+    }
+    .settings-row-title {
+        font-size: 13.5px;
+        font-weight: 600;
+        color: var(--color-text);
+        line-height: 1.3;
+    }
+    .settings-row-desc {
+        margin-top: 4px;
+        font-size: 12.5px;
+        line-height: 1.5;
+        color: var(--color-text-secondary);
+    }
+    .settings-row-control {
+        flex: none;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    /* ── Per-app hotkeys: one repeatable row per binding ──────────── */
+    .app-hotkey-row {
+        position: relative;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 16px 10px 20px;
+        border-top: 1px solid color-mix(in srgb, var(--color-border) 55%, transparent);
+    }
+    .app-hotkey-row:first-child {
+        border-top: none;
+    }
+    /* Canonical "active" treatment: neutral panel-2 fill + an accent
+       rounded-pill left strip. Never an accent-tinted background. */
+    .app-hotkey-row.is-active {
+        background: var(--color-panel-2);
+    }
+    .app-hotkey-row.is-active::before {
+        content: '';
+        position: absolute;
+        left: 6px;
+        top: 8px;
+        bottom: 8px;
+        width: 3px;
+        border-radius: 999px;
+        background: var(--color-accent);
+    }
+    .app-hotkey-picker {
+        flex: 1 1 auto;
+        min-width: 0;
+        height: 34px;
+        padding: 0 10px;
+        background: var(--color-bg);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-control, 8px);
+        color: var(--color-text);
+        font-size: 13px;
+        font-family: inherit;
+    }
+    .app-hotkey-picker:focus-visible {
+        outline: 2px solid var(--color-accent);
+        outline-offset: 1px;
+    }
+    .app-hotkey-chord {
+        flex: none;
+    }
+    .app-hotkey-remove {
+        flex: none;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 30px;
+        height: 30px;
+        padding: 0;
+        background: transparent;
+        border: 1px solid transparent;
+        border-radius: var(--radius-control, 8px);
+        color: var(--color-text-secondary);
+        cursor: pointer;
+        transition:
+            color var(--dur-micro, 130ms) var(--ease-out, ease),
+            border-color var(--dur-micro, 130ms) var(--ease-out, ease);
+    }
+    .app-hotkey-remove:hover {
+        color: var(--color-danger, var(--color-text));
+        border-color: var(--color-border);
+    }
+    .app-hotkey-remove:focus-visible {
+        outline: 2px solid var(--color-accent);
+        outline-offset: 1px;
+    }
+
+    /* Plain text input in a settings row (e.g. Your name). */
+    .settings-name-input {
+        width: 220px;
+        max-width: 50vw;
+        height: 34px;
+        padding: 0 12px;
+        background: var(--color-bg);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-control, 8px);
+        color: var(--color-text);
+        font-size: 13px;
+        font-family: inherit;
+    }
+    .settings-name-input::placeholder {
+        color: var(--color-muted);
+    }
+    .settings-name-input:focus {
+        outline: none;
+        border-color: color-mix(in srgb, var(--color-accent) 55%, var(--color-border));
+        box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 16%, transparent);
+    }
+
+    /* Select in a settings row (e.g. Automatic privacy audit). Mirrors
+       .settings-name-input so it sits flush with the other System controls. */
+    .settings-select {
+        min-width: 160px;
+        max-width: 50vw;
+        height: 34px;
+        padding: 0 10px;
+        background: var(--color-bg);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-control, 8px);
+        color: var(--color-text);
+        font-size: 13px;
+        font-family: inherit;
+        cursor: pointer;
+    }
+    .settings-select:focus {
+        outline: none;
+        border-color: color-mix(in srgb, var(--color-accent) 55%, var(--color-border));
+        box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 16%, transparent);
+    }
+
+    /* ─── App-mode picker (System → App mode) ──────────────────── */
+    .mode-cards {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        width: 100%;
+    }
+    .mode-card {
+        flex: 1 1 240px;
+        padding: 10px 12px;
+        background: var(--color-panel-2);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-control, 8px);
+        color: var(--color-text);
+        text-align: left;
+        cursor: pointer;
+        transition:
+            border-color var(--dur-micro, 130ms) ease,
+            background-color var(--dur-micro, 130ms) ease;
+    }
+    .mode-card:hover {
+        border-color: color-mix(in srgb, var(--color-accent) 60%, var(--color-border));
+    }
+    .mode-card.is-active {
+        border-color: var(--color-accent);
+        background: color-mix(in srgb, var(--color-accent) 10%, var(--color-panel-2));
+    }
+    .mode-card-title {
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--color-text);
+    }
+    .mode-card-desc {
+        font-size: 12px;
+        color: var(--color-text-secondary);
+        margin-top: 4px;
+        line-height: 1.4;
+    }
+    .app-mode-block {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        padding: 16px 18px;
+        background: var(--color-panel);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-card, 12px);
+    }
+    .app-mode-head {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+    }
+    .app-mode-hint {
+        padding: 10px 12px;
+        background: color-mix(in srgb, var(--color-accent) 8%, var(--color-panel-2));
+        border: 1px solid color-mix(in srgb, var(--color-accent) 25%, var(--color-border));
+        border-radius: var(--radius-control, 8px);
+        font-size: 12px;
+        color: var(--color-text-secondary);
+        line-height: 1.5;
+    }
+    .app-mode-actions {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+    }
+
+    /* ─── Command-palette appearance controls ───────────────────── */
+    .cmd-appearance-control {
+        gap: 10px;
+    }
+    .cmd-range {
+        width: 160px;
+        accent-color: var(--color-accent);
+        cursor: pointer;
+    }
+    .cmd-range-val {
+        min-width: 38px;
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+        font-size: 12px;
+        color: var(--color-text-secondary);
+    }
+    .cmd-color {
+        width: 40px;
+        height: 28px;
+        padding: 0;
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-control, 8px);
+        background: var(--color-panel-2);
+        cursor: pointer;
+    }
+    .cmd-reset-btn {
+        padding: 4px 10px;
+        font-size: 12px;
+        color: var(--color-text-secondary);
+        background: var(--color-panel-2);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-control, 8px);
+        cursor: pointer;
+        transition:
+            color var(--dur-micro, 120ms) ease,
+            background var(--dur-micro, 120ms) ease;
+    }
+    .cmd-reset-btn:hover {
+        color: var(--color-text);
+        background: var(--color-panel-3, var(--color-panel-2));
+    }
+
+    .meta-text {
+        font-size: 12px;
+        color: var(--color-muted);
+        line-height: 1.5;
+    }
+    .meta-dot {
+        opacity: 0.5;
+    }
+
+    .inline-code {
+        font-family: 'JetBrains Mono', ui-monospace, monospace;
+        font-size: 11.5px;
+        padding: 1px 5px;
+        border-radius: 4px;
+        background: var(--color-panel-2);
+        color: var(--color-text);
+    }
+
+    .row-end {
+        margin-top: 12px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+
+    .badge-num {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        background: color-mix(in srgb, var(--color-accent) 14%, transparent);
+        color: var(--color-accent);
+        font-size: 11px;
+        font-weight: 600;
+    }
+
+    .warning-banner {
+        margin-top: 14px;
+        padding: 10px 14px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        border: 1px solid color-mix(in srgb, var(--color-warning) 35%, var(--color-border));
+        border-radius: var(--radius-control, 8px);
+        color: color-mix(in srgb, var(--color-warning) 90%, var(--color-text));
+        font-size: 12px;
+        line-height: 1.45;
+    }
+    .warn-title {
+        font-weight: 600;
+        margin-bottom: 2px;
+        color: color-mix(in srgb, var(--color-warning) 85%, var(--color-text));
+    }
+    .warn-body {
+        color: var(--color-text-secondary);
+    }
+    .warning-banner :global(.warn-ico) {
+        flex: none;
+        width: 16px;
+        height: 16px;
+        color: var(--color-warning);
+    }
+    .tip-banner {
+        margin-top: 18px;
+        padding: 10px 14px;
+        border: 1px solid color-mix(in srgb, var(--color-warning) 28%, var(--color-border));
+        border-radius: var(--radius-control, 8px);
+        color: var(--color-text-secondary);
+        font-size: 12px;
+        line-height: 1.5;
+    }
+    .tip-banner strong {
+        color: color-mix(in srgb, var(--color-warning) 80%, var(--color-text));
+    }
+
+    /* ─── Voice model list ─────────────────────────────────────── */
+    .model-list {
+        margin-top: 14px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+    .model-row {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        padding: 12px 14px;
+        background: var(--color-panel-2);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-control, 8px);
+    }
+    .model-row-info {
+        flex: 1;
+        min-width: 0;
+    }
+    .model-row-title {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--color-text);
+    }
+    .model-row-meta {
+        margin-top: 3px;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 11.5px;
+        color: var(--color-text-secondary);
+    }
+    .model-row-desc {
+        margin-top: 4px;
+        font-size: 12px;
+        color: var(--color-text-secondary);
+        line-height: 1.4;
+    }
+    .chip-recommended,
+    .chip-current {
+        padding: 2px 8px;
+        font-size: 10px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--color-accent);
+        border: 1px solid color-mix(in srgb, var(--color-accent) 40%, var(--color-border));
+        border-radius: 999px;
+    }
+    .model-row.is-current {
+        border-color: color-mix(in srgb, var(--color-accent) 45%, var(--color-border));
+    }
+    .chip-heavy {
+        margin-left: 4px;
+        font-size: 11px;
+        font-weight: 500;
+        color: var(--color-warning);
+    }
+    .manual-pick-row {
+        margin-top: 12px;
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+    }
+    .manual-pick-desc {
+        font-size: 12px;
+        line-height: 1.5;
+        color: var(--color-text-secondary);
+    }
+    .model-current {
+        margin-top: 14px;
+        font-size: 12px;
+        color: var(--color-text-secondary);
+    }
+    .model-progress {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-top: 10px;
+    }
+    .model-progress-track {
+        flex: 1;
+        height: 6px;
+        border-radius: 999px;
+        background: var(--color-panel);
+        border: 1px solid var(--color-border);
+        overflow: hidden;
+    }
+    .model-progress-fill {
+        height: 100%;
+        background: var(--color-accent);
+        border-radius: 999px;
+        transition: width 0.25s ease;
+    }
+    .model-progress-fill.indeterminate {
+        width: 40%;
+        animation: model-progress-slide 1.1s ease-in-out infinite;
+    }
+    @keyframes model-progress-slide {
+        0% {
+            transform: translateX(-110%);
+        }
+        100% {
+            transform: translateX(310%);
+        }
+    }
+    .model-progress-label {
+        flex: none;
+        font-size: 11px;
+        color: var(--color-text-secondary);
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+    }
+    .model-action-chip {
+        align-self: center;
+    }
+    .model-storage-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-top: 14px;
+        font-size: 12px;
+        color: var(--color-text-secondary);
+    }
+    .model-storage-label {
+        flex: none;
+    }
+    .model-storage-path {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    /* ─── Big-chip rows (e.g. dictation output, language) ──────── */
+    .settings-chip-row {
+        display: inline-flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+    }
+    /* When the row is stacked, the chip row owns the full width — let the
+       two chips share it evenly and wrap gracefully on narrow panels. */
+    .field.is-stacked .settings-chip-row {
+        display: flex;
+        width: 100%;
+        justify-content: stretch;
+    }
+    .field.is-stacked .big-chip {
+        flex: 1 1 220px;
+        min-width: 0;
+    }
+    .big-chip {
+        text-align: left;
+        padding: 12px 14px;
+        min-width: 260px;
+        background: var(--color-panel-2);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-control, 8px);
+        color: var(--color-text);
+        cursor: pointer;
+        transition: background-color var(--dur-micro, 130ms) var(--ease-out, ease),
+            border-color var(--dur-micro, 130ms) var(--ease-out, ease);
+    }
+    .big-chip:hover:not(.is-active) {
+        background: var(--color-panel-3);
+    }
+    .big-chip.is-active {
+        border-color: color-mix(in srgb, var(--color-accent) 55%, var(--color-border));
+    }
+    .big-chip-title {
+        font-size: 13px;
+        font-weight: 600;
+    }
+    .big-chip-desc {
+        margin-top: 4px;
+        font-size: 11.5px;
+        color: var(--color-text-secondary);
+        line-height: 1.45;
+    }
+
+    /* ─── Appearance: language / theme / font card rows ────────── */
+    .big-card-row,
+    .theme-card-row,
+    .font-card-row {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+        gap: 10px;
+        margin: 6px 0 20px;
+    }
+    .big-card,
+    .theme-card,
+    .font-card {
+        text-align: left;
+        padding: 14px;
+        background: var(--color-panel);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-card, 12px);
+        color: var(--color-text);
+        cursor: pointer;
+        transition: background-color var(--dur-micro, 130ms) var(--ease-out, ease),
+            border-color var(--dur-micro, 130ms) var(--ease-out, ease);
+    }
+    .big-card:hover:not(.is-active),
+    .theme-card:hover:not(.is-active),
+    .font-card:hover:not(.is-active) {
+        background: var(--color-panel-2);
+    }
+    .big-card.is-active,
+    .theme-card.is-active,
+    .font-card.is-active {
+        border-color: color-mix(in srgb, var(--color-accent) 60%, var(--color-border));
+        box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-accent) 35%, transparent);
+    }
+    .big-card-title {
+        font-size: 16px;
+        font-weight: 600;
+    }
+    .big-card-desc {
+        margin-top: 3px;
+        font-size: 12px;
+        color: var(--color-text-secondary);
+    }
+
+    .theme-swatch {
+        display: flex;
+        height: 56px;
+        border-radius: 8px;
+        overflow: hidden;
+        border: 1px solid var(--color-border);
+        margin-bottom: 10px;
+    }
+    .sw {
+        flex: 1;
+    }
+    .theme-swatch-dark .sw-a { background: #0c0c0e; }
+    .theme-swatch-dark .sw-b { background: #1d1d20; }
+    /* Rebrand 2026-07-06: accent follows the logo's crimson. Keep in sync with
+       THEME_OPTIONS[].swatch in $lib/stores/settings.ts and --color-accent in
+       styles.css — these swatches are pure CSS, so the store's swatch array
+       does NOT drive them (that mismatch is what left this green for 10 days). */
+    .theme-swatch-dark .sw-c { background: #b5352c; }
+    .theme-swatch-light .sw-a { background: #f4f5f7; }
+    .theme-swatch-light .sw-b { background: #ffffff; }
+    .theme-swatch-light .sw-c { background: #5e6ad2; }
+    .theme-swatch-dracula .sw-a { background: #282a36; }
+    .theme-swatch-dracula .sw-b { background: #44475a; }
+    .theme-swatch-dracula .sw-c { background: #ff79c6; }
+    .theme-swatch-nord .sw-a { background: #2e3440; }
+    .theme-swatch-nord .sw-b { background: #4c566a; }
+    .theme-swatch-nord .sw-c { background: #88c0d0; }
+    /* Wave F (2026-05-27): swatches for the three new themes from
+       Palette Appearance Wave B. Without these the cards in Settings
+       → Appearance render empty bg/panel/accent slots. */
+    .theme-swatch-midnight .sw-a { background: #000000; }
+    .theme-swatch-midnight .sw-b { background: #131316; }
+    /* Rebrand 2026-07-06: crimson, matching styles.css's midnight --color-accent. */
+    .theme-swatch-midnight .sw-c { background: #b5352c; }
+    .theme-swatch-sepia .sw-a { background: #f5ecd9; }
+    .theme-swatch-sepia .sw-b { background: #ede0c4; }
+    .theme-swatch-sepia .sw-c { background: #a16207; }
+    .theme-swatch-tokyo-night .sw-a { background: #1a1b26; }
+    .theme-swatch-tokyo-night .sw-b { background: #2e3251; }
+    .theme-swatch-tokyo-night .sw-c { background: #bb9af7; }
+
+    .theme-card-title {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        font-size: 13px;
+        font-weight: 600;
+    }
+    .theme-card-desc {
+        margin-top: 4px;
+        font-size: 11.5px;
+        color: var(--color-text-secondary);
+        line-height: 1.4;
+    }
+    .chip-active {
+        font-size: 9px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        color: var(--color-accent);
+    }
+    .chip-exp {
+        display: inline-block;
+        margin-left: 6px;
+        padding: 1px 6px;
+        font-size: 9px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        border-radius: 999px;
+        color: var(--color-warning);
+        background: var(--color-warning-soft, color-mix(in srgb, var(--color-warning) 16%, transparent));
+        vertical-align: middle;
+    }
+
+    .font-preview {
+        padding: 18px 14px;
+        text-align: center;
+        background: var(--color-panel-2);
+        border: 1px solid var(--color-border);
+        border-radius: 8px;
+        font-size: 22px;
+        margin-bottom: 10px;
+        font-weight: 600;
+    }
+    .font-preview[data-font-id='inter'] { font-family: 'Inter', sans-serif; }
+    .font-preview[data-font-id='system'] { font-family: 'Segoe UI', sans-serif; }
+    .font-preview[data-font-id='geist'] { font-family: 'Geist', sans-serif; }
+    .font-preview[data-font-id='ibm-plex'] { font-family: 'IBM Plex Sans', sans-serif; }
+    .font-preview[data-font-id='atkinson'] { font-family: 'Atkinson Hyperlegible', sans-serif; }
+
+    /* ─── Tool Packs grid ───────────────────────────────────────── */
+    .pack-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 10px;
+        margin: 8px 0 18px;
+    }
+    .pack-card {
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+        padding: 14px;
+        background: var(--color-panel);
+        border-radius: var(--radius-card, 12px);
+        cursor: pointer;
+        transition:
+            border-color var(--dur-micro, 130ms) var(--ease-out, ease),
+            background-color var(--dur-micro, 130ms) var(--ease-out, ease),
+            transform var(--dur-micro, 130ms) var(--ease-out, ease),
+            box-shadow var(--dur-micro, 130ms) var(--ease-out, ease);
+    }
+    .pack-card:hover:not(.is-required) {
+        background: var(--color-panel-2);
+        transform: translateY(-1px);
+        box-shadow: var(--shadow-lg);
+    }
+    .pack-card:active:not(.is-required) {
+        transform: translateY(0);
+    }
+    .pack-card.is-active {
+        border-color: color-mix(in srgb, var(--color-accent) 45%, var(--color-border));
+    }
+    .pack-card.is-required {
+        cursor: not-allowed;
+        opacity: 0.85;
+    }
+    .pack-check {
+        flex: none;
+        width: 18px;
+        height: 18px;
+        margin-top: 1px;
+        accent-color: var(--color-accent);
+    }
+    .pack-body {
+        flex: 1;
+        min-width: 0;
+    }
+    .pack-head {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    .pack-name {
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--color-text);
+    }
+    .chip-required {
+        font-size: 9px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        color: var(--color-accent);
+    }
+    .pack-desc {
+        margin-top: 4px;
+        font-size: 12px;
+        color: var(--color-text-secondary);
+        line-height: 1.45;
+    }
+    .pack-meta {
+        margin-top: 8px;
+        font-size: 11.5px;
+        color: var(--color-muted);
+    }
+    .pack-actions {
+        display: flex;
+        gap: 10px;
+        margin: 12px 0 8px;
+    }
+
+    /* ─── Storage & Privacy ────────────────────────────────────── */
+    .hero-card {
+        padding: 18px 20px;
+        border: 1px solid color-mix(in srgb, var(--color-accent) 35%, var(--color-border));
+        border-radius: var(--radius-card, 12px);
+        margin-bottom: 16px;
+    }
+    .hero-label {
+        font-size: 10px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--color-accent);
+    }
+    .hero-value {
+        margin-top: 6px;
+        font-size: 28px;
+        font-weight: 600;
+        letter-spacing: -0.012em;
+        color: var(--color-text);
+    }
+    .hero-meta {
+        margin-top: 4px;
+        font-size: 12.5px;
+        color: var(--color-text-secondary);
+    }
+    .hero-action {
+        margin-top: 12px;
+    }
+    .slice-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 10px;
+    }
+    .slice-card {
+        padding: 12px 14px;
+        background: var(--color-panel);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-card, 12px);
+    }
+    .slice-label {
+        font-size: 11.5px;
+        font-weight: 600;
+        color: var(--color-text);
+    }
+    .slice-value {
+        margin-top: 4px;
+        font-size: 16px;
+        font-weight: 600;
+        color: var(--color-text);
+    }
+    .slice-desc {
+        margin-top: 4px;
+        font-size: 11.5px;
+        line-height: 1.4;
+        color: var(--color-text-secondary);
+    }
+    /* Local-storage path rows — flat, hairline-separated rows inside the
+       single "Local storage paths" collapsible card (was one bordered
+       card per path; merged so a single click reveals them all). */
+    .ls-row {
+        padding: 14px 16px;
+        border-top: 1px solid color-mix(in srgb, var(--color-border) 55%, transparent);
+    }
+    .ls-row:first-child {
+        border-top: none;
+    }
+    .ls-title {
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--color-text);
+        margin-bottom: 6px;
+    }
+    .ls-path,
+    .ls-sub-path {
+        font-family: 'JetBrains Mono', ui-monospace, monospace;
+        font-size: 11.5px;
+        color: var(--color-text-secondary);
+        line-height: 1.5;
+        word-break: break-all;
+    }
+    .ls-sub-path {
+        margin-top: 2px;
+    }
+    .ls-sub-label {
+        color: var(--color-muted);
+        font-family: inherit;
+        font-size: 11.5px;
+    }
+    .ls-row :global(.btn) {
+        margin-top: 10px;
+    }
+    .ls-button-row {
+        margin-top: 10px;
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+    }
+    .ls-button-row :global(.btn) {
+        margin-top: 0;
+    }
+    .slice-sub {
+        font-size: 11px;
+        font-weight: 400;
+        color: var(--color-muted);
+        margin-left: 4px;
+    }
+
+    .danger-card {
+        margin-top: 14px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 24px;
+        padding: 14px 16px;
+        background: color-mix(in srgb, var(--color-error) 6%, var(--color-panel));
+        border: 1px solid color-mix(in srgb, var(--color-error) 35%, var(--color-border));
+        border-radius: var(--radius-card, 12px);
+    }
+
+    /* Backup & Restore card */
+    .backup-card {
+        display: flex;
+        flex-direction: column;
+        gap: 0;
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-card, 12px);
+        overflow: hidden;
+        margin-top: 4px;
+    }
+    .backup-action {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 24px;
+        padding: 14px 16px;
+        background: var(--color-panel);
+    }
+    .backup-action + .backup-action {
+        border-top: 1px solid var(--color-border);
+    }
+
+    /* ─── Activity & Diagnostics ───────────────────────────────── */
+    .tab-row {
+        display: inline-flex;
+        gap: 2px;
+        padding: 3px;
+        background: var(--color-panel-2);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-control, 8px);
+        margin-bottom: 16px;
+    }
+    .tab {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        height: 28px;
+        padding: 0 12px;
+        border: none;
+        background: transparent;
+        border-radius: 6px;
+        color: var(--color-text-secondary);
+        font-size: 12.5px;
+        font-weight: 500;
+        cursor: pointer;
+    }
+    .tab:hover:not(.is-active) {
+        color: var(--color-text);
+    }
+    .tab.is-active {
+        background: var(--color-panel);
+        color: var(--color-text);
+        box-shadow: var(--shadow-sm);
+    }
+    .tab-count {
+        font-size: 10px;
+        font-weight: 600;
+        padding: 1px 6px;
+        background: var(--color-panel-3);
+        border-radius: 10px;
+        color: var(--color-muted);
+    }
+    .log-actions {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 10px;
+    }
+    .log-action-buttons {
+        display: inline-flex;
+        gap: 8px;
+    }
+    .empty-log {
+        padding: 32px 0;
+        text-align: center;
+        color: var(--color-muted);
+        font-size: 13px;
+    }
+    /* Pagination footer for the activity / diagnostics lists. */
+    .load-more-row {
+        display: flex;
+        justify-content: center;
+        margin-top: 12px;
+    }
+    .log-list {
+        display: flex;
+        flex-direction: column;
+        gap: 1px;
+        background: var(--color-panel);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-card, 12px);
+        overflow: hidden;
+    }
+    .log-row {
+        display: grid;
+        grid-template-columns: 28px 1fr auto;
+        gap: 12px;
+        align-items: flex-start;
+        padding: 12px 14px;
+        background: var(--color-panel);
+        border-top: 1px solid color-mix(in srgb, var(--color-border) 50%, transparent);
+        font-size: 12.5px;
+    }
+    .log-row:first-child {
+        border-top: none;
+    }
+    .log-icon {
+        font-size: 14px;
+        text-align: center;
+        color: var(--color-success, #34d399);
+    }
+    .log-row[data-outcome='cancelled'] .log-icon {
+        color: var(--color-warning, #fbbf24);
+    }
+    .log-row[data-outcome='failed'] .log-icon,
+    .log-row[data-level='error'] .log-icon {
+        color: var(--color-error, #fb7185);
+    }
+    .log-icon-level {
+        font-size: 9px;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+    }
+    .log-summary {
+        font-weight: 600;
+        color: var(--color-text);
+        line-height: 1.35;
+    }
+    .log-details {
+        margin-top: 4px;
+        font-size: 11.5px;
+        color: var(--color-text-secondary);
+    }
+    .log-details-pre {
+        margin: 6px 0 0;
+        padding: 8px 10px;
+        background: var(--color-bg);
+        border-radius: 6px;
+        font-family: 'JetBrains Mono', ui-monospace, monospace;
+        font-size: 11px;
+        color: var(--color-text-secondary);
+        white-space: pre-wrap;
+        word-break: break-word;
+    }
+    .log-toggle {
+        margin-top: 4px;
+        background: transparent;
+        border: none;
+        color: var(--color-accent);
+        font-size: 11.5px;
+        cursor: pointer;
+        padding: 0;
+    }
+    .log-meta {
+        margin-top: 6px;
+        font-size: 10px;
+    }
+    .tool-tag {
+        font-weight: 600;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        color: var(--color-muted);
+    }
+    .log-time {
+        font-size: 11px;
+        color: var(--color-muted);
+        white-space: nowrap;
+    }
+
+    /* ─── My Commands ──────────────────────────────────────────── */
+</style>

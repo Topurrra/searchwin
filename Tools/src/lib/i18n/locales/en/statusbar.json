@@ -1,0 +1,19 @@
+{
+  "statusBar": {
+    "trustPill": "All local · No telemetry",
+    "listening": "Listening",
+    "pushToTalkListening": "Listening — push-to-talk",
+    "commandMode": "Command mode",
+    "commandModeStop": "Click to stop command mode",
+    "searchReady": "Search Ready",
+    "searchNotBuilt": "Search Not built",
+    "watcherOn": "Watcher On",
+    "watcherOff": "Watcher Off",
+    "watcherPaused": "Watcher Paused",
+    "watcherFoldersOnly": "Watcher Folders only",
+    "indexing": "Indexing",
+    "idle": "Idle",
+    "files": "Files: {count}",
+    "indexerIssue": "Indexer issue"
+  }
+}

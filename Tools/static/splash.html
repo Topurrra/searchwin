@@ -1,0 +1,136 @@
+﻿<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>KeepItLocal</title>
+    <!--
+      Static splash â€” deliberately a plain HTML/CSS page (NOT a SvelteKit route),
+      loaded directly by the splashscreen window. Because it boots none of the app
+      bundle, it paints the logo on the very first frame (instant), instead of
+      waiting ~1s for the SvelteKit app to load before the route could render.
+
+      No JavaScript: the window is opened + closed by Rust (a setup-time timer
+      closes this and shows the main window), so there's no IPC handshake here and
+      nothing that can leave the app stuck on the splash. Colors are hard-coded to
+      the dark-theme tokens (a standalone page can't read the app's CSS variables).
+    -->
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+        background: #0c0c0e;
+        font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+      }
+      .wrap {
+        height: 100%;
+        width: 100%;
+        box-sizing: border-box;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 14px;
+        padding: 24px;
+        color: #e5e5e5;
+        background: radial-gradient(ellipse 72% 72% at 50% 42%, #151517 0%, #0c0c0e 70%);
+      }
+      .logo {
+        position: relative;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .logo::before {
+        content: '';
+        position: absolute;
+        inset: -30px;
+        border-radius: 50%;
+        background: radial-gradient(circle, rgba(181, 53, 44, 0.22) 0%, transparent 62%);
+        pointer-events: none;
+      }
+      .logo img {
+        position: relative;
+        height: 72px;
+        width: auto;
+        object-fit: contain;
+        display: block;
+      }
+      .wordmark {
+        font-size: 20px;
+        font-weight: 600;
+        letter-spacing: -0.02em;
+        color: #e5e5e5;
+      }
+      .tagline {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        font-size: 10.5px;
+        text-transform: uppercase;
+        letter-spacing: 0.16em;
+        color: #a3a3a3;
+      }
+      .tagline .dot {
+        width: 3px;
+        height: 3px;
+        border-radius: 50%;
+        background: #b5352c;
+      }
+      .progress {
+        position: relative;
+        width: 150px;
+        height: 3px;
+        margin-top: 4px;
+        border-radius: 999px;
+        background: rgba(181, 53, 44, 0.16);
+        overflow: hidden;
+      }
+      .progress span {
+        position: absolute;
+        top: 0;
+        left: -40%;
+        height: 100%;
+        width: 40%;
+        border-radius: inherit;
+        background: #b5352c;
+        animation: slide 1.15s ease-in-out infinite;
+      }
+      .status {
+        font-size: 9.5px;
+        text-transform: uppercase;
+        letter-spacing: 0.18em;
+        color: #737373;
+      }
+      @keyframes slide {
+        0% {
+          left: -40%;
+        }
+        100% {
+          left: 100%;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .progress span {
+          animation: none;
+          left: 0;
+          width: 100%;
+          opacity: 0.65;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap" aria-hidden="true">
+      <div class="logo"><img src="/splash-logo.png" alt="KeepItLocal" /></div>
+      <div class="wordmark">KeepItLocal</div>
+      <div class="tagline"><span class="dot"></span>Local-first toolkit<span class="dot"></span></div>
+      <div class="progress"><span></span></div>
+      <div class="status">Loadingâ€¦</div>
+    </div>
+  </body>
+</html>

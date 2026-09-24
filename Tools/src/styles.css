@@ -1,0 +1,1175 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+
+@font-face {
+    font-family: 'Inter';
+    src: url('/src/lib/assets/fonts/inter/Inter-Regular.woff2') format('woff2');
+    font-weight: 400;
+    font-style: normal;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'Inter';
+    src: url('/src/lib/assets/fonts/inter/Inter-Medium.woff2') format('woff2');
+    font-weight: 500;
+    font-style: normal;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'Inter';
+    src: url('/src/lib/assets/fonts/inter/Inter-SemiBold.woff2') format('woff2');
+    font-weight: 600;
+    font-style: normal;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'Inter';
+    src: url('/src/lib/assets/fonts/inter/Inter-Bold.woff2') format('woff2');
+    font-weight: 700;
+    font-style: normal;
+    font-display: swap;
+}
+
+/* ─── Noto Sans Georgian ─────────────────────────────────────────────
+   Inter has no Georgian (Mkhedruli) glyphs, so Georgian text used to
+   fall back to Windows' bundled Sylfaen — a dated, low-contrast face.
+   Noto Sans Georgian is a clean modern humanist sans that pairs
+   naturally with Inter. Bundled locally as woff2 (Georgian subset,
+   ~16 KB/weight) — NOT fetched from Google/any CDN at runtime. See
+   src/lib/assets/fonts/noto-sans-georgian/LICENSE.txt (SIL OFL 1.1).
+
+   It's listed AFTER Inter in the :root stack below, so the browser's
+   per-glyph fallback keeps Latin text on Inter and only reaches for
+   Noto when it hits a Georgian codepoint. No locale switch needed —
+   mixed English/Georgian strings render each script in its own face. */
+@font-face {
+    font-family: 'Noto Sans Georgian';
+    src: url('/src/lib/assets/fonts/noto-sans-georgian/noto-sans-georgian-400.woff2') format('woff2');
+    font-weight: 400;
+    font-style: normal;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'Noto Sans Georgian';
+    src: url('/src/lib/assets/fonts/noto-sans-georgian/noto-sans-georgian-500.woff2') format('woff2');
+    font-weight: 500;
+    font-style: normal;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'Noto Sans Georgian';
+    src: url('/src/lib/assets/fonts/noto-sans-georgian/noto-sans-georgian-600.woff2') format('woff2');
+    font-weight: 600;
+    font-style: normal;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'Noto Sans Georgian';
+    src: url('/src/lib/assets/fonts/noto-sans-georgian/noto-sans-georgian-700.woff2') format('woff2');
+    font-weight: 700;
+    font-style: normal;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'JetBrains Mono';
+    src: url('/src/lib/assets/fonts/jetbrains-mono/JetBrainsMono-Regular.woff2') format('woff2');
+    font-weight: 400;
+    font-style: normal;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'JetBrains Mono';
+    src: url('/src/lib/assets/fonts/jetbrains-mono/JetBrainsMono-Medium.woff2') format('woff2');
+    font-weight: 500;
+    font-style: normal;
+    font-display: swap;
+}
+
+/* ─── Optional UI fonts (font picker) ────────────────────────────────
+   Bundled alternatives the user can pick in Settings → Appearance →
+   Font. All SIL OFL 1.1, Latin-subset woff2, bundled locally (never
+   fetched at runtime) — see each family's folder LICENSE.txt. The
+   active font is selected by a `data-font` attribute on <html> (see
+   the `:root[data-font='…']` blocks below). Segoe UI needs no
+   @font-face — it's a Windows system font. */
+@font-face {
+    font-family: 'Geist';
+    src: url('/src/lib/assets/fonts/geist/geist-400.woff2') format('woff2');
+    font-weight: 400;
+    font-style: normal;
+    font-display: swap;
+}
+@font-face {
+    font-family: 'Geist';
+    src: url('/src/lib/assets/fonts/geist/geist-500.woff2') format('woff2');
+    font-weight: 500;
+    font-style: normal;
+    font-display: swap;
+}
+@font-face {
+    font-family: 'Geist';
+    src: url('/src/lib/assets/fonts/geist/geist-600.woff2') format('woff2');
+    font-weight: 600;
+    font-style: normal;
+    font-display: swap;
+}
+@font-face {
+    font-family: 'Geist';
+    src: url('/src/lib/assets/fonts/geist/geist-700.woff2') format('woff2');
+    font-weight: 700;
+    font-style: normal;
+    font-display: swap;
+}
+@font-face {
+    font-family: 'IBM Plex Sans';
+    src: url('/src/lib/assets/fonts/ibm-plex-sans/ibm-plex-sans-400.woff2') format('woff2');
+    font-weight: 400;
+    font-style: normal;
+    font-display: swap;
+}
+@font-face {
+    font-family: 'IBM Plex Sans';
+    src: url('/src/lib/assets/fonts/ibm-plex-sans/ibm-plex-sans-500.woff2') format('woff2');
+    font-weight: 500;
+    font-style: normal;
+    font-display: swap;
+}
+@font-face {
+    font-family: 'IBM Plex Sans';
+    src: url('/src/lib/assets/fonts/ibm-plex-sans/ibm-plex-sans-600.woff2') format('woff2');
+    font-weight: 600;
+    font-style: normal;
+    font-display: swap;
+}
+@font-face {
+    font-family: 'IBM Plex Sans';
+    src: url('/src/lib/assets/fonts/ibm-plex-sans/ibm-plex-sans-700.woff2') format('woff2');
+    font-weight: 700;
+    font-style: normal;
+    font-display: swap;
+}
+/* Atkinson Hyperlegible ships only Regular + Bold. The browser maps
+   500/600 to the nearest available weight — acceptable for a
+   legibility-first face where most UI text is 400 or 600/700. */
+@font-face {
+    font-family: 'Atkinson Hyperlegible';
+    src: url('/src/lib/assets/fonts/atkinson-hyperlegible/atkinson-hyperlegible-400.woff2') format('woff2');
+    font-weight: 400;
+    font-style: normal;
+    font-display: swap;
+}
+@font-face {
+    font-family: 'Atkinson Hyperlegible';
+    src: url('/src/lib/assets/fonts/atkinson-hyperlegible/atkinson-hyperlegible-700.woff2') format('woff2');
+    font-weight: 700;
+    font-style: normal;
+    font-display: swap;
+}
+/* Noto Serif Georgian — VARIABLE woff2 (wght 100–900). Powers the Georgian
+   glyphs of the "Serif" UI-font option; the Latin side comes from the system
+   Georgia serif. One variable file covers every weight the UI uses (400–700),
+   so no per-weight files like the sans faces above. */
+@font-face {
+    font-family: 'Noto Serif Georgian';
+    src: url('/src/lib/assets/fonts/noto-serif-georgian/noto-serif-georgian-variable.woff2') format('woff2');
+    font-weight: 100 900;
+    font-style: normal;
+    font-display: swap;
+}
+
+:root {
+    font-family: 'Inter', 'Noto Sans Georgian', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+/* Font-picker overrides. The bare `:root` above is the Inter default;
+   each block swaps the Latin face when the user picks a non-default
+   font (applyFont() in settings.ts sets `data-font`). 'Noto Sans
+   Georgian' stays the 2nd entry in every stack so Georgian glyphs
+   always render in the modern Georgian face regardless of UI font —
+   the browser's per-glyph fallback keeps Latin on the chosen font. */
+:root[data-font='system'] {
+    font-family: 'Segoe UI', 'Noto Sans Georgian', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+}
+:root[data-font='geist'] {
+    font-family: 'Geist', 'Noto Sans Georgian', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+:root[data-font='ibm-plex'] {
+    font-family: 'IBM Plex Sans', 'Noto Sans Georgian', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+:root[data-font='atkinson'] {
+    font-family: 'Atkinson Hyperlegible', 'Noto Sans Georgian', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+/* Serif — Latin via the system Georgia serif, Georgian via the bundled Noto
+   Serif Georgian (browser per-glyph fallback keeps each script on its face). */
+:root[data-font='serif'] {
+    font-family: 'Georgia', 'Noto Serif Georgian', ui-serif, 'Times New Roman', Cambria, serif;
+}
+
+.font-mono,
+code,
+pre,
+textarea.mono {
+    /* Noto Sans Georgian sits in the mono stack too so Georgian text
+       pasted into code/preview areas renders in the modern face rather
+       than the system fallback. It's not monospaced, but Georgian has
+       no monospace expectation and legibility wins over column purity.
+       The font picker never touches this — code is always JetBrains Mono. */
+    font-family: 'JetBrains Mono', 'Noto Sans Georgian', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+/* ─── Semantic token system ──────────────────────────────────────────
+   Every theme exposes the SAME named tokens, just with different values.
+   Components consume tokens exclusively — never raw color hex/Tailwind
+   palette colors — which is what makes "switch theme" actually work
+   without per-component overrides.
+
+   Token categories:
+     - Surface layers     : bg → panel → panel-2 → panel-3 (low → high elevation)
+     - Borders            : border (default) → border-strong (emphasis/focus)
+     - Text hierarchy     : text → text-secondary → muted (high → low contrast)
+     - Accent (brand)     : accent + accent-hover + accent-soft (bg) + accent-contrast (fg on accent bg)
+     - Status (success/warning/error/info)
+                          : each gets <name> (solid) + <name>-soft (translucent bg) + <name>-strong (border emphasis)
+     - Shadow             : shadow-color (used by box-shadow rules that want theme-aware tinting)
+   ──────────────────────────────────────────────────────────────────── */
+
+/* ─── Design foundations — motion & shape ────────────────────────────
+   Theme-independent primitives for the macOS-grade visual language
+   (see DESIGN.md §5 shape, §7 motion). Every component in src/lib/ui/
+   composes from these — retune here and the whole kit moves together. */
+:root {
+    /* Motion. `--ease-out` is a soft, overshoot-free settle; durations
+       stay short — micro for hover/press, enter for element/view change. */
+    --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+    --ease-in-out: cubic-bezier(0.45, 0, 0.25, 1);
+    --dur-micro: 130ms;
+    --dur-enter: 190ms;
+
+    /* Radius — ONE family, enforced: controls 8 / cards 12 / overlay 16. */
+    --radius-control: 8px;
+    --radius-card: 12px;
+    --radius-overlay: 16px;
+    --radius-pill: 999px;
+
+    /* Brand red — sampled from the KeepITLocal logo mark (the K glyph /
+       wordmark crimson). Theme-CONSTANT: defined once here so every theme
+       inherits it; the brand color never follows the user's accent/theme.
+       Used by the wordmark "IT" (TitleBar, Home). */
+    --color-brand-red: #a32b26;
+}
+
+:root[data-theme='dark'] {
+    /* Surfaces — slightly softer values + tighter contrast between
+       bg/panel/panel-2 so cards lean on shadow + bg-shift instead of
+       sharp borders (Linear/Arc convention). */
+    --color-bg: #0c0c0e;
+    --color-panel: #151517;
+    --color-panel-2: #1d1d20;
+    --color-panel-3: #262629;
+    /* Softer borders — feels more refined than the old #262626. Linear's
+       dark mode uses ~#222 as the resting border. */
+    --color-border: #222226;
+    --color-border-strong: #34343a;
+    --color-text: #e5e5e5;
+    --color-text-secondary: #a3a3a3;
+    --color-muted: #737373;
+    /* Rebrand 2026-07-06: accent follows the logo's crimson (see
+       --color-brand-red), brightened one step (#b5352c) so accent text
+       stays legible on the near-black surfaces. */
+    --color-accent: #b5352c;
+    --color-accent-hover: #cf4b41;
+    --color-accent-soft: rgba(181, 53, 44, 0.12);
+    --color-accent-contrast: #ffffff;
+    /* Space-separated RGB so Tailwind's `<alpha-value>` substitution
+       works (used by `bg-accent/15`, `text-accent/75`, etc). Stays in
+       sync with `--color-accent` above. */
+    --tw-accent-rgb: 181 53 44;
+    --color-success: #34d399;
+    --color-success-soft: rgba(52, 211, 153, 0.12);
+    --color-success-strong: rgba(52, 211, 153, 0.40);
+    --color-warning: #fbbf24;
+    --color-warning-soft: rgba(251, 191, 36, 0.12);
+    --color-warning-strong: rgba(251, 191, 36, 0.40);
+    --color-error: #b5352c;
+    --color-error-soft: rgba(251, 113, 133, 0.12);
+    --color-error-strong: rgba(251, 113, 133, 0.40);
+    --color-info: #60a5fa;
+    --color-info-soft: rgba(96, 165, 250, 0.12);
+    --color-info-strong: rgba(96, 165, 250, 0.40);
+    /* Layered shadow elevation — dark theme uses pure-black shadows since
+       lighter rgba doesn't read on near-black surfaces. The 2-stop pattern
+       (a sharp inner + a soft outer) is the trick that makes Linear's
+       cards feel like they're floating instead of stamped on. */
+    --color-shadow: rgba(0, 0, 0, 0.55);
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.40);
+    --shadow-md: 0 1px 2px rgba(0, 0, 0, 0.30), 0 4px 12px rgba(0, 0, 0, 0.35);
+    --shadow-lg: 0 4px 6px rgba(0, 0, 0, 0.30), 0 12px 28px rgba(0, 0, 0, 0.55);
+
+    /* ─── Theme-aware Tailwind palette (status families) ──────────
+       Used by every existing `text-emerald-300`, `bg-rose-500/10`,
+       etc. across the codebase via the tailwind.config.js shade()
+       helper. Dark theme uses Tailwind's published defaults verbatim,
+       so this section is mostly a "no-op" against vanilla Tailwind —
+       it exists so the OTHER themes can override these same variables
+       to retone every component without per-file refactor. */
+    --tw-emerald-50: 236 253 245;
+    --tw-emerald-100: 209 250 229;
+    --tw-emerald-200: 167 243 208;
+    --tw-emerald-300: 110 231 183;
+    --tw-emerald-400: 52 211 153;
+    --tw-emerald-500: 16 185 129;
+    --tw-emerald-700: 4 120 87;
+    --tw-emerald-900: 6 78 59;
+    --tw-green-200: 187 247 208;
+    --tw-green-300: 134 239 172;
+    --tw-green-400: 74 222 128;
+    --tw-green-500: 34 197 94;
+    --tw-lime-400: 163 230 53;
+    --tw-lime-500: 132 204 22;
+    --tw-teal-500: 20 184 166;
+    --tw-red-200: 254 202 202;
+    --tw-red-300: 252 165 165;
+    --tw-red-400: 248 113 113;
+    --tw-red-500: 239 68 68;
+    --tw-red-600: 220 38 38;
+    --tw-red-800: 153 27 27;
+    --tw-red-900: 127 29 29;
+    --tw-rose-300: 253 164 175;
+    --tw-rose-500: 244 63 94;
+    --tw-pink-400: 244 114 182;
+    --tw-pink-500: 236 72 153;
+    --tw-amber-100: 254 243 199;
+    --tw-amber-200: 253 230 138;
+    --tw-amber-300: 252 211 77;
+    --tw-amber-400: 251 191 36;
+    --tw-amber-500: 245 158 11;
+    --tw-yellow-200: 254 240 138;
+    --tw-yellow-300: 253 224 71;
+    --tw-yellow-400: 250 204 21;
+    --tw-yellow-900: 113 63 18;
+    --tw-orange-300: 253 186 116;
+    --tw-orange-400: 251 146 60;
+    --tw-orange-500: 249 115 22;
+    --tw-orange-900: 124 45 18;
+    --tw-blue-400: 96 165 250;
+    --tw-blue-500: 59 130 246;
+    --tw-blue-600: 37 99 235;
+    --tw-blue-900: 30 58 138;
+    --tw-sky-400: 56 189 248;
+    --tw-sky-500: 14 165 233;
+    --tw-cyan-300: 103 232 249;
+    --tw-cyan-400: 34 211 238;
+    --tw-indigo-300: 165 180 252;
+    --tw-violet-400: 167 139 250;
+    --tw-purple-400: 192 132 252;
+    --tw-purple-500: 168 85 247;
+    --tw-fuchsia-300: 240 171 252;
+}
+
+/* Light — Linear/Arc-inspired refresh.
+   The previous light palette read as "shareware on emerald green" — partly
+   because the surface tones were too cool/clinical, partly because emerald
+   on white is a hard sell aesthetically. This version uses:
+     - warm-leaning off-white surfaces (#fcfcfd, not #f6f7fa)
+     - very-soft borders (#eaecf0) so cards lean on shadow, not outline
+     - deep-slate text (#101828) instead of pure-black
+     - Linear's signature indigo (#5e6ad2) as the brand accent — keeps the
+       app feeling premium and product-y instead of casual
+   The dark theme keeps its emerald — brand identity for the headline
+   surface. Each theme picks the accent that suits its surface family. */
+:root[data-theme='light'] {
+    /* Surfaces are pulled DOWN from pure-white to address the "too bright"
+       complaint. Hierarchy now has visible separation: bg is clearly a
+       soft cool-grey, panels are off-white (still bright but not retina-
+       burning), panel-2 is the recessed elevation. The bg-vs-panel
+       contrast also makes Linear-style elevation shadows more legible. */
+    --color-bg: #f4f5f7;
+    --color-panel: #fbfcfd;
+    --color-panel-2: #eceef2;
+    --color-panel-3: #ffffff;
+    --color-border: #e1e4ea;
+    --color-border-strong: #c4c9d2;
+    --color-text: #101828;
+    --color-text-secondary: #475467;
+    --color-muted: #98a2b3;
+    --color-accent: #5e6ad2;
+    --color-accent-hover: #4a5acb;
+    --color-accent-soft: rgba(94, 106, 210, 0.10);
+    --color-accent-contrast: #ffffff;
+    --tw-accent-rgb: 94 106 210;
+    /* Status accents stay semantic — we don't make every status indigo just
+       because the brand is. Success/warning/error/info use traditional
+       light-mode shades that read well on near-white surfaces. */
+    --color-success: #047857;
+    --color-success-soft: rgba(4, 120, 87, 0.10);
+    --color-success-strong: rgba(4, 120, 87, 0.45);
+    --color-warning: #b45309;
+    --color-warning-soft: rgba(180, 83, 9, 0.10);
+    --color-warning-strong: rgba(180, 83, 9, 0.40);
+    --color-error: #b91c1c;
+    --color-error-soft: rgba(185, 28, 28, 0.10);
+    --color-error-strong: rgba(185, 28, 28, 0.40);
+    --color-info: #1d4ed8;
+    --color-info-soft: rgba(29, 78, 216, 0.10);
+    --color-info-strong: rgba(29, 78, 216, 0.40);
+    /* Light-theme shadows are slate-tinted, not pure black — gives the
+       Linear/Arc "floating card" feel instead of the "newspaper drop
+       shadow" feel you get with raw black on white. */
+    --color-shadow: rgba(16, 24, 40, 0.08);
+    --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.05);
+    --shadow-md: 0 1px 3px rgba(16, 24, 40, 0.10), 0 1px 2px rgba(16, 24, 40, 0.06);
+    --shadow-lg: 0 12px 16px -4px rgba(16, 24, 40, 0.08), 0 4px 6px -2px rgba(16, 24, 40, 0.03);
+
+    /* Light-theme Tailwind palette. The trick: shades 100-400 are normally
+       used as TEXT on a dark background — on a light background they're
+       invisible. So we shift those to their 600-800 counterparts. Shades
+       50/500-900 are mostly used as backgrounds or already-dark text, so
+       they stay close to defaults. */
+    --tw-emerald-50: 236 253 245;
+    --tw-emerald-100: 209 250 229;
+    --tw-emerald-200: 6 95 70;
+    --tw-emerald-300: 5 122 85;
+    --tw-emerald-400: 4 120 87;
+    --tw-emerald-500: 5 150 105;
+    --tw-emerald-700: 4 120 87;
+    --tw-emerald-900: 6 78 59;
+    --tw-green-200: 22 101 52;
+    --tw-green-300: 21 128 61;
+    --tw-green-400: 22 163 74;
+    --tw-green-500: 21 128 61;
+    --tw-lime-400: 65 161 33;
+    --tw-lime-500: 77 124 15;
+    --tw-teal-500: 13 148 136;
+    --tw-red-200: 254 202 202;
+    --tw-red-300: 185 28 28;
+    --tw-red-400: 220 38 38;
+    --tw-red-500: 220 38 38;
+    --tw-red-600: 185 28 28;
+    --tw-red-800: 153 27 27;
+    --tw-red-900: 127 29 29;
+    --tw-rose-300: 190 18 60;
+    --tw-rose-500: 225 29 72;
+    --tw-pink-400: 219 39 119;
+    --tw-pink-500: 190 24 93;
+    --tw-amber-100: 254 243 199;
+    --tw-amber-200: 146 64 14;
+    --tw-amber-300: 180 83 9;
+    --tw-amber-400: 217 119 6;
+    --tw-amber-500: 245 158 11;
+    --tw-yellow-200: 161 98 7;
+    --tw-yellow-300: 161 98 7;
+    --tw-yellow-400: 202 138 4;
+    --tw-yellow-900: 113 63 18;
+    --tw-orange-300: 154 52 18;
+    --tw-orange-400: 194 65 12;
+    --tw-orange-500: 234 88 12;
+    --tw-orange-900: 124 45 18;
+    --tw-blue-400: 37 99 235;
+    --tw-blue-500: 29 78 216;
+    --tw-blue-600: 30 64 175;
+    --tw-blue-900: 30 58 138;
+    --tw-sky-400: 2 132 199;
+    --tw-sky-500: 3 105 161;
+    --tw-cyan-300: 14 116 144;
+    --tw-cyan-400: 8 145 178;
+    --tw-indigo-300: 67 56 202;
+    --tw-violet-400: 109 40 217;
+    --tw-purple-400: 126 34 206;
+    --tw-purple-500: 107 33 168;
+    --tw-fuchsia-300: 162 28 175;
+}
+
+/* Dracula — classic editor palette. Signature pink as accent so the UI
+   feels recognizably Dracula at a glance; the standard green/yellow/orange/red
+   accents become our success/warning/info/error tokens. */
+:root[data-theme='dracula'] {
+    --color-bg: #282a36;
+    --color-panel: #343746;
+    --color-panel-2: #44475a;
+    --color-panel-3: #4f5267;
+    --color-border: #44475a;
+    --color-border-strong: #6272a4;
+    --color-text: #f8f8f2;
+    --color-text-secondary: #d6d6cc;
+    --color-muted: #6272a4;
+    --color-accent: #ff79c6;
+    --color-accent-hover: #ff8fcf;
+    --color-accent-soft: rgba(255, 121, 198, 0.13);
+    --color-accent-contrast: #282a36;
+    --tw-accent-rgb: 255 121 198;
+    --color-success: #50fa7b;
+    --color-success-soft: rgba(80, 250, 123, 0.12);
+    --color-success-strong: rgba(80, 250, 123, 0.40);
+    --color-warning: #ffb86c;
+    --color-warning-soft: rgba(255, 184, 108, 0.12);
+    --color-warning-strong: rgba(255, 184, 108, 0.40);
+    --color-error: #ff5555;
+    --color-error-soft: rgba(255, 85, 85, 0.13);
+    --color-error-strong: rgba(255, 85, 85, 0.40);
+    --color-info: #8be9fd;
+    --color-info-soft: rgba(139, 233, 253, 0.13);
+    --color-info-strong: rgba(139, 233, 253, 0.40);
+    --color-shadow: rgba(0, 0, 0, 0.55);
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.40);
+    --shadow-md: 0 1px 2px rgba(0, 0, 0, 0.30), 0 4px 12px rgba(0, 0, 0, 0.35);
+    --shadow-lg: 0 4px 6px rgba(0, 0, 0, 0.30), 0 12px 28px rgba(0, 0, 0, 0.55);
+
+    /* Dracula's official 7-color accent palette doesn't have shade scales,
+       so every Tailwind shade in a given family collapses to the closest
+       Dracula color. Opacity modifiers (/10, /20, etc.) still vary
+       lightness, so badges still look layered. */
+    --tw-emerald-50: 80 250 123;
+    --tw-emerald-100: 80 250 123;
+    --tw-emerald-200: 80 250 123;
+    --tw-emerald-300: 80 250 123;
+    --tw-emerald-400: 80 250 123;
+    --tw-emerald-500: 80 250 123;
+    --tw-emerald-700: 80 250 123;
+    --tw-emerald-900: 80 250 123;
+    --tw-green-200: 80 250 123;
+    --tw-green-300: 80 250 123;
+    --tw-green-400: 80 250 123;
+    --tw-green-500: 80 250 123;
+    --tw-lime-400: 80 250 123;
+    --tw-lime-500: 80 250 123;
+    --tw-teal-500: 139 233 253;
+    --tw-red-200: 255 85 85;
+    --tw-red-300: 255 85 85;
+    --tw-red-400: 255 85 85;
+    --tw-red-500: 255 85 85;
+    --tw-red-600: 255 85 85;
+    --tw-red-800: 255 85 85;
+    --tw-red-900: 255 85 85;
+    --tw-rose-300: 255 121 198;
+    --tw-rose-500: 255 121 198;
+    --tw-pink-400: 255 121 198;
+    --tw-pink-500: 255 121 198;
+    --tw-amber-100: 241 250 140;
+    --tw-amber-200: 241 250 140;
+    --tw-amber-300: 255 184 108;
+    --tw-amber-400: 255 184 108;
+    --tw-amber-500: 255 184 108;
+    --tw-yellow-200: 241 250 140;
+    --tw-yellow-300: 241 250 140;
+    --tw-yellow-400: 241 250 140;
+    --tw-yellow-900: 241 250 140;
+    --tw-orange-300: 255 184 108;
+    --tw-orange-400: 255 184 108;
+    --tw-orange-500: 255 184 108;
+    --tw-orange-900: 255 184 108;
+    --tw-blue-400: 139 233 253;
+    --tw-blue-500: 139 233 253;
+    --tw-blue-600: 139 233 253;
+    --tw-blue-900: 139 233 253;
+    --tw-sky-400: 139 233 253;
+    --tw-sky-500: 139 233 253;
+    --tw-cyan-300: 139 233 253;
+    --tw-cyan-400: 139 233 253;
+    --tw-indigo-300: 189 147 249;
+    --tw-violet-400: 189 147 249;
+    --tw-purple-400: 189 147 249;
+    --tw-purple-500: 189 147 249;
+    --tw-fuchsia-300: 255 121 198;
+}
+
+/* Nord — cool arctic palette. nord8 (#88c0d0) as accent; aurora colors
+   (nord11/13/14) become error/warning/success. Reads calmer than the
+   default dark palette without losing readability. */
+:root[data-theme='nord'] {
+    --color-bg: #2e3440;
+    --color-panel: #3b4252;
+    --color-panel-2: #434c5e;
+    --color-panel-3: #4c566a;
+    --color-border: #434c5e;
+    --color-border-strong: #4c566a;
+    --color-text: #eceff4;
+    --color-text-secondary: #d8dee9;
+    --color-muted: #8a99b8;
+    --color-accent: #88c0d0;
+    --color-accent-hover: #8fbcbb;
+    --color-accent-soft: rgba(136, 192, 208, 0.13);
+    --color-accent-contrast: #2e3440;
+    --tw-accent-rgb: 136 192 208;
+    --color-success: #a3be8c;
+    --color-success-soft: rgba(163, 190, 140, 0.13);
+    --color-success-strong: rgba(163, 190, 140, 0.40);
+    --color-warning: #ebcb8b;
+    --color-warning-soft: rgba(235, 203, 139, 0.13);
+    --color-warning-strong: rgba(235, 203, 139, 0.40);
+    --color-error: #bf616a;
+    --color-error-soft: rgba(191, 97, 106, 0.13);
+    --color-error-strong: rgba(191, 97, 106, 0.40);
+    --color-info: #81a1c1;
+    --color-info-soft: rgba(129, 161, 193, 0.13);
+    --color-info-strong: rgba(129, 161, 193, 0.40);
+    --color-shadow: rgba(0, 0, 0, 0.50);
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
+    --shadow-md: 0 1px 2px rgba(0, 0, 0, 0.25), 0 4px 12px rgba(0, 0, 0, 0.32);
+    --shadow-lg: 0 4px 6px rgba(0, 0, 0, 0.25), 0 12px 28px rgba(0, 0, 0, 0.45);
+
+    /* Nord palette mapping. Greens → nord14 (#a3be8c), reds → nord11
+       (#bf616a), yellows → nord13 (#ebcb8b), oranges → nord12
+       (#d08770), blues/cyans → nord9/8/7 (frost family), purples →
+       nord15 (#b48ead). Subtle and uniform per family. */
+    --tw-emerald-50: 163 190 140;
+    --tw-emerald-100: 163 190 140;
+    --tw-emerald-200: 163 190 140;
+    --tw-emerald-300: 163 190 140;
+    --tw-emerald-400: 163 190 140;
+    --tw-emerald-500: 163 190 140;
+    --tw-emerald-700: 163 190 140;
+    --tw-emerald-900: 163 190 140;
+    --tw-green-200: 163 190 140;
+    --tw-green-300: 163 190 140;
+    --tw-green-400: 163 190 140;
+    --tw-green-500: 163 190 140;
+    --tw-lime-400: 163 190 140;
+    --tw-lime-500: 163 190 140;
+    --tw-teal-500: 143 188 187;
+    --tw-red-200: 191 97 106;
+    --tw-red-300: 191 97 106;
+    --tw-red-400: 191 97 106;
+    --tw-red-500: 191 97 106;
+    --tw-red-600: 191 97 106;
+    --tw-red-800: 191 97 106;
+    --tw-red-900: 191 97 106;
+    --tw-rose-300: 191 97 106;
+    --tw-rose-500: 191 97 106;
+    --tw-pink-400: 180 142 173;
+    --tw-pink-500: 180 142 173;
+    --tw-amber-100: 235 203 139;
+    --tw-amber-200: 235 203 139;
+    --tw-amber-300: 235 203 139;
+    --tw-amber-400: 235 203 139;
+    --tw-amber-500: 235 203 139;
+    --tw-yellow-200: 235 203 139;
+    --tw-yellow-300: 235 203 139;
+    --tw-yellow-400: 235 203 139;
+    --tw-yellow-900: 235 203 139;
+    --tw-orange-300: 208 135 112;
+    --tw-orange-400: 208 135 112;
+    --tw-orange-500: 208 135 112;
+    --tw-orange-900: 208 135 112;
+    --tw-blue-400: 129 161 193;
+    --tw-blue-500: 129 161 193;
+    --tw-blue-600: 94 129 172;
+    --tw-blue-900: 94 129 172;
+    --tw-sky-400: 136 192 208;
+    --tw-sky-500: 136 192 208;
+    --tw-cyan-300: 143 188 187;
+    --tw-cyan-400: 143 188 187;
+    --tw-indigo-300: 180 142 173;
+    --tw-violet-400: 180 142 173;
+    --tw-purple-400: 180 142 173;
+    --tw-purple-500: 180 142 173;
+    --tw-fuchsia-300: 180 142 173;
+}
+
+/* ─── Palette Appearance Wave B (2026-05-27): three new themes ────────
+   Midnight (pure-black for OLED) · Sepia (warm paper) · Tokyo Night
+   (deep blues + violets). Each is a semantic-token override; the
+   palette-wide Tailwind utility colors inherit from the closest
+   defined theme. We don't duplicate the 80-line Tailwind override
+   block per theme — the small accuracy loss on stray `text-emerald-500`
+   utility classes is acceptable for the visual range we get. */
+
+/* Midnight — true-black backgrounds on the brand crimson accent (rebrand
+   2026-07-06), so OLED users get the contrast without losing brand color. */
+:root[data-theme='midnight'] {
+    --color-bg: #000000;
+    --color-panel: #0a0a0c;
+    --color-panel-2: #131316;
+    --color-panel-3: #1c1c20;
+    --color-border: #232327;
+    --color-border-strong: #2e2e34;
+    --color-text: #f4f4f5;
+    --color-text-secondary: #a3a3a3;
+    --color-muted: #71717a;
+    --color-accent: #b5352c;
+    --color-accent-hover: #cf4b41;
+    --color-accent-soft: rgba(181, 53, 44, 0.14);
+    --color-accent-contrast: #ffffff;
+    --tw-accent-rgb: 181 53 44;
+    /* Wave F (2026-05-27): semantic colors were missing; without
+       --color-error in particular, destructive buttons (Delete, Wipe)
+       rendered with no foreground color and disappeared on the black
+       background. Add the full semantic set so every surface looks
+       consistent. */
+    --color-success: #34d399;
+    --color-success-soft: rgba(52, 211, 153, 0.14);
+    --color-success-strong: rgba(52, 211, 153, 0.42);
+    --color-warning: #fbbf24;
+    --color-warning-soft: rgba(251, 191, 36, 0.14);
+    --color-warning-strong: rgba(251, 191, 36, 0.42);
+    --color-error: #fb7185;
+    --color-error-soft: rgba(251, 113, 133, 0.14);
+    --color-error-strong: rgba(251, 113, 133, 0.42);
+    --color-info: #60a5fa;
+    --color-info-soft: rgba(96, 165, 250, 0.14);
+    --color-info-strong: rgba(96, 165, 250, 0.42);
+    --color-shadow: rgba(0, 0, 0, 0.85);
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.60);
+    --shadow-md: 0 1px 2px rgba(0, 0, 0, 0.50), 0 4px 12px rgba(0, 0, 0, 0.60);
+    --shadow-lg: 0 4px 6px rgba(0, 0, 0, 0.45), 0 12px 28px rgba(0, 0, 0, 0.70);
+}
+
+/* Sepia — warm paper. Accent shifts to a deep amber so the brand
+   reads as natural against the cream surfaces. */
+:root[data-theme='sepia'] {
+    --color-bg: #f5ecd9;
+    --color-panel: #fffaf0;
+    --color-panel-2: #ede0c4;
+    --color-panel-3: #ffffff;
+    --color-border: #d4c4a6;
+    --color-border-strong: #b8a586;
+    --color-text: #44392b;
+    --color-text-secondary: #6b5d49;
+    --color-muted: #8a7d68;
+    --color-accent: #a16207;
+    --color-accent-hover: #854d0e;
+    --color-accent-soft: rgba(161, 98, 7, 0.13);
+    --color-accent-contrast: #fffaf0;
+    --tw-accent-rgb: 161 98 7;
+    --color-success: #4d7c0f;
+    --color-success-soft: rgba(77, 124, 15, 0.12);
+    --color-success-strong: rgba(77, 124, 15, 0.42);
+    --color-warning: #ca8a04;
+    --color-warning-soft: rgba(202, 138, 4, 0.12);
+    --color-warning-strong: rgba(202, 138, 4, 0.42);
+    --color-error: #b91c1c;
+    --color-error-soft: rgba(185, 28, 28, 0.12);
+    --color-error-strong: rgba(185, 28, 28, 0.42);
+    --color-info: #1d4ed8;
+    --color-info-soft: rgba(29, 78, 216, 0.12);
+    --color-info-strong: rgba(29, 78, 216, 0.42);
+    --color-shadow: rgba(70, 50, 30, 0.20);
+    --shadow-sm: 0 1px 2px rgba(70, 50, 30, 0.10);
+    --shadow-md: 0 1px 2px rgba(70, 50, 30, 0.08), 0 4px 12px rgba(70, 50, 30, 0.12);
+    --shadow-lg: 0 4px 6px rgba(70, 50, 30, 0.10), 0 12px 28px rgba(70, 50, 30, 0.18);
+}
+
+/* Tokyo Night — popular community palette. Deep blue surfaces with
+   a violet accent. */
+:root[data-theme='tokyo-night'] {
+    --color-bg: #1a1b26;
+    --color-panel: #24283b;
+    --color-panel-2: #2e3251;
+    --color-panel-3: #3b3e5e;
+    --color-border: #353a55;
+    --color-border-strong: #444a6b;
+    --color-text: #c0caf5;
+    --color-text-secondary: #a9b1d6;
+    --color-muted: #7c83a3;
+    --color-accent: #bb9af7;
+    --color-accent-hover: #c8aafb;
+    --color-accent-soft: rgba(187, 154, 247, 0.14);
+    --color-accent-contrast: #1a1b26;
+    --tw-accent-rgb: 187 154 247;
+    --color-success: #9ece6a;
+    --color-success-soft: rgba(158, 206, 106, 0.14);
+    --color-success-strong: rgba(158, 206, 106, 0.42);
+    --color-warning: #e0af68;
+    --color-warning-soft: rgba(224, 175, 104, 0.14);
+    --color-warning-strong: rgba(224, 175, 104, 0.42);
+    --color-error: #f7768e;
+    --color-error-soft: rgba(247, 118, 142, 0.14);
+    --color-error-strong: rgba(247, 118, 142, 0.42);
+    --color-info: #7aa2f7;
+    --color-info-soft: rgba(122, 162, 247, 0.14);
+    --color-info-strong: rgba(122, 162, 247, 0.42);
+    --color-shadow: rgba(0, 0, 0, 0.55);
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.40);
+    --shadow-md: 0 1px 2px rgba(0, 0, 0, 0.32), 0 4px 12px rgba(0, 0, 0, 0.42);
+    --shadow-lg: 0 4px 6px rgba(0, 0, 0, 0.32), 0 12px 28px rgba(0, 0, 0, 0.52);
+}
+
+html {
+    /* Desktop-app density baseline. Tailwind's spacing/typography scales are
+       rem-based, so this rescales the entire UI proportionally. Matches the
+       density of VS Code (13px), Linear/Notion/Slack desktop (14px), and the
+       Claude Code reading experience. */
+    font-size: 14px;
+    /* Crisp typography defaults. Inter has stylistic alternates and ligatures
+       that significantly improve readability when enabled. */
+    font-feature-settings: "ss01", "ss03", "cv11", "calt", "kern";
+    font-variant-ligatures: contextual;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+    line-height: 1.5;
+}
+
+html, body, #app {
+    height: 100%;
+    margin: 0;
+    background: var(--color-bg);
+    color: var(--color-text);
+    /* Inherit from :root (and its `data-font` overrides) — do NOT hard-code
+       a family here. A literal `font-family: 'Inter'` on body/#app would be
+       more specific than `:root[data-font='…']` and silently pin the whole
+       UI to Inter, defeating the font picker. */
+    font-family: inherit;
+    overflow: hidden;
+    transition: background-color 150ms ease, color 150ms ease;
+}
+
+/* Tighter line-heights and slightly negative tracking for headings —
+   gives that polished, modern-app feel without changing sizes. */
+h1, h2, h3, h4, h5, h6 {
+    line-height: 1.25;
+    letter-spacing: -0.011em;
+}
+
+/* Smoother default form controls everywhere (not just tool-host). */
+button, input, textarea, select {
+    font-family: inherit;
+    font-size: inherit;
+    color: inherit;
+    transition:
+        border-color var(--dur-micro) var(--ease-out),
+        background-color var(--dur-micro) var(--ease-out),
+        color var(--dur-micro) var(--ease-out),
+        opacity var(--dur-micro) var(--ease-out),
+        box-shadow var(--dur-micro) var(--ease-out),
+        transform var(--dur-micro) var(--ease-out);
+}
+
+/* Linear/Arc-style focus ring — a 2px accent-tinted ring around interactive
+   elements. The ring is thinner and slightly more transparent than before
+   so it reads as a refined "yes, this is focused" rather than a heavy
+   outline. Tone matches the accent of whatever theme is active. */
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+a:focus-visible,
+[tabindex]:focus-visible {
+    outline: none;
+    box-shadow:
+        0 0 0 2px var(--color-bg),
+        0 0 0 4px color-mix(in srgb, var(--color-accent) 55%, transparent);
+    border-radius: inherit;
+}
+
+/* Card chrome polish — panels lean on layered shadow tokens instead of
+   stacking heavy borders. Linear and Arc both pull this trick: a near-
+   invisible 1px border plus a soft elevation shadow gives the card depth
+   without making it feel "boxed in".
+
+   We target only "card-like" combinations — a panel with a border AND a
+   rounded radius — so small chips/buttons that happen to use `.bg-panel`
+   don't pick up the shadow and start floating. The patterns covered:
+     .bg-panel.border-border, .bg-panel.rounded-2xl, etc.
+   We rely on `:where()` to keep specificity at 0 so components can still
+   override with their own custom styles. */
+:where(.bg-panel.rounded-2xl, .bg-panel.rounded-xl, .bg-panel.rounded-3xl) {
+    box-shadow: var(--shadow-sm);
+    transition: box-shadow 180ms ease, border-color 180ms ease, background-color 180ms ease;
+}
+
+/* Active feedback — small inward press on click. */
+button:not(:disabled):active {
+    transform: translateY(0.5px);
+}
+
+button:disabled {
+    cursor: not-allowed;
+}
+
+/* Soften corner sharpness everywhere by nudging up the radius scale. */
+.rounded {
+    border-radius: 0.5rem;
+}
+.rounded-md {
+    border-radius: 0.5rem;
+}
+
+/* Selection color — uses the accent for a unified look. */
+::selection {
+    background: color-mix(in srgb, var(--color-accent) 35%, transparent);
+    color: var(--color-text);
+}
+
+:root[data-window-label='overlay'],
+:root[data-window-label='overlay'] body,
+:root[data-window-label='overlay'] #app {
+    background: transparent !important;
+    transition: none !important;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+button {
+    cursor: pointer;
+}
+
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--color-border);
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--color-muted);
+}
+
+::-webkit-scrollbar-corner {
+    background: transparent;
+}
+
+* {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-border) transparent;
+}
+
+@keyframes shimmer {
+    0% {
+        background-position: -200% 0;
+    }
+    100% {
+        background-position: 200% 0;
+    }
+}
+
+.shimmer {
+    background: linear-gradient(90deg, var(--color-panel) 0%, var(--color-panel-2) 50%, var(--color-panel) 100%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite linear;
+}
+
+@keyframes fade-in {
+    from {
+        opacity: 0;
+        transform: translateY(4px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.fade-in {
+    animation: fade-in var(--dur-enter) var(--ease-out);
+}
+
+@keyframes slide-in-right {
+    from {
+        opacity: 0;
+        transform: translateX(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+.slide-in-right {
+    animation: slide-in-right var(--dur-enter) var(--ease-out);
+}
+
+/* Overlay reveal — opacity + a 2% scale settle. The macOS "floating
+   panel appears" motion; pair with a backdrop blur on the surface. */
+@keyframes overlay-reveal {
+    from {
+        opacity: 0;
+        transform: scale(0.98);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+.overlay-reveal {
+    animation: overlay-reveal var(--dur-enter) var(--ease-out);
+}
+
+.path-wrap {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
+.tool-filename {
+    display: block;
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.tool-host:is([data-screen-kind='tool']):not([data-screen='file-search']) {
+    container-type: inline-size;
+}
+
+.tool-host:is([data-screen-kind='tool']):not([data-screen='file-search'])
+    :where(.bg-panel, .bg-panel-2, section, article) {
+    border-radius: 1rem;
+}
+
+.tool-host:is([data-screen-kind='tool']):not([data-screen='file-search'])
+    :where(button, input, textarea, select) {
+    transition:
+        border-color 140ms ease,
+        background-color 140ms ease,
+        color 140ms ease,
+        opacity 140ms ease,
+        transform 140ms ease;
+}
+
+.tool-host:is([data-screen-kind='tool']):not([data-screen='file-search'])
+    :where(input:not([type='checkbox']):not([type='radio']), textarea, select) {
+    min-width: 0;
+    border-radius: 0.75rem;
+}
+
+.tool-host:is([data-screen-kind='tool']):not([data-screen='file-search'])
+    :where(button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible) {
+    outline: 2px solid color-mix(in srgb, var(--color-accent) 70%, transparent);
+    outline-offset: 2px;
+}
+
+.tool-host:is([data-screen-kind='tool']):not([data-screen='file-search'])
+    :where(table) {
+    min-width: 680px;
+}
+
+.tool-host:is([data-screen-kind='tool']):not([data-screen='file-search'])
+    :where(.overflow-auto, .overflow-x-auto, .overflow-y-auto) {
+    scrollbar-gutter: stable;
+}
+
+.tool-host:is([data-screen-kind='tool']):not([data-screen='file-search'])
+    :where(.path-wrap, .tool-filename) {
+    display: block;
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    overflow-wrap: normal;
+    word-break: normal;
+}
+
+@container (max-width: 720px) {
+    .tool-host:is([data-screen-kind='tool']):not([data-screen='file-search'])
+        :where(.p-6, .xl\:p-8) {
+        padding: 1rem;
+    }
+
+    .tool-host:is([data-screen-kind='tool']):not([data-screen='file-search'])
+        :where(table) {
+        min-width: 560px;
+    }
+}
+
+/* ─── UI/UX upgrade track — additive helpers (Phase 1) ─────────────
+   New utility tokens, motion helpers, and global guards introduced
+   as part of the kit migration. Strictly additive — they do not
+   redefine existing values, only extend them. See ui_ux_upgrade.md
+   for the rationale and the phased plan. */
+
+:root {
+    /* `--color-divider` — softer separator for inside-a-card use.
+       Existing `--color-border` reads as a card-edge; this is for
+       row separators inside a card. */
+    --color-divider: color-mix(in srgb, var(--color-border) 55%, transparent);
+
+    /* `--color-accent-row` — barely-tinted "selected row" background.
+       Existing `--color-accent-soft` (10%) reads slightly hot for a
+       resting list row; this is the calmer cousin for row-level use. */
+    --color-accent-row: color-mix(in srgb, var(--color-accent) 6%, transparent);
+
+    /* Soft accent glow used by primary CTAs at rest — keeps the
+       primary action visually weighted without burning energy.
+       Replaces hand-rolled `box-shadow: 0 6px ...` patterns scattered
+       across tool pages. */
+    --shadow-accent-soft: 0 6px 18px -8px color-mix(in srgb, var(--color-accent) 50%, transparent);
+}
+
+/* ─── Disclosure animation utility ──────────────────────────────────
+   The grid-template-rows: 0fr <-> 1fr trick lets us animate from
+   "collapsed" to "auto height" without JS measurement. Wrap the
+   content in a single child div so the grid's row applies to it,
+   and the inner overflow: hidden hides the content until the row
+   has grown to 1fr.
+
+   Usage:
+     <div class="disclose" data-open={isOpen}>
+       <div class="disclose-inner">
+         (your collapsible content)
+       </div>
+     </div>
+*/
+.disclose {
+    display: grid;
+    grid-template-rows: 0fr;
+    transition: grid-template-rows 220ms var(--ease-out);
+}
+.disclose[data-open='true'] {
+    grid-template-rows: 1fr;
+}
+.disclose-inner {
+    overflow: hidden;
+    min-height: 0;
+}
+
+/* ─── Skeleton-to-content crossfade helper ──────────────────────────
+   Pair a `.crossfade-skeleton` wrapper around the skeleton and the
+   real content; toggle `data-ready` on the parent. The skeleton fades
+   out as the content fades in. Cheaper than orchestrating two
+   transition components. */
+.crossfade {
+    position: relative;
+}
+.crossfade > .crossfade-skeleton,
+.crossfade > .crossfade-content {
+    transition: opacity 160ms var(--ease-out);
+}
+.crossfade[data-ready='false'] > .crossfade-content {
+    opacity: 0;
+    pointer-events: none;
+}
+.crossfade[data-ready='true'] > .crossfade-skeleton {
+    opacity: 0;
+    pointer-events: none;
+}
+
+/* ─── Global reduced-motion guard ──────────────────────────────────
+   Honor the OS-level accessibility preference. Collapses every
+   transition and animation to a near-instant 1ms. Individual
+   surfaces that genuinely need motion to communicate state (e.g. a
+   focus ring) can opt back in with their own
+   @media (prefers-reduced-motion: no-preference) block. */
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 1ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 1ms !important;
+        scroll-behavior: auto !important;
+    }
+}

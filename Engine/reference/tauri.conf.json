@@ -1,0 +1,117 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "KeepItLocal",
+  "version": "1.0.0",
+  "identifier": "com.keepitlocal.app",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../build"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "splashscreen",
+        "url": "/splash.html",
+        "title": "KeepItLocal",
+        "width": 420,
+        "height": 280,
+        "resizable": false,
+        "decorations": false,
+        "transparent": false,
+        "backgroundColor": "#0c0c0e",
+        "center": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "shadow": false,
+        "visible": false
+      },
+      {
+        "label": "main",
+        "title": "KeepItLocal",
+        "width": 900,
+        "height": 700,
+        "minWidth": 720,
+        "minHeight": 480,
+        "center": true,
+        "decorations": false,
+        "dragDropEnabled": true,
+        "visible": false,
+        "backgroundColor": "#141414"
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: http://asset.localhost https://asset.localhost kilmedia: http://kilmedia.localhost https://kilmedia.localhost data: blob:; media-src 'self' asset: http://asset.localhost https://asset.localhost kilmedia: http://kilmedia.localhost https://kilmedia.localhost blob:; object-src 'self' asset: http://asset.localhost https://asset.localhost blob:; frame-src 'self' asset: http://asset.localhost https://asset.localhost kilmedia: http://kilmedia.localhost https://kilmedia.localhost blob:; font-src 'self' data:; connect-src ipc: http://ipc.localhost",
+      "assetProtocol": {
+        "enable": true,
+        "scope": ["**"]
+      }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "resources": {
+      "vosk-runtime/libvosk.dll": "libvosk.dll",
+      "vosk-runtime/libgcc_s_seh-1.dll": "libgcc_s_seh-1.dll",
+      "vosk-runtime/libstdc++-6.dll": "libstdc++-6.dll",
+      "vosk-runtime/libwinpthread-1.dll": "libwinpthread-1.dll",
+      "pdfium-runtime/pdfium.dll": "pdfium.dll",
+      "tessdata-runtime/kat.traineddata": "tessdata/kat.traineddata",
+      "tessdata-runtime/eng.traineddata": "tessdata/eng.traineddata",
+      "tessdata-runtime/rus.traineddata": "tessdata/rus.traineddata",
+      "tesseract-runtime/tesseract.exe": "tesseract.exe",
+      "tesseract-runtime/tesseract55.dll": "tesseract55.dll",
+      "tesseract-runtime/leptonica-1.87.0.dll": "leptonica-1.87.0.dll",
+      "tesseract-runtime/archive.dll": "archive.dll",
+      "tesseract-runtime/bz2.dll": "bz2.dll",
+      "tesseract-runtime/gif.dll": "gif.dll",
+      "tesseract-runtime/jpeg62.dll": "jpeg62.dll",
+      "tesseract-runtime/libcrypto-3-x64.dll": "libcrypto-3-x64.dll",
+      "tesseract-runtime/libcurl.dll": "libcurl.dll",
+      "tesseract-runtime/liblzma.dll": "liblzma.dll",
+      "tesseract-runtime/libpng16.dll": "libpng16.dll",
+      "tesseract-runtime/libsharpyuv.dll": "libsharpyuv.dll",
+      "tesseract-runtime/libwebp.dll": "libwebp.dll",
+      "tesseract-runtime/libwebpmux.dll": "libwebpmux.dll",
+      "tesseract-runtime/lz4.dll": "lz4.dll",
+      "tesseract-runtime/openjp2.dll": "openjp2.dll",
+      "tesseract-runtime/tiff.dll": "tiff.dll",
+      "tesseract-runtime/z.dll": "z.dll",
+      "tesseract-runtime/zstd.dll": "zstd.dll",
+      "msvc-runtime/vcruntime140.dll": "vcruntime140.dll",
+      "msvc-runtime/vcruntime140_1.dll": "vcruntime140_1.dll",
+      "msvc-runtime/msvcp140.dll": "msvcp140.dll",
+      "msvc-runtime/msvcp140_1.dll": "msvcp140_1.dll",
+      "msvc-runtime/msvcp140_2.dll": "msvcp140_2.dll",
+      "msvc-runtime/msvcp140_atomic_wait.dll": "msvcp140_atomic_wait.dll",
+      "msvc-runtime/msvcp140_codecvt_ids.dll": "msvcp140_codecvt_ids.dll",
+      "msvc-runtime/concrt140.dll": "concrt140.dll",
+      "embedding-runtime/model.onnx": "embedding-runtime/model.onnx",
+      "embedding-runtime/tokenizer.json": "embedding-runtime/tokenizer.json",
+      "embedding-runtime/config.json": "embedding-runtime/config.json",
+      "embedding-runtime/special_tokens_map.json": "embedding-runtime/special_tokens_map.json",
+      "embedding-runtime/tokenizer_config.json": "embedding-runtime/tokenizer_config.json",
+      "background-removal/u2netp.onnx": "background-removal/u2netp.onnx"
+    },
+    "windows": {
+      "nsis": {
+        "displayLanguageSelector": false,
+        "languages": ["English"],
+        "installerIcon": "icons/icon.ico",
+        "headerImage": "installer/header.bmp",
+        "sidebarImage": "installer/sidebar.bmp",
+        "installMode": "currentUser",
+        "compression": "lzma"
+      }
+    }
+  }
+}

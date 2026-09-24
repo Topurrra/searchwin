@@ -1,0 +1,20 @@
+{
+  "common": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "close": "Close",
+    "ok": "OK",
+    "apply": "Apply",
+    "yes": "Yes",
+    "no": "No",
+    "delete": "Delete",
+    "remove": "Remove",
+    "open": "Open",
+    "copy": "Copy",
+    "paste": "Paste",
+    "back": "Back",
+    "next": "Next",
+    "loading": "Loading…",
+    "search": "Search"
+  }
+}

@@ -1,0 +1,247 @@
+/* FishCatcher UI foundation. Real light + real dark (follows the OS).
+   No gradients, no navy. One accent (teal) for interaction; a separate
+   semantic risk scale drives verdict color via --level. */
+:root {
+  color-scheme: light dark;
+
+  --bg: #ffffff;
+  --card: #f5f6f8;
+  --elevated: #ffffff;
+  --text: #16181d;
+  --muted: #626875;
+  --border: #e4e6ea;
+  --accent: #0e7c74;
+
+  --risk-low: #16935b;
+  --risk-elevated: #b26a00;
+  --risk-high: #d1490b;
+  --risk-critical: #d02b2b;
+
+  /* one radius system */
+  --r-card: 12px;
+  --r-control: 9px;
+  --r-row: 8px;
+
+  --mono: "SF Mono", "Cascadia Mono", "Segoe UI Mono", Consolas, ui-monospace, monospace;
+
+  --level: var(--muted); /* overridden by the .level-* class on <body> */
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #17181b;
+    --card: #212327;
+    --elevated: #26282d;
+    --text: #eceef1;
+    --muted: #9aa0aa;
+    --border: #33363c;
+    --accent: #2dd4bf;
+
+    --risk-low: #34d399;
+    --risk-elevated: #fbbf24;
+    --risk-high: #fb923c;
+    --risk-critical: #f87171;
+  }
+}
+
+body.level-low { --level: var(--risk-low); }
+body.level-elevated { --level: var(--risk-elevated); }
+body.level-high { --level: var(--risk-high); }
+body.level-critical { --level: var(--risk-critical); }
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+/* The hidden attribute must beat display:flex/inline-flex on buttons etc. */
+[hidden] { display: none !important; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, "Segoe UI", -apple-system, sans-serif;
+  font-size: 13px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── header ─────────────────────────────────────────────── */
+header {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding-bottom: 12px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+header img { width: 22px; height: 22px; border-radius: 6px; }
+
+/* ── verdict mascot (lives inside the status card) ──────── */
+.status-fish { width: 48px; height: 44px; flex: none; display: block; }
+
+header h1 {
+  font-size: 14px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+/* wordmark: hover "Fish" to glitch-swap into "Phish" (matches the website) */
+.wm-link { color: inherit; text-decoration: none; cursor: pointer; }
+.wm-link:hover { text-decoration: none; }
+.wm-swap { position: relative; }
+.wm-phish { display: none; }
+.wm-swap:hover .wm-fish { display: none; }
+.wm-swap:hover .wm-phish { display: inline-block; position: relative; color: var(--accent); }
+.wm-phish::before, .wm-phish::after {
+  content: attr(data-text); position: absolute; left: 0; top: 0; opacity: 0; pointer-events: none;
+}
+.wm-swap:hover .wm-phish::before { color: #ff2d6f; opacity: 0.85; z-index: -1; animation: fc-glitch-1 0.3s ease infinite; }
+.wm-swap:hover .wm-phish::after { color: var(--accent); opacity: 0.85; z-index: -2; animation: fc-glitch-2 0.3s ease infinite; }
+@keyframes fc-glitch-1 {
+  0%, 100% { transform: translate(0, 0); }
+  20% { transform: translate(-2px, 2px); }
+  40% { transform: translate(2px, -2px); }
+  60% { transform: translate(-1px, 1px); }
+  80% { transform: translate(1px, -1px); }
+}
+@keyframes fc-glitch-2 {
+  0%, 100% { transform: translate(0, 0); }
+  20% { transform: translate(2px, -2px); }
+  40% { transform: translate(-2px, 2px); }
+  60% { transform: translate(1px, -1px); }
+  80% { transform: translate(-1px, 1px); }
+}
+
+/* ── status hero ────────────────────────────────────────── */
+.status {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: color-mix(in srgb, var(--level) 8%, var(--card));
+  border: 1px solid color-mix(in srgb, var(--level) 24%, var(--border));
+  border-radius: var(--r-card);
+  padding: 13px 14px;
+}
+
+.status-icon {
+  flex: none;
+  display: flex;
+  color: var(--level);
+}
+
+.status-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.status .label {
+  font-weight: 600;
+  font-size: 13.5px;
+  letter-spacing: -0.005em;
+}
+
+.status-domain {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--muted);
+  word-break: break-all;
+}
+
+/* ── reasons ────────────────────────────────────────────── */
+.section-label {
+  font-size: 10.5px;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--muted);
+  margin: 16px 0 8px;
+}
+
+#reasons { list-style: none; display: grid; gap: 6px; }
+
+#reasons li {
+  padding: 8px 11px;
+  font-size: 12.5px;
+  border-left: 2px solid var(--level);
+  border-radius: 0 var(--r-row) var(--r-row) 0;
+  background: color-mix(in srgb, var(--level) 6%, transparent);
+}
+
+/* ── buttons ────────────────────────────────────────────── */
+button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  background: var(--elevated);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--r-control);
+  padding: 8px 13px;
+  font: inherit;
+  font-weight: 550;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, transform 0.06s ease;
+}
+
+button:hover { border-color: color-mix(in srgb, var(--accent) 55%, var(--border)); }
+button:active { transform: translateY(1px); }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button svg { width: 16px; height: 16px; flex: none; }
+
+.note { color: var(--muted); }
+
+a { color: var(--accent); text-underline-offset: 2px; }
+a:hover { text-decoration: none; }
+
+/* ── progress / done feedback ───────────────────────────── */
+@keyframes fc-spin { to { transform: rotate(360deg); } }
+.spinner { animation: fc-spin 0.7s linear infinite; transform-origin: center; }
+
+.statusline {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 9px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.statusline .si-icon { display: flex; flex: none; }
+.statusline.is-downloading .si-icon { color: var(--accent); }
+.statusline.is-ready .si-icon { color: var(--risk-low); }
+.statusline.is-error .si-icon { color: var(--risk-high); }
+
+/* ── senior / family mode: bigger text, simpler, one clear action ── */
+body.senior { font-size: 15px; }
+body.senior header h1 { font-size: 17px; }
+body.senior .status { padding: 16px; gap: 14px; }
+body.senior .status .label { font-size: 16px; }
+body.senior .status-fish { width: 60px; height: 56px; }
+body.senior #reasons li { font-size: 14px; padding: 10px 13px; }
+body.senior button { padding: 11px 16px; font-size: 15px; }
+/* In senior mode, tuck the more technical panels away so the verdict leads. */
+body.senior #links-wrap, body.senior #qr-wrap { opacity: 0.72; }
+
+/* Big "tell my helper" alert, shown only on high/critical in senior mode. */
+.helper-alert {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 14px;
+  border: 2px solid var(--level);
+  border-radius: var(--r-card);
+  background: color-mix(in srgb, var(--level) 12%, var(--card));
+}
+.helper-alert .ha-title { font-weight: 700; font-size: 15.5px; }
+.helper-alert button { background: var(--level); color: #fff; border-color: transparent; font-weight: 650; }
+.helper-alert button:hover { border-color: transparent; filter: brightness(1.05); }
+
+@media (prefers-reduced-motion: reduce) {
+  button { transition: none; }
+  button:active { transform: none; }
+  .spinner { animation: none; }
+  .wm-swap:hover .wm-phish::before, .wm-swap:hover .wm-phish::after { animation: none; }
+}

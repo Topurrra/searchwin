@@ -1,0 +1,47 @@
+name: ci
+
+on:
+  push:
+    branches: [main, 'cloud/**']
+  pull_request:
+
+jobs:
+  app:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+      - name: Build the browser
+        run: dotnet build Search/Search.csproj -c Debug -p:Platform=x64
+      - name: Test Search.Kit
+        if: hashFiles('Search.Kit.Tests/*.csproj') != ''
+        run: dotnet test Search.Kit.Tests -c Debug
+
+  engine:
+    runs-on: windows-latest
+    continue-on-error: true   # until T7 makes the engine headless
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Check the engine (light features)
+        working-directory: Engine
+        run: cargo check --no-default-features
+
+  tools:
+    runs-on: ubuntu-latest
+    continue-on-error: true   # until T8 shims the Tauri API
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Build the tool pages
+        working-directory: Tools
+        run: |
+          pnpm install --frozen-lockfile=false
+          pnpm build

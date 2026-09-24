@@ -1,0 +1,1609 @@
+{
+  "page": {
+    "about": {
+      "heroBadge": "Private desktop toolkit",
+      "heroTitle": "Your local-first productivity Swiss-army knife.",
+      "heroSubtitle": "Search every file on your disk in milliseconds. Recall everything you've copied. Expand snippets into any app. Clean, convert, encrypt, and inspect — without ever uploading anything. Encrypted at rest, no account, no telemetry.",
+      "openSearch": "Open Search",
+      "documentation": "Documentation",
+      "privacyGuide": "Privacy Guide",
+      "promises": {
+        "local": {
+          "title": "Local by default",
+          "text": "Use common file, privacy, and utility tools without uploading private data first."
+        },
+        "noAccount": {
+          "title": "No account wall",
+          "text": "KeepItLocal should be useful immediately, without signup friction or cloud lock-in."
+        },
+        "privacy": {
+          "title": "Practical privacy",
+          "text": "Inspect, clean, convert, search, and share with fewer accidental leaks."
+        },
+        "backend": {
+          "title": "Desktop backend",
+          "text": "Heavy work runs in the local app backend instead of a random web service."
+        }
+      },
+      "actions": {
+        "fileSearch": {
+          "title": "File Search",
+          "text": "Lightning-fast local search across files, folders, apps, and KeepItLocal tools."
+        },
+        "documentation": {
+          "title": "Documentation",
+          "text": "Per-tool guidance — inputs, outputs, and when to use each."
+        },
+        "privacyGuide": {
+          "title": "Privacy Guide",
+          "text": "Practical safety knowledge for normal people."
+        }
+      },
+      "workflowSteps": [
+        "Pick only the packs you need.",
+        "Run tools locally on your machine.",
+        "Review outputs before sharing anything."
+      ],
+      "tryNow": {
+        "title": "Try these now",
+        "subtitle": "Three keystrokes that work from anywhere in Windows.",
+        "quickSearch": {
+          "title": "Quick Search",
+          "text": "Find any file, folder, app, or KeepItLocal tool from anywhere — milliseconds, never the cloud."
+        },
+        "clipboard": {
+          "title": "Clipboard History",
+          "text": "Recall everything you've copied. Press ↵ to paste straight back into the app you came from."
+        },
+        "snippets": {
+          "title": "Snippets",
+          "text": "Define <code class=\"rounded bg-panel px-1 font-mono text-[10px]\">/sig</code>, type it in the overlay, and KeepItLocal pastes the expanded body — with date and clipboard variables filled in."
+        }
+      },
+      "trust": {
+        "encrypted": {
+          "title": "Encrypted at rest",
+          "text": "Clipboard history, settings, snippets — all wrapped with Windows DPAPI before hitting disk."
+        },
+        "zeroNetwork": {
+          "title": "Connections by choice",
+          "text": "Core work stays on your device. No telemetry or phone-home. Optional downloads and configured services connect only when you start them."
+        },
+        "noAccount": {
+          "title": "No account, no telemetry",
+          "textBefore": "Open the app, use it. Read our",
+          "linkText": "threat model",
+          "textAfter": "for the full data inventory."
+        }
+      },
+      "workflow": {
+        "title": "Simple workflow",
+        "subtitle": "Three decisions, no wall of text."
+      },
+      "optimizes": {
+        "title": "What KeepItLocal optimizes for",
+        "subtitle": "Clear boundaries make the app easier to trust."
+      },
+      "isNot": {
+        "title": "What KeepItLocal is not",
+        "subtitle": "These boundaries keep the app simple and worth trusting.",
+        "cloud": {
+          "title": "Not a cloud converter",
+          "text": "The normal workflow should never require uploading files anywhere."
+        },
+        "accountTrap": {
+          "title": "Not an account trap",
+          "text": "The app is useful before asking you for anything — no signup, no email."
+        },
+        "dataTrade": {
+          "title": "Not a data trade",
+          "text": "Your private files and identity are not the hidden price."
+        },
+        "bloat": {
+          "title": "Not random bloat",
+          "text": "Every tool earns its place by saving time or protecting users."
+        }
+      },
+      "footer": {
+        "builtWith": "Built with Rust.",
+        "tagline": "Designed as a local-first everyday helper."
+      },
+      "hiddenPage": {
+        "title": "You found a hidden page",
+        "dismiss": "Dismiss"
+      }
+    },
+    "docs": {
+      "heroBadge": "Documentation",
+      "heroTitle": "What do you need to do?",
+      "heroSubtitle": "Find the right tool by what you're trying to accomplish, not by what we named it. Every how-to includes the actual steps + common gotchas.",
+      "searchPlaceholder": "Search for what you want to do… (find duplicates, strip EXIF, decode JWT)",
+      "clearSearch": "Clear search",
+      "clear": "Clear",
+      "expandAll": "Expand all",
+      "collapseAll": "Collapse all",
+      "steps": "Steps",
+      "commonGotchas": "Common gotchas",
+      "open": "Open {tool}",
+      "noMatchPrefix": "No how-tos match",
+      "noneInCategory": "No how-tos in this category yet.",
+      "categories": {
+        "all": "All",
+        "find": "Find files & info",
+        "image": "Images",
+        "document": "Word, Excel, CSV",
+        "clipboard": "Clipboard & snippets",
+        "voice": "Voice & dictation",
+        "privacy": "Privacy & security",
+        "dev": "Inspect & decode",
+        "generate": "Generate"
+      },
+      "whatsNew": {
+        "title": "What's new",
+        "subtitle": "Recent additions worth a look",
+        "tags": {
+          "new": "New",
+          "polished": "Polished"
+        },
+        "items": {
+          "voiceOverlay": {
+            "title": "Voice overlay — dictate or run commands by voice",
+            "description": "Press Ctrl+Alt+V anywhere. Speak a sentence and it pastes into your previous app. Speak a command (\"open chrome\", \"search funny videos\", \"open hash\") and KeepItLocal acts. Transcribed on-device by Vosk — fully offline."
+          },
+          "snippets": {
+            "title": "Snippets — type triggers, paste expanded templates",
+            "description": "Define short triggers and template bodies with date/clipboard variables. Type the trigger in the clipboard overlay and KeepItLocal pastes the expansion into your previous app."
+          },
+          "clipboardActions": {
+            "title": "Clipboard quick actions",
+            "description": "Right-click any clipboard entry to format JSON, decode base64, change case, sort lines, and more. Result lands on your clipboard ready to paste."
+          },
+          "removePassword": {
+            "title": "Remove Password — Word .docx",
+            "description": "Strip the \"restrict editing\" lock from Word .docx files (no password needed — that protection is just an XML flag). PDF unlocking now lives in KeepItLocal Privacy."
+          },
+          "wordConverter": {
+            "title": "Word to Markdown — fidelity that beats a copy-paste",
+            "description": "Convert .docx to clean GitHub-Flavored Markdown (or plain text) — headings, bold/italic, links, lists, tables, and images preserved. Drop your files; everything runs locally."
+          }
+        }
+      },
+      "howtos": {
+        "find-anything": {
+          "title": "Find a file or app I can't remember the name of",
+          "scenario": "You know roughly what you're looking for but can't recall the exact filename, or you want to launch an app without hunting through the Start menu.",
+          "toolLabel": "Quick Search",
+          "steps": [
+            "Press Ctrl+Alt+S (or your remapped hotkey) anywhere in Windows.",
+            "Type a partial name, content keyword, or app name.",
+            "Press ↵ to open the top result, or click the result you want."
+          ],
+          "gotchas": [
+            "First-run requires building the index (one-time, then it's instant). See File Search Index page.",
+            "If you don't see a folder you expect, add it to the index sources."
+          ]
+        },
+        "free-up-disk": {
+          "title": "Free up disk space — what's safe to delete?",
+          "scenario": "Your drive is full and you're not sure where the gigabytes went.",
+          "toolLabel": "Cleaner / Analyzer",
+          "steps": [
+            "Click \"Analyze\" — it scans browser caches, temp folders, old/large files, and startup entries.",
+            "Review the recoverable-space breakdown chart at the top.",
+            "Tick the cache categories you want to clean and confirm with the safety phrase."
+          ],
+          "gotchas": [
+            "Cleaner only removes known cache/temp targets — it never touches user files or applications.",
+            "Old/large files are flagged for review only; you delete those manually."
+          ]
+        },
+        "find-duplicates": {
+          "title": "Find duplicate files I can delete",
+          "scenario": "You suspect you have multiple copies of the same photos/documents scattered across folders.",
+          "toolLabel": "Duplicate Finder",
+          "steps": [
+            "Pick the folder(s) to scan.",
+            "KeepItLocal hashes file contents — same hash = same file regardless of name.",
+            "Review groups of duplicates and move/delete confidently."
+          ],
+          "gotchas": [
+            "Hashing is content-based; identical files with different names + paths still match.",
+            "For huge folders, scan a subfolder first to confirm the dupes are real before sweeping the whole tree."
+          ]
+        },
+        "image-shrink": {
+          "title": "Send a smaller version of a photo",
+          "scenario": "A 4K photo from your phone is way too big for chat/email.",
+          "toolLabel": "Image Resizer",
+          "steps": [
+            "Drop the photo(s) into the resizer.",
+            "Pick a target dimension or percentage (50%, 25%, etc.).",
+            "Resize — the original stays intact, you get a smaller copy."
+          ],
+          "gotchas": [
+            "Resize first, THEN compress for the smallest output (Image Compressor is the second step)."
+          ]
+        },
+        "image-convert": {
+          "title": "Convert PNG to JPG (or any other format)",
+          "scenario": "A site only accepts JPG and you have PNG screenshots.",
+          "toolLabel": "Image Converter",
+          "steps": [
+            "Drop your images and pick the target format.",
+            "Adjust quality if converting to a lossy format (JPG, WebP).",
+            "Convert."
+          ]
+        },
+        "image-favicon": {
+          "title": "Generate a website favicon from a logo",
+          "scenario": "You have a logo PNG and need favicon.ico + multi-size PNGs for your site.",
+          "toolLabel": "Favicon Generator",
+          "steps": [
+            "Drop your source logo (PNG, ideally square + at least 256x256).",
+            "KeepItLocal produces all standard sizes + a multi-resolution .ico file.",
+            "Drop them into your site's root."
+          ]
+        },
+        "word-to-pdf": {
+          "title": "Convert a Word doc to PDF / Markdown / plain text",
+          "scenario": "You need to send the content of a .docx without the recipient needing Word, or you want it in a portable format.",
+          "toolLabel": "Word Converter",
+          "steps": [
+            "Pick a target format (PDF / Markdown / Plain text).",
+            "Drop or pick your .docx files.",
+            "Convert — outputs save with the new extension."
+          ],
+          "gotchas": [
+            "For pixel-perfect PDFs, use Word's built-in \"Save as PDF\". KeepItLocal excels at content fidelity in batch.",
+            "Complex formatting (custom styles, embedded objects) may degrade in Markdown/text."
+          ]
+        },
+        "excel-to-csv": {
+          "title": "Pull a sheet out of an Excel file as CSV",
+          "scenario": "You need to import data into a tool that only accepts CSV.",
+          "toolLabel": "Excel ↔ CSV",
+          "steps": [
+            "Pick the .xlsx file.",
+            "Choose which sheet to extract (or all sheets → multiple CSVs).",
+            "Pick delimiter (comma, tab, semicolon)."
+          ]
+        },
+        "csv-clean": {
+          "title": "Clean up a messy CSV (deduplicate, fix headers, normalize)",
+          "scenario": "You exported data from an old system and the CSV has duplicate rows, weird whitespace, and inconsistent capitalization.",
+          "toolLabel": "CSV Cleaner",
+          "steps": [
+            "Pick the CSV.",
+            "Toggle the cleanup options you need (dedupe, trim, normalize headers).",
+            "Preview the changes before committing."
+          ]
+        },
+        "clipboard-recall": {
+          "title": "Recall something I copied earlier",
+          "scenario": "You copied a link/snippet/password an hour ago and now need it again.",
+          "toolLabel": "Clipboard History",
+          "steps": [
+            "Press Ctrl+Shift+V (or your remapped hotkey) anywhere in Windows.",
+            "Search by content, source app, or filter by category.",
+            "Press ↵ to paste straight into the previous app."
+          ],
+          "gotchas": [
+            "Sensitive content (API keys, credit cards) gets a flag — paste with care.",
+            "Pin items you want forever; transient items rotate out at 200."
+          ]
+        },
+        "snippet-template": {
+          "title": "Insert boilerplate text with the current date / clipboard",
+          "scenario": "You retype the same email signature, PR template, or status update every day.",
+          "toolLabel": "Snippets",
+          "steps": [
+            "Open Snippets and create a template with a short trigger (e.g. /sig).",
+            "Use {{date}}, {{time}}, {{clipboard}}, {{cursor}} variables in the body.",
+            "In any app, press your clipboard hotkey, type your trigger, press ↵."
+          ],
+          "gotchas": [
+            "Date format tokens are YYYY/MM/DD/HH/mm/ss — single-char tokens not supported.",
+            "{{clipboard}} pulls whatever you most recently copied — paste a value first if you need it in the snippet."
+          ]
+        },
+        "clipboard-quick-action": {
+          "title": "Format/decode something I copied without leaving where I am",
+          "scenario": "You copied minified JSON, base64, or all-caps text and want it transformed.",
+          "toolLabel": "Clipboard History",
+          "steps": [
+            "Open Clipboard History.",
+            "Click the wand icon on any text entry.",
+            "Pick an action (Format JSON, Decode base64, Lowercase, Sort lines, etc.) — result lands on your clipboard ready to paste."
+          ]
+        },
+        "voice-dictate-anywhere": {
+          "title": "Dictate text into any app — Word, browser, Slack, etc.",
+          "scenario": "You want to type out an email, a paragraph, or a quick message by speaking instead of typing.",
+          "toolLabel": "Voice Overlay",
+          "steps": [
+            "Click in the app where you want the text to land — anywhere a cursor blinks.",
+            "Press Ctrl+Alt+V (or your remapped voice hotkey) to summon the voice overlay.",
+            "Speak. The live transcript fills the panel as you talk.",
+            "Pause briefly — KeepItLocal pastes the text into the app you came from, then auto-closes."
+          ],
+          "gotchas": [
+            "Spoken text that starts with a command verb (open / search / launch / etc.) is treated as a voice command instead of dictation. Free-form sentences (\"I just wanted to say…\") always paste.",
+            "For longer dictations, open the Voice to Text page and use Continuous mode — it stays armed until you click Stop.",
+            "On Vosk: pick a model in Settings → Voice first (English starter is 40 MB)."
+          ]
+        },
+        "voice-commands": {
+          "title": "Open apps and search the web by voice",
+          "scenario": "Hands are full, you want to launch Chrome / search Google / open a KeepItLocal tool without touching the keyboard.",
+          "toolLabel": "Voice Overlay",
+          "steps": [
+            "Press Ctrl+Alt+V to summon the voice overlay (or click the mic button in the search overlay).",
+            "Speak a command:",
+            "   • \"open chrome\" / \"open firefox\" / \"open notepad\" — launches the app",
+            "   • \"open chrome and search funny cat videos\" — launches the browser with Google search",
+            "   • \"search rust async\" — default browser to Google search",
+            "   • \"open hash\" / \"open clipboard\" / \"open settings\" — opens a KeepItLocal tool (fuzzy-matched)"
+          ],
+          "gotchas": [
+            "If an app isn't installed (e.g. Chrome on a fresh laptop), KeepItLocal falls back to the matching web URL in your default browser.",
+            "Tool names are fuzzy-matched — \"open hash\" finds Hash Check, \"open snippets\" finds Snippets. The matcher learns over time: tools you use often via voice get a frecency boost.",
+            "If a command doesn't resolve, the overlay shows \"Didn't recognize that command\" instead of pasting. Free-form sentences still paste as dictation."
+          ]
+        },
+        "voice-engine-choice": {
+          "title": "Set up voice recognition",
+          "scenario": "You want to use voice — dictation, the voice overlay, push-to-talk, or command mode — and need to get the recognizer ready.",
+          "toolLabel": "Settings → Voice",
+          "steps": [
+            "Open Settings → Voice.",
+            "Download a voice model with the in-app downloader — pick English or Georgian, small or large.",
+            "The small model is light and fast (~0.3 GB resident); the large model is more accurate but heavier.",
+            "Once a model is downloaded, voice is ready — no restart needed."
+          ],
+          "gotchas": [
+            "KeepItLocal uses Vosk — one offline, on-device speech engine. Recognition runs entirely on your machine; no audio ever leaves it.",
+            "KeepItLocal never auto-downloads or bundles a model — you choose and download one explicitly.",
+            "Models load lazily and are cached in memory after first use, so repeated dictations are nearly instant. The model is released after the voice overlay closes or ~90 s idle.",
+            "Voice needs microphone permission via Windows Privacy → Microphone → \"Let desktop apps access your microphone\". The first denial auto-opens that panel."
+          ]
+        },
+        "voice-search-overlay": {
+          "title": "Voice-control the search overlay",
+          "scenario": "The search overlay is open and you want to dictate a filter or fire a quick command without typing.",
+          "toolLabel": "Search Overlay",
+          "steps": [
+            "Press your search overlay hotkey (Ctrl+Alt+S by default) to open it.",
+            "Click the small mic button next to the input.",
+            "Speak — voice commands (\"open hash\", \"search …\") execute and close the overlay; everything else fills the search box.",
+            "Click the mic again to stop."
+          ],
+          "gotchas": [
+            "Voice in the search overlay is opt-in (button click) — not auto-armed. The dedicated voice overlay (Ctrl+Alt+V) is the auto-arm surface.",
+            "Typed bangs (e.g. \"g hello\" → Google search) still work alongside voice — the two paths don't conflict."
+          ]
+        },
+        "privacy-shred": {
+          "title": "Permanently delete sensitive files (no undelete possible)",
+          "scenario": "You want a file gone — not just sent to Recycle Bin where it can be recovered.",
+          "toolLabel": "File Shredder",
+          "steps": [
+            "Pick the file(s) to shred.",
+            "Choose the overwrite pattern (zeros, random, fast).",
+            "Confirm — the file is overwritten before deletion."
+          ],
+          "gotchas": [
+            "On SSDs, the OS may have already moved blocks elsewhere — true secure-erase requires whole-drive secure-erase tools.",
+            "For most files on HDDs, single-pass overwrite is sufficient."
+          ]
+        },
+        "privacy-check-clipboard": {
+          "title": "Scan a string of text for leaked secrets",
+          "scenario": "You're about to paste config or logs into chat and want to make sure no API keys are in there.",
+          "toolLabel": "Secret Leak Scanner",
+          "steps": [
+            "Paste your text or pick a file.",
+            "KeepItLocal scans for AWS keys, GitHub tokens, JWTs, credit cards, SSH keys, and more (~22 patterns).",
+            "Review flagged items and redact before sharing."
+          ]
+        },
+        "privacy-redact-screenshot": {
+          "title": "Redact information from a screenshot",
+          "scenario": "You want to share a bug report screenshot but need to hide your name, account number, etc.",
+          "toolLabel": "Screenshot Redact",
+          "steps": [
+            "Open Screenshot Redact and load the image.",
+            "Drag rectangles over the regions to hide.",
+            "Save — the redacted copy is a separate file."
+          ]
+        },
+        "dev-decode-jwt": {
+          "title": "Decode a JWT to see what's inside",
+          "scenario": "You have an opaque JWT token and need to inspect the header + payload (e.g. to debug expiry).",
+          "toolLabel": "JWT Decoder",
+          "steps": [
+            "Paste the JWT into the input.",
+            "Header + payload + claims are decoded immediately — no signature verification."
+          ],
+          "gotchas": [
+            "Decoding doesn't verify the signature. For verification you need the signing secret + a signing-aware tool."
+          ]
+        },
+        "dev-format-json": {
+          "title": "Format / minify / inspect JSON",
+          "scenario": "You have a one-line JSON blob and need to read it, or vice versa.",
+          "toolLabel": "JSON Beautifier",
+          "steps": [
+            "Paste your JSON.",
+            "Pick Format (pretty-print) or Minify (single line).",
+            "Validate any errors inline."
+          ]
+        },
+        "dev-hash": {
+          "title": "Verify a downloaded file's checksum",
+          "scenario": "A site published SHA256 of a download and you want to confirm your local copy matches.",
+          "toolLabel": "Hash Check",
+          "steps": [
+            "Pick the downloaded file.",
+            "KeepItLocal computes MD5 / SHA1 / SHA256 / BLAKE3 simultaneously.",
+            "Compare against the published value."
+          ]
+        },
+        "dev-regex": {
+          "title": "Test a regex against sample text",
+          "scenario": "You're writing a regex pattern and want to see what matches before committing.",
+          "toolLabel": "Regex Tool",
+          "steps": [
+            "Type your pattern.",
+            "Paste your sample text.",
+            "See live matches + capture groups; toggle flags (case, multiline, global)."
+          ]
+        },
+        "generate-qr": {
+          "title": "Make a QR code for a URL or text",
+          "scenario": "You want to share a link via QR for a slide, sticker, or print material.",
+          "toolLabel": "QR Code",
+          "steps": [
+            "Type the URL or text.",
+            "Adjust size + error correction if needed.",
+            "Save as PNG or SVG."
+          ]
+        },
+        "generate-password": {
+          "title": "Generate a strong password or passphrase",
+          "scenario": "You're creating a new account and want a unique, strong password (without a password manager picking it).",
+          "toolLabel": "Password Generator",
+          "steps": [
+            "Pick a mode (random, passphrase, pronounceable).",
+            "Adjust length and character classes.",
+            "Copy the result and store it in your password manager."
+          ]
+        },
+        "generate-fake-data": {
+          "title": "Generate fake test data (JSON, CSV, SQL)",
+          "scenario": "You're building a feature and need realistic-looking fixtures without using real customer data.",
+          "toolLabel": "Fake Data",
+          "steps": [
+            "Pick the schema (names, emails, addresses, etc.) and row count.",
+            "Choose output format.",
+            "Generate + save."
+          ]
+        }
+      }
+    },
+    "fileSearchIndex": {
+      "badge": "Local index control",
+      "title": "File Search Index",
+      "intro": "Choose what KeepItLocal indexes, rebuild when needed, and control how file changes are tracked. Search results stay local on this device.",
+      "openSearch": "Open Search",
+      "cancelling": "Cancelling...",
+      "cancelBuild": "Cancel build",
+      "buildRebuild": "Build / Rebuild",
+      "never": "Never",
+      "tabs": {
+        "file": "File Search Index",
+        "fileDesc": "Find files by name and path. Pick the indexing engine and which drives or folders it covers.",
+        "content": "Content Search Index",
+        "contentDesc": "Search inside readable documents — text, code, PDF, Office, CSV, and similar. Media, archives, and other binaries are skipped (find those by name in the File Search Index). Choose which folders are scanned."
+      },
+      "_engine_removed_wave_6": "MFT engine selector removed 2026-05-28 — walker is the only path now. Engine i18n keys deleted: title/desc/walker/walkerHint/mft/mftHint.",
+      "filenameSources": {
+        "title": "Filename sources",
+        "desc": "Add drive roots for whole-disk filename coverage, or add specific folders to narrow the filename index.",
+        "count": "{count, plural, one {# source} other {# sources}}",
+        "empty": "No filename sources selected yet. Add folders or drives, then run Build / Rebuild."
+      },
+      "contentSources": {
+        "title": "Content sources",
+        "desc": "Add the folders whose file contents should be searchable. Drive roots work but content indexing is slower than filename indexing.",
+        "count": "{count, plural, one {# source} other {# sources}}",
+        "empty": "No content sources selected yet. Add folders, then run Build / Rebuild."
+      },
+      "filenameStatus": {
+        "title": "Filename index status",
+        "idle": "No filename index built yet. Pick sources and run Build / Rebuild.",
+        "indexedFiles": "Indexed filenames"
+      },
+      "contentStatus": {
+        "title": "Content index status"
+      },
+      "watcherState": {
+        "watching": "Watching explicit folders",
+        "paused": "Paused",
+        "foldersOnly": "Folders only",
+        "disabled": "Disabled",
+        "fileWatching": "Watching for changes",
+        "fileInactive": "Rebuild to activate",
+        "fileIndexedNoWatch": "Indexed — watching inactive"
+      },
+      "stats": {
+        "indexedFiles": "Indexed files",
+        "lastBuild": "Last build: {date}",
+        "onDisk": "On disk: {size}",
+        "indexWorker": "Index worker",
+        "building": "Building",
+        "idle": "Idle",
+        "ready": "Ready",
+        "liveWatcher": "Live watcher",
+        "driveRootsNotWatched": "Drive roots are not watched.",
+        "scheduledRebuild": "Scheduled rebuild",
+        "manual": "Manual",
+        "next": "Next: {date}",
+        "notScheduled": "Not scheduled"
+      },
+      "progress": {
+        "title": "Indexing in progress",
+        "indexed": "Indexed",
+        "scanned": "Scanned",
+        "skipped": "Skipped",
+        "starting": "Starting indexer…",
+        "readingFolder": "Reading: {folder}"
+      },
+      "firstRun": {
+        "fileTitle": "Set up local file search",
+        "fileLede": "Pick a folder and KeepItLocal will learn what's inside — typical Documents folder takes about 30 seconds. Once built, press Ctrl+Alt+K from anywhere in Windows to find anything by name in milliseconds.",
+        "filePickCta": "Pick a folder to index",
+        "fileNote": "Everything stays on this machine — no cloud, no telemetry.",
+        "contentTitle": "Set up content search",
+        "contentLede": "Pick a folder and KeepItLocal will index what's inside it — PDFs, Word docs, code, plain text. You can then search by content (not just filename) from the palette or the File Search tool.",
+        "contentPickCta": "Pick a folder to index",
+        "contentNote": "Stick to specific folders rather than whole drives — content indexing reads file bodies and benefits most from focused scope.",
+        "showAdvanced": "Show advanced settings"
+      },
+      "driveOnlyBanner": "Drive roots are indexed but not live-watched. Add a specific folder if you need live updates, or enable scheduled rebuilds for drive-root changes.",
+      "mixedSourceBanner": "Mixed source mode: explicit folders can be live-watched, while drive roots update through manual or scheduled rebuilds.",
+      "overlay": {
+        "title": "Quick Search Overlay",
+        "descBefore": "Hotkey, trigger mode, and bang shortcuts are configured in",
+        "descLink": "Settings → Search Overlay",
+        "descAfter": ".",
+        "openNow": "Open overlay now"
+      },
+      "sources": {
+        "title": "Sources",
+        "desc": "Add drive roots for broad search coverage, or add specific folders when you want live updates.",
+        "addFolders": "Add folders",
+        "addFiles": "Add files",
+        "count": "{count, plural, one {# source} other {# sources}}",
+        "clearAll": "Clear all",
+        "rebuildOnly": "Rebuild only",
+        "watcherEligible": "Watcher eligible",
+        "removeSource": "Remove source",
+        "empty": "No sources selected yet. Add folders or drives, then run Build / Rebuild."
+      },
+      "watcher": {
+        "title": "Live watcher",
+        "desc": "Watches explicit folders only. Drive roots are intentionally excluded for system responsiveness.",
+        "enabled": "Enabled",
+        "startHint": "Add an explicit folder and rebuild to start live updates.",
+        "stop": "Stop watcher"
+      },
+      "schedule": {
+        "title": "Scheduled rebuild",
+        "desc": "Recommended when indexing whole drives, because drive roots are not watched.",
+        "enabled": "Enabled",
+        "everyNHours": "Rebuild every N hours",
+        "hoursHint": "Use 24 for daily or 168 for weekly.",
+        "nextRun": "Next scheduled run",
+        "notScheduledYet": "Not scheduled yet",
+        "save": "Save schedule"
+      },
+      "exclusions": {
+        "title": "Index exclusions",
+        "desc": "Skip noisy cache, build, temp, and system paths. Rebuild to fully apply changes.",
+        "defaults": "Defaults",
+        "excludedFolders": "Excluded folders",
+        "excludedExtensions": "Excluded extensions / dotfiles",
+        "add": "Add",
+        "removeFolder": "Remove {folder}",
+        "removeExtension": "Remove .{extension}"
+      },
+      "advanced": {
+        "title": "Indexing settings (apply to both indexes)",
+        "desc": "These settings apply to both the filename and content indexes. Keep Balanced for normal use; use Fast when rebuilding in the background and not actively using the machine.",
+        "includeHidden": "Include hidden files",
+        "indexContent": "Index text content for content search",
+        "maxContentKb": "Max content KB per file (ceiling)",
+        "tiersHint": "Per-format tiers apply automatically: code <strong class=\"text-text\">64</strong>, text <strong class=\"text-text\">256</strong>, documents <strong class=\"text-text\">512</strong>, PDFs <strong class=\"text-text\">1024</strong>. This ceiling caps all tiers — lower it to save disk space.",
+        "commitEvery": "Commit every N files",
+        "performanceMode": "Indexing performance mode",
+        "modeBalanced": "Balanced - lower priority, smoother UI",
+        "modeFast": "Fast - more CPU while indexing",
+        "modeQuiet": "Quiet - lowest priority, best responsiveness",
+        "filenameIndexStatus": "Filename index"
+      },
+      "toast": {
+        "folderExcluded": "Folder exclusion added. Rebuild search index to apply it.",
+        "extensionExcluded": "Extension exclusion added. Rebuild search index to apply it.",
+        "exclusionsRestored": "Search exclusions restored. Rebuild search index to apply them.",
+        "overlayOpenFailed": "Could not open Quick Search overlay"
+      }
+    },
+    "profiles": {
+      "title": "Profiles",
+      "intro": "Curate which installed tools appear in the sidebar. Disabled packs stay unavailable until re-enabled in Settings.",
+      "newProfile": "New profile",
+      "editProfile": "Edit profile",
+      "editIntro": "Pick the tools that should appear in the sidebar when this profile is active.",
+      "builtIn": "built-in",
+      "active": "active",
+      "allInstalledTools": "All installed tools ({count})",
+      "toolCount": "{count} tools",
+      "activate": "Activate",
+      "edit": "Edit",
+      "duplicateToEdit": "Duplicate to edit",
+      "duplicate": "Duplicate",
+      "duplicateProfile": "Duplicate profile",
+      "delete": "Delete",
+      "deleteProfile": "Delete profile",
+      "save": "Save",
+      "nameLabel": "Name",
+      "namePlaceholder": "e.g. My Workflow",
+      "descriptionLabel": "Description (optional)",
+      "descriptionPlaceholder": "What this profile is for",
+      "toolsSelected": "Tools - {selected} of {total} selected",
+      "selectAll": "All",
+      "selectNone": "None",
+      "soon": "soon",
+      "deleteDialog": {
+        "title": "Delete profile?",
+        "body": "\"{name}\" will be permanently removed. Tools and other profiles are unaffected.",
+        "cancel": "Cancel",
+        "confirm": "Delete"
+      },
+      "toast": {
+        "createdEditable": "Created \"{name}\" you can edit",
+        "nameEmpty": "Name cannot be empty",
+        "created": "Created profile \"{name}\"",
+        "saved": "Profile saved",
+        "duplicated": "Duplicated as \"{name}\"",
+        "builtInCannotDelete": "Built-in profiles cannot be deleted",
+        "deleted": "Deleted \"{name}\""
+      }
+    },
+    "privacyGuide": {
+      "heroBadge": "Offline privacy guide",
+      "heroTitle": "Privacy Guide without cognitive panic.",
+      "heroSubtitle": "Practical steps for accounts, phishing, browsers, phones, backups, Wi-Fi, payments, AI sharing, metadata, and scams. Everything here is bundled locally.",
+      "openChecklist": "Open checklist",
+      "startWithPlan": "Start with a plan",
+      "searchTopicsPlaceholder": "Search privacy topics...",
+      "comfortView": "Comfort view",
+      "compactView": "Compact view",
+      "topicsLabel": "Topics",
+      "noTopicsMatch": "No topics match",
+      "clearSearch": "Clear search",
+      "minutesShort": "{minutes}m",
+      "minutesLong": "{minutes} min",
+      "backToHome": "Back to Privacy Guide Home",
+      "mainIdea": "Main idea:",
+      "doNow": "Do now",
+      "avoid": "Avoid",
+      "whyItMatters": "Why it matters",
+      "readMore": "Read more",
+      "checklistTools": "Checklist tools",
+      "showAll": "Show all",
+      "showingFocusedTasks": "Showing {count} focused tasks.",
+      "trackLocalProgress": "Track local progress. Nothing is sent anywhere.",
+      "searchChecklistPlaceholder": "Search checklist items...",
+      "clearProgress": "Clear progress",
+      "safetyChecklist": "Safety checklist",
+      "matching": "matching",
+      "noMatchingChecklist": "No matching checklist items.",
+      "readRelatedTopic": "Read related topic",
+      "quickPlans": "Quick plans",
+      "quickPlansHint": "Small focused paths instead of a giant checklist.",
+      "plansNote": "Plans only filter/mark local checklist items.",
+      "hideTasks": "Hide tasks",
+      "showTasks": "Show tasks",
+      "linkedTasks": "{count} linked checklist tasks",
+      "focus": "Focus",
+      "markDone": "Mark done",
+      "sourceBasisTitle": "Source basis",
+      "stats": {
+        "checklistProgress": "Checklist progress",
+        "percentComplete": "{percent}% complete",
+        "guideTopics": "Guide topics",
+        "guideTopicsHint": "Short lessons with concrete actions and common traps.",
+        "localMode": "Local mode",
+        "localModeTitle": "No remote articles or trackers",
+        "localModeHint": "Reading activity and checklist progress stay on this device."
+      },
+      "tabs": {
+        "learn": "Learn",
+        "checklist": "Checklist",
+        "plans": "Plans",
+        "myths": "Myths",
+        "privacy": "Local data"
+      },
+      "levels": {
+        "basic": "Basic",
+        "smart": "Smart",
+        "careful": "Careful"
+      },
+      "priorities": {
+        "high": "High",
+        "medium": "Medium",
+        "low": "Low"
+      },
+      "article": {
+        "fallbackArea": "that area",
+        "exampleFirst": "Example: {text}",
+        "exampleAvoid": "What to avoid here: {text}",
+        "exampleInPractice": "Example in practice: {text}",
+        "undoQuickly": "Undo quickly: {text}",
+        "meaningIntro": "{title} is about protecting your most common real-world risk points in practical terms.",
+        "levelMinutes": "{level} level topic, usually around {minutes} minutes to improve.",
+        "scenarioFallback": [
+          "You notice repeated friction in daily tasks around {tag} (for example unusual prompts, requests, or recovery noise).",
+          "You are more likely to miss this risk during routine work because it feels normal, convenient, or urgent.",
+          "Your biggest exposure usually appears when the same weak habit repeats across several accounts/devices."
+        ],
+        "checkFallback": [
+          "Review the related checklist items and confirm the relevant tasks are marked done.",
+          "Search for the topic tags in your routines: {tags}.",
+          "Make one improvement and test it in the next real task cycle."
+        ],
+        "sections": {
+          "meaning": "What this topic means (plain words)",
+          "stuck": "Why people get stuck here",
+          "scenarios": "Scenario snapshots",
+          "examples": "Examples",
+          "oneClick": "One-click fixes",
+          "checks": "How to check if you are covered"
+        }
+      },
+      "localHub": {
+        "title": "Local-only knowledge hub",
+        "desc": "This page is bundled inside KeepItLocal as static content. It does not fetch articles, load remote scripts, embed trackers, or send reading/checklist activity anywhere. Checklist progress is stored locally in browser/Tauri storage on this device.",
+        "noNetwork": {
+          "title": "No network required",
+          "text": "The guide works offline and does not need a server."
+        },
+        "localProgress": {
+          "title": "Local progress",
+          "text": "Checklist state is saved only on the current device."
+        },
+        "normalPeople": {
+          "title": "Normal people first",
+          "text": "Advice is practical, not paranoia-driven or enterprise-only."
+        },
+        "footer": "All guide content is bundled locally. KeepItLocal does not send reading activity, checklist progress, or device data anywhere."
+      },
+      "microphone": {
+        "title": "Microphone & voice",
+        "intro": "Voice control is fully optional and fully local. When you do use it, here is exactly what KeepItLocal does — and never does — with your microphone.",
+        "points": [
+          "The microphone only turns on after an explicit action of yours — pressing a mic button, holding the push-to-talk key, or switching on Command Mode. KeepItLocal never starts listening on its own.",
+          "Whenever the microphone is live, a red dot appears over the tray icon and a 'Listening' indicator shows inside the app. There is no silent listening — if the dot is off, the mic is off.",
+          "Command Mode is an opt-in toggle. It is always off when KeepItLocal starts, never persists across launches, and shows a visible 'Command mode' indicator the whole time it is active.",
+          "Audio is transcribed entirely on your device by the offline Vosk engine. Voice audio is processed in memory, is never written to disk, and never leaves your computer — there is no cloud speech service.",
+          "Minimizing KeepItLocal to the tray immediately stops all voice capture, so nothing is ever recorded in the background."
+        ]
+      },
+      "sourceBasis": [
+        "CISA Secure Our World: MFA, updates, phishing awareness, strong passwords.",
+        "FTC consumer security guidance: two-factor authentication and personal-information protection.",
+        "NIST SP 800-63B guidance: authentication, authenticator assurance, lifecycle practices.",
+        "EFF Surveillance Self-Defense: security planning, privacy concepts, metadata, and practical guides."
+      ],
+      "myths": [
+        { "myth": "Incognito makes me anonymous", "reality": "No. It mostly avoids saving local history after the window closes. Websites, networks, and logged-in accounts can still identify you." },
+        { "myth": "A VPN makes me fully private", "reality": "No. A VPN changes who sees network metadata. Websites can still track logins, cookies, fingerprinting, and behavior." },
+        { "myth": "HTTPS means the website is safe", "reality": "No. HTTPS protects transport. A scam site can still use HTTPS and steal your data." },
+        { "myth": "Strong passwords are enough", "reality": "Not anymore. Use unique passwords plus MFA/passkeys for important accounts." },
+        { "myth": "Sync is backup", "reality": "Not always. Sync can mirror deletion or ransomware damage. Backups should preserve recoverable versions." },
+        { "myth": "Only suspicious people need privacy", "reality": "No. Privacy protects normal people from scams, profiling, stalking, impersonation, and account abuse." },
+        { "myth": "Deleted files are always gone", "reality": "Not always. Depending on storage and app behavior, recovery may be possible. Use proper wipe/reset flows when needed." },
+        { "myth": "Encrypted chat means nothing can leak", "reality": "Message content may be protected, but metadata, backups, screenshots, and the recipient device still matter." },
+        { "myth": "My phone number is a secure login ID", "reality": "Not really. Phone numbers can be ported, recycled, spoofed, or used for recovery attacks. Use stronger MFA for critical accounts." },
+        { "myth": "If I delete a cloud file, nobody can access it", "reality": "Not always. Shared links, synced devices, backups, trash retention, and collaborator copies can keep data around." },
+        { "myth": "A QR code from a poster or email is safe", "reality": "No. QR codes can hide phishing links. Always check the domain before login or payment." },
+        { "myth": "My smart devices are harmless", "reality": "They can still expose cameras, microphones, location patterns, or network access if poorly secured." },
+        { "myth": "Privacy is only about hiding content", "reality": "Metadata, timing, contacts, location, device identifiers, and account links can reveal a lot even when content is encrypted." },
+        { "myth": "More security apps always mean more security", "reality": "Not always. Extra apps can add attack surface, permissions, cost, and confusion. Choose tools for a clear purpose." }
+      ],
+      "checklist": {
+        "email-mfa": { "label": "Enable MFA/passkey on main email", "note": "Email is the recovery key for many accounts." },
+        "password-manager": { "label": "Set up a password manager", "note": "Generate/store unique passwords." },
+        "unique-important": { "label": "Fix reused passwords on important accounts", "note": "Start with email, bank, cloud, work, social." },
+        "backup-codes": { "label": "Save MFA backup codes safely", "note": "Keep them offline or in a protected vault." },
+        "auto-updates": { "label": "Turn on automatic updates", "note": "OS, browser, password manager, messaging apps." },
+        "phone-lock": { "label": "Use a strong phone lock", "note": "Avoid simple PINs and hide sensitive notifications." },
+        "recovery-info": { "label": "Review account recovery info", "note": "Remove old emails/phone numbers you no longer control." },
+        "browser-permissions": { "label": "Review browser permissions", "note": "Camera, mic, location, notifications." },
+        "extensions-cleanup": { "label": "Remove unused extensions", "note": "Extensions can have broad page access." },
+        "backup-test": { "label": "Test restoring one backup file", "note": "Backups matter only when restore works." },
+        "wifi-auto-join": { "label": "Disable auto-join for random Wi‑Fi", "note": "Avoid silently joining spoofed networks." },
+        "public-search": { "label": "Search your public exposure", "note": "Name, email, phone, usernames." },
+        "family-rule": { "label": "Create a family scam rule", "note": "Verify urgent money/code requests by voice." },
+        "download-rule": { "label": "Use official download sources", "note": "Avoid ads, cracks, random installers." },
+        "screenshot-check": { "label": "Check screenshots before sharing", "note": "Tabs, emails, file paths, tokens, QR codes." },
+        "ai-redaction": { "label": "Redact sensitive text before AI tools", "note": "No keys, secrets, customer data, private docs." },
+        "security-plan-basic": { "label": "Write your top 3 realistic risks", "note": "Pick priorities instead of chasing every possible threat." },
+        "broker-search": { "label": "Search and reduce data broker exposure", "note": "Name, phone, address, email, usernames." },
+        "email-alias-setup": { "label": "Create aliases for risky signups", "note": "Separate shopping, newsletters, and public profiles." },
+        "carrier-pin": { "label": "Set a mobile carrier PIN/passcode", "note": "Reduce SIM swap risk where supported." },
+        "router-admin": { "label": "Change router admin password", "note": "Default router passwords are risky." },
+        "cloud-links": { "label": "Review cloud shared links", "note": "Remove old public or collaborator links." },
+        "social-privacy-review": { "label": "Review social profile visibility", "note": "Birthday, phone, friends list, workplace, old posts." },
+        "location-permissions": { "label": "Review location permissions", "note": "Switch many apps to while-in-use or approximate." },
+        "iot-guest-network": { "label": "Move IoT to guest network if possible", "note": "Separate smart devices from laptops/phones." },
+        "travel-backup": { "label": "Prepare travel backup/recovery", "note": "Back up before travel and carry recovery access safely." },
+        "old-device-reset": { "label": "Reset devices before sale/recycle", "note": "Back up, sign out, reset, remove trusted device." },
+        "account-hacked-flow": { "label": "Save an account recovery checklist", "note": "Know the order before panic hits." }
+      },
+      "plans": {
+        "starter": { "title": "30-minute starter", "duration": "30 min", "bestFor": "Best first pass for normal users." },
+        "accounts": { "title": "Account takeover defense", "duration": "45 min", "bestFor": "Protect login + recovery paths." },
+        "device": { "title": "Device hygiene", "duration": "25 min", "bestFor": "Apps, browsers, phone, and malware basics." },
+        "family": { "title": "Family safety setup", "duration": "20 min", "bestFor": "Simple rules for less technical family." },
+        "privacy": { "title": "Privacy cleanup", "duration": "40 min", "bestFor": "Reduce public exposure and oversharing." },
+        "ransomware": { "title": "Ransomware recovery prep", "duration": "35 min", "bestFor": "Make sure you can recover files." },
+        "home-network": { "title": "Home network cleanup", "duration": "30 min", "bestFor": "Router, Wi‑Fi, smart home, and guest network basics." },
+        "public-footprint": { "title": "Public footprint cleanup", "duration": "45 min", "bestFor": "Reduce social, location, and data broker exposure." },
+        "travel-ready": { "title": "Travel-ready setup", "duration": "25 min", "bestFor": "Before airports, hotels, and public networks." },
+        "cloud-sharing": { "title": "Cloud sharing audit", "duration": "20 min", "bestFor": "Find old shared links and risky cloud permissions." },
+        "sim-risk": { "title": "Phone-number risk reduction", "duration": "20 min", "bestFor": "Reduce SIM swap and SMS recovery exposure." },
+        "incident-prep": { "title": "Account hacked preparation", "duration": "20 min", "bestFor": "Prepare the recovery order before something goes wrong." }
+      },
+      "topics": {
+        "keepitlocal-data": {
+          "title": "What KeepItLocal knows about you",
+          "short": "Honest threat model — what we store, encrypt, and never do.",
+          "takeaway": "Sensitive app data is encrypted at rest; notes and search indexes stay local on this device. No telemetry or background uploads.",
+          "tags": ["keepitlocal", "local-first", "threat model", "encryption", "data"],
+          "doNow": [
+            "Open Settings → Storage & Privacy to see exactly what we have on disk and how much.",
+            "Use exclusions to keep password-manager copies (KeePassXC, 1Password, etc.) out of clipboard history.",
+            "Pin only the snippets you want long-term — everything else expires.",
+            "Use \"Wipe everything\" before handing this machine to anyone else."
+          ],
+          "avoid": [
+            "Don't enable image capture if you regularly screenshot sensitive material.",
+            "Don't rely on the redb encryption if you share this Windows user account with someone you don't trust.",
+            "Don't treat clipboard history as a secrets vault — pin only what you'd be OK seeing on a sticky note."
+          ],
+          "details": [
+            "KeepItLocal is a local-first desktop app: there is no account, no telemetry, and no background uploads. Core work stays on-device; optional model downloads run only when you start them.",
+            "Sensitive app data such as clipboard history, settings, and snippets is stored locally and wrapped with Windows DPAPI. Notes and search indexes stay on this device but are not currently encrypted at rest, so use BitLocker for sensitive content.",
+            "Clipboard images and the file-search index are separate folders alongside the redb file. Images are auto-evicted at 256 MB total to keep your AppData from ballooning silently.",
+            "Sensitive content (API keys, credit card numbers, JWT tokens) gets flagged on capture so you see a visible badge in clipboard history — useful as a \"did I really mean to copy that?\" reminder.",
+            "The model breaks down in a few cases: (1) someone with physical access to your unlocked logged-in session can read everything you can — DPAPI doesn't protect against your own logged-in account; (2) a Windows Microsoft-account sign-in escrows the DPAPI recovery key to Microsoft, so a state-level adversary with cooperation from MS could decrypt — local accounts avoid this; (3) clipboard memory before persistence isn't encrypted; a memory-scanning attacker who already has malware on your machine bypasses everything."
+          ],
+          "scenarios": [
+            "You hand the machine to a family member to do their taxes — wipe everything first, or just close KeepItLocal and let DPAPI keep your data unreadable from their account.",
+            "You sell or recycle the machine — wipe everything, OR do a clean Windows install (DPAPI keys go with the old user profile and the data becomes permanently unreadable).",
+            "Your laptop is stolen but BitLocker is on — the attacker can't read the disk at all; KeepItLocal's encryption is redundant but harmless extra protection.",
+            "You suspect malware on your machine — KeepItLocal's clipboard listener will capture whatever the malware copies too. Run a full clean before pinning anything sensitive."
+          ],
+          "examples": [
+            "Clipboard history is encrypted on disk; pinned items still get the same encryption (the pin flag doesn't change protection).",
+            "The Wipe Everything button erases ~4 areas: preferences DB, clipboard images, search index, automation. It does NOT touch the files you've processed (images you compressed, docs you converted, etc.).",
+            "Optional model downloads use Windows curl only after you choose Download in Settings. KeepItLocal does not send telemetry or background uploads."
+          ],
+          "oneClickFixes": [
+            "Settings → Storage & Privacy → Refresh: shows your current disk footprint.",
+            "Settings → Storage & Privacy → Wipe everything: erases all KeepItLocal state in one click (with confirmation).",
+            "Settings → Clipboard exclusions → Add: keeps a given app's clipboard activity from ever being captured."
+          ],
+          "selfChecks": [
+            "Does Settings → Storage & Privacy show a number you're comfortable with?",
+            "Is there anything in your clipboard history right now you wouldn't want a roommate to see?",
+            "Are your password manager + secrets vault apps in the clipboard exclusion list?"
+          ]
+        },
+        "passwords": {
+          "title": "Passwords",
+          "short": "Unique passwords without memorizing everything.",
+          "takeaway": "Use a password manager and make every important account password unique.",
+          "tags": ["accounts", "identity", "password manager"],
+          "doNow": [
+            "Use a password manager for generated unique passwords.",
+            "Protect the password manager with a long master passphrase.",
+            "Fix reused passwords first on email, banking, cloud, work, and social accounts.",
+            "Store recovery codes somewhere safer than screenshots or chats."
+          ],
+          "avoid": [
+            "Reusing the same password across websites.",
+            "Saving passwords in plain text, notes, screenshots, or messages.",
+            "Sharing passwords over chat/email.",
+            "Changing passwords constantly without reason while still reusing weak ones."
+          ],
+          "details": [
+            "Password reuse is the real danger: one breached website can unlock unrelated accounts.",
+            "A password manager lets normal users have strong unique passwords without memory overload.",
+            "A long memorable passphrase is usually easier to use than a short complex password."
+          ]
+        },
+        "mfa-passkeys": {
+          "title": "MFA & passkeys",
+          "short": "Add a second barrier when passwords leak.",
+          "takeaway": "Use passkeys or authenticator apps on valuable accounts, especially email.",
+          "tags": ["mfa", "2fa", "passkeys", "accounts"],
+          "doNow": [
+            "Enable MFA/passkeys on your main email first.",
+            "Prefer passkeys or authenticator apps over SMS when available.",
+            "Save backup codes offline or in a protected vault.",
+            "Deny login prompts you did not start."
+          ],
+          "avoid": [
+            "Approving random MFA prompts to make notifications stop.",
+            "Sharing one-time codes with support agents, friends, or buyers.",
+            "Depending only on SMS for high-value accounts if better options exist.",
+            "Keeping backup codes only inside the account they recover."
+          ],
+          "details": [
+            "Passkeys are strong because they are tied to the real website/app domain.",
+            "Authenticator apps are usually safer than SMS because phone numbers can be hijacked or ported.",
+            "MFA fatigue attacks try to annoy you into approving an attacker login."
+          ]
+        },
+        "phishing": {
+          "title": "Phishing & scams",
+          "short": "Slow down urgent messages before they cost you.",
+          "takeaway": "Urgency is the attacker's weapon. Verify through a second channel before acting.",
+          "tags": ["phishing", "email", "sms", "scams"],
+          "doNow": [
+            "Open important sites from bookmarks or by typing the address yourself.",
+            "Check the real domain before entering passwords or payment details.",
+            "Verify money, password, invoice, or document requests through another channel.",
+            "Teach family a simple rule: no urgent payment or code sharing without voice confirmation."
+          ],
+          "avoid": [
+            "Clicking login links from unexpected emails or DMs.",
+            "Calling phone numbers written inside suspicious emails.",
+            "Trusting a message only because the logo looks real.",
+            "Sending MFA codes, recovery codes, or passwords to anyone."
+          ],
+          "details": [
+            "Attackers clone real websites and use lookalike domains.",
+            "Delivery problems, account warnings, crypto offers, and prizes are common lures.",
+            "If a message says \"act now\", assume the urgency is part of the attack."
+          ]
+        },
+        "updates": {
+          "title": "Updates",
+          "short": "Patch known holes before they are automated.",
+          "takeaway": "Keep the OS, browser, password manager, and messaging apps current.",
+          "tags": ["browser", "os", "apps", "patching"],
+          "doNow": [
+            "Enable automatic OS and browser updates.",
+            "Update password managers and messaging apps quickly.",
+            "Restart when updates require it.",
+            "Remove software you no longer use."
+          ],
+          "avoid": [
+            "Delaying browser updates for weeks.",
+            "Using unsupported operating systems for daily browsing.",
+            "Installing random driver/update tools from ads.",
+            "Using cracked software."
+          ],
+          "details": [
+            "Browsers are high-risk because they process untrusted websites every day.",
+            "Unsupported systems stop receiving security fixes.",
+            "Cracked software frequently bundles malware or stealers."
+          ]
+        },
+        "browser-privacy": {
+          "title": "Browser privacy",
+          "short": "Reduce tracking without breaking everything.",
+          "takeaway": "Use fewer trusted extensions, review permissions, and separate sensitive browsing.",
+          "tags": ["browser", "tracking", "extensions", "cookies"],
+          "doNow": [
+            "Review camera, microphone, location, and notification permissions.",
+            "Remove unused extensions.",
+            "Use separate browser profiles for work, personal, banking, and testing if useful.",
+            "Use a reputable tracker/content blocker if it fits your workflow."
+          ],
+          "avoid": [
+            "Installing many extensions \"just in case\".",
+            "Allowing notifications casually.",
+            "Using unknown privacy extensions with broad page access.",
+            "Thinking incognito means anonymous."
+          ],
+          "details": [
+            "Extensions can read/modify pages depending on their permissions.",
+            "Incognito mostly reduces local history/cookies after the window closes; websites can still identify you.",
+            "Browser profiles are practical compartmentalization for normal users."
+          ]
+        },
+        "vpn-tor": {
+          "title": "VPNs & Tor",
+          "short": "Know what they do and what they do not do.",
+          "takeaway": "A VPN changes who can see network metadata; it does not make you invisible.",
+          "tags": ["vpn", "tor", "network", "privacy"],
+          "doNow": [
+            "Use a VPN on untrusted Wi-Fi if you trust the VPN provider more than the network.",
+            "Still use HTTPS and safe login habits.",
+            "Use Tor when anonymity matters more than speed and convenience.",
+            "Separate identities if you need privacy; do not log into personal accounts everywhere."
+          ],
+          "avoid": [
+            "Believing a VPN prevents all tracking.",
+            "Using free unknown VPNs for sensitive activity.",
+            "Logging into personal accounts while expecting anonymity.",
+            "Ignoring cookies, fingerprinting, and account identity."
+          ],
+          "details": [
+            "VPNs can hide traffic from a local network/ISP, but the VPN provider becomes a new trust point.",
+            "Websites can still identify you through logins, cookies, payment details, and fingerprinting.",
+            "Threat model matters more than generic VPN marketing."
+          ]
+        },
+        "phone-safety": {
+          "title": "Phone safety",
+          "short": "Your phone is usually your identity hub.",
+          "takeaway": "Protect the phone because it often controls email, banking, MFA, photos, and recovery.",
+          "tags": ["phone", "device", "apps", "permissions"],
+          "doNow": [
+            "Use a strong screen lock.",
+            "Keep the phone OS updated.",
+            "Review app permissions and remove unused apps.",
+            "Know how to remotely lock or erase a lost phone.",
+            "Hide sensitive notifications on the lock screen."
+          ],
+          "avoid": [
+            "Using 0000, 1111, birth years, or simple PINs.",
+            "Installing apps from random links.",
+            "Granting contacts, location, microphone, or photos access without need.",
+            "Leaving account recovery fully dependent on one unlocked phone."
+          ],
+          "details": [
+            "Phone compromise can cascade into many accounts because phones often hold MFA and recovery paths.",
+            "Permissions should be minimal and reviewed periodically.",
+            "Lost-device preparation matters before the phone is lost."
+          ]
+        },
+        "backups": {
+          "title": "Backups",
+          "short": "Recover from deletion, theft, disk failure, or ransomware.",
+          "takeaway": "Sync is not always backup. Keep at least one recoverable versioned copy.",
+          "tags": ["backup", "ransomware", "files", "recovery"],
+          "doNow": [
+            "Keep at least one backup not always connected to the computer.",
+            "Test restoring a file before an emergency.",
+            "Use versioned backups when possible.",
+            "Back up recovery codes and important documents securely."
+          ],
+          "avoid": [
+            "Assuming sync is the same as backup.",
+            "Keeping the only backup drive always connected.",
+            "Never testing restore.",
+            "Storing recovery codes only inside the account they recover."
+          ],
+          "details": [
+            "Sync mirrors mistakes and ransomware damage quickly.",
+            "Offline/disconnected backups reduce ransomware impact.",
+            "A backup you cannot restore is not a real backup."
+          ]
+        },
+        "public-data": {
+          "title": "Public data exposure",
+          "short": "Reduce what strangers can easily learn about you.",
+          "takeaway": "Less public personal data means fewer scams, impersonation, and recovery attacks.",
+          "tags": ["privacy", "osint", "identity", "social"],
+          "doNow": [
+            "Search your name, phone, email, and usernames periodically.",
+            "Remove unnecessary public addresses, numbers, birthdays, and travel details.",
+            "Use different usernames where separation matters.",
+            "Review old posts and public profile fields."
+          ],
+          "avoid": [
+            "Using public facts as security question answers.",
+            "Posting IDs, boarding passes, QR codes, addresses, or invoices.",
+            "Publishing exact travel dates and home absence publicly.",
+            "Reusing one username across private and public communities."
+          ],
+          "details": [
+            "Security questions are weak when answers are public or guessable.",
+            "Screenshots often expose filenames, usernames, tokens, addresses, or metadata.",
+            "You do not need perfect anonymity; reducing easy exposure already helps."
+          ]
+        },
+        "wifi-networks": {
+          "title": "Public Wi‑Fi",
+          "short": "Use untrusted networks without overtrusting them.",
+          "takeaway": "Public Wi‑Fi is not automatically evil, but treat it as untrusted.",
+          "tags": ["wifi", "network", "travel"],
+          "doNow": [
+            "Prefer HTTPS sites and updated apps.",
+            "Turn off auto-join for random public networks.",
+            "Use a VPN on untrusted networks when useful.",
+            "Use mobile hotspot for sensitive tasks when available."
+          ],
+          "avoid": [
+            "Joining networks only because the name looks official.",
+            "Installing certificates/profiles from public Wi‑Fi portals unless you understand why.",
+            "Sharing files or enabling discovery on public networks.",
+            "Ignoring browser certificate warnings."
+          ],
+          "details": [
+            "Attackers can create network names that look like a hotel, cafe, or airport network.",
+            "HTTPS protects most web content, but network metadata can still leak.",
+            "Certificate warnings are rare for normal browsing; do not click through them casually."
+          ]
+        },
+        "email-recovery": {
+          "title": "Email & recovery",
+          "short": "Your inbox is the master key for many accounts.",
+          "takeaway": "Secure your main email harder than almost anything else.",
+          "tags": ["email", "recovery", "identity"],
+          "doNow": [
+            "Enable strong MFA/passkey on main email.",
+            "Review forwarding rules, filters, connected apps, and active sessions.",
+            "Remove old recovery emails/phone numbers you no longer control.",
+            "Keep backup codes offline or in a protected vault."
+          ],
+          "avoid": [
+            "Using your main email password anywhere else.",
+            "Ignoring unknown mail forwarding rules.",
+            "Leaving recovery tied to abandoned phone numbers or email accounts.",
+            "Using weak security questions."
+          ],
+          "details": [
+            "If attackers control your email, they can often reset passwords elsewhere.",
+            "Hidden forwarding rules are a common way to continue spying after account access.",
+            "Recovery settings should be checked periodically, not only after incidents."
+          ]
+        },
+        "payments-shopping": {
+          "title": "Payments & shopping",
+          "short": "Avoid fake stores, invoice scams, and card exposure.",
+          "takeaway": "Be extra careful when urgency, discount pressure, or payment method weirdness appears.",
+          "tags": ["payments", "shopping", "fraud"],
+          "doNow": [
+            "Use reputable stores and payment methods with dispute options.",
+            "Check domains and reviews before entering card details.",
+            "Be suspicious of bank transfer, crypto, or gift-card-only requests.",
+            "Consider virtual cards if your bank supports them."
+          ],
+          "avoid": [
+            "Buying from ads without checking the real store.",
+            "Paying invoices whose bank details changed unexpectedly.",
+            "Trusting screenshots as proof of payment.",
+            "Saving cards in many small unknown shops."
+          ],
+          "details": [
+            "Fake stores often use copied product photos and extreme discounts.",
+            "Invoice redirection scams target businesses and freelancers.",
+            "Payment methods with dispute processes give you more recovery options."
+          ]
+        },
+        "messaging": {
+          "title": "Private messaging",
+          "short": "Know what encryption protects and what metadata still exists.",
+          "takeaway": "End-to-end encryption protects content, but not every app protects metadata equally.",
+          "tags": ["messaging", "encryption", "metadata"],
+          "doNow": [
+            "Use end-to-end encrypted messengers for private conversations.",
+            "Verify safety numbers/keys for high-risk conversations.",
+            "Set disappearing messages where appropriate.",
+            "Be careful with cloud backups of encrypted chats."
+          ],
+          "avoid": [
+            "Assuming encrypted content means no metadata exists.",
+            "Sharing sensitive screenshots into less private apps.",
+            "Backing up chats to cloud storage without understanding encryption.",
+            "Sending secrets to the wrong contact or group."
+          ],
+          "details": [
+            "Metadata can include who talked to whom, when, and sometimes from where.",
+            "Backups can weaken otherwise private messaging if stored unencrypted elsewhere.",
+            "For sensitive chats, identity verification matters."
+          ]
+        },
+        "downloads-malware": {
+          "title": "Downloads & malware",
+          "short": "Avoid stealers, fake installers, and malicious attachments.",
+          "takeaway": "Download from official sources and treat unexpected attachments carefully.",
+          "tags": ["malware", "downloads", "attachments"],
+          "doNow": [
+            "Download apps from official websites or trusted stores.",
+            "Check file extensions before opening attachments.",
+            "Keep security protections enabled.",
+            "Scan suspicious files when reasonable."
+          ],
+          "avoid": [
+            "Installing cracked apps, cheats, activators, or random installers.",
+            "Opening unexpected invoice/archive attachments without verification.",
+            "Disabling security tools because a tutorial says so.",
+            "Running unknown scripts from comments or forums."
+          ],
+          "details": [
+            "Info-stealer malware often targets browser sessions, crypto wallets, passwords, and cookies.",
+            "Fake installers commonly appear in ads and lookalike search results.",
+            "Archives can hide executable files behind innocent names."
+          ]
+        },
+        "device-disposal": {
+          "title": "Old devices",
+          "short": "Remove personal data before selling, gifting, or recycling.",
+          "takeaway": "Sign out, back up, erase, and remove device trust before disposal.",
+          "tags": ["device", "phone", "privacy"],
+          "doNow": [
+            "Back up what you need first.",
+            "Sign out of accounts and remove the device from trusted-device lists.",
+            "Factory reset phones/tablets before handing them over.",
+            "Wipe or securely erase drives when possible."
+          ],
+          "avoid": [
+            "Selling a device while still signed in.",
+            "Forgetting SD cards or secondary drives.",
+            "Leaving browsers with saved sessions.",
+            "Assuming deleting files is the same as wiping a device."
+          ],
+          "details": [
+            "Phones usually have built-in reset flows designed for resale or recycling.",
+            "Computers and external drives may need stronger erasure depending on storage type.",
+            "Removing trusted devices reduces account recovery and login risk."
+          ]
+        },
+        "screenshots-metadata": {
+          "title": "Screenshots & metadata",
+          "short": "Images and files leak more than the obvious content.",
+          "takeaway": "Before sharing, check visible content plus hidden metadata and background details.",
+          "tags": ["metadata", "screenshots", "files", "sharing"],
+          "doNow": [
+            "Crop or redact screenshots before sharing.",
+            "Remove metadata from images/documents when privacy matters.",
+            "Check filenames, tabs, email addresses, tokens, QR codes, and window titles.",
+            "Use KeepItLocal metadata/redaction tools before posting sensitive files."
+          ],
+          "avoid": [
+            "Sharing full-screen screenshots casually.",
+            "Posting documents with names, addresses, IDs, or signatures visible.",
+            "Uploading originals when a cleaned copy is enough.",
+            "Forgetting that QR codes and barcodes are readable data."
+          ],
+          "details": [
+            "EXIF metadata can include camera/device info and sometimes location depending on settings.",
+            "Screenshots often reveal browser tabs, folders, usernames, and private URLs.",
+            "Redaction should remove data, not just cover it visually in a reversible way."
+          ]
+        },
+        "ai-sharing": {
+          "title": "AI & data sharing",
+          "short": "Treat prompts like information you are handing to a service.",
+          "takeaway": "Do not paste secrets, private documents, customer data, or credentials into tools without knowing the data policy.",
+          "tags": ["ai", "privacy", "documents", "work"],
+          "doNow": [
+            "Remove secrets, tokens, private names, and unnecessary identifiers before pasting text.",
+            "Check whether the tool stores, trains on, or shares submitted data.",
+            "Use local/offline tools for sensitive formatting, conversion, and cleanup when possible.",
+            "Create a rule for what work data can and cannot be pasted into external services."
+          ],
+          "avoid": [
+            "Pasting API keys, passwords, private keys, or customer records.",
+            "Uploading confidential files without permission.",
+            "Assuming \"AI\" means private by default.",
+            "Forgetting that browser extensions may read pages too."
+          ],
+          "details": [
+            "AI tools vary widely in retention, training, admin visibility, and enterprise controls.",
+            "A simple redaction habit can prevent accidental leaks.",
+            "KeepItLocal's local tools are useful when the task does not require an external service."
+          ]
+        },
+        "security-planning": {
+          "title": "Personal security plan",
+          "short": "Choose protection based on your real risks, not fear.",
+          "takeaway": "Good privacy starts by deciding what you protect, from whom, and what effort is realistic.",
+          "tags": ["threat model", "planning", "priorities"],
+          "doNow": [
+            "Write down your most important accounts, devices, and files.",
+            "Pick your top three realistic risks: scams, lost phone, account takeover, stalking, work data, or ransomware.",
+            "Secure the highest-impact things first: email, phone, backups, password manager.",
+            "Review your plan every few months or after major life/work changes."
+          ],
+          "avoid": [
+            "Trying to solve every possible risk at once.",
+            "Installing many \"security\" apps without knowing what problem they solve.",
+            "Copying a high-risk activist workflow if you only need everyday safety.",
+            "Ignoring convenience so much that you abandon the plan."
+          ],
+          "details": [
+            "Security is about tradeoffs. A normal family, freelancer, journalist, and company admin need different workflows.",
+            "The best plan is one you can actually maintain.",
+            "Start with high-impact basics before advanced tools."
+          ]
+        },
+        "data-brokers": {
+          "title": "Data brokers & people-search sites",
+          "short": "Reduce public address, phone, family, and identity clues.",
+          "takeaway": "Removing public personal records lowers scam, stalking, impersonation, and recovery-question risk.",
+          "tags": ["data brokers", "people search", "osint", "privacy"],
+          "doNow": [
+            "Search your name with your city, phone, email, and old usernames.",
+            "Opt out from major people-search/data broker sites where available.",
+            "Remove old public profiles that expose address, relatives, employer, or birthday.",
+            "Use aliases or separate emails where real identity is not required."
+          ],
+          "avoid": [
+            "Using public facts as password recovery answers.",
+            "Posting documents that reveal address, ID numbers, signatures, or family details.",
+            "Assuming one opt-out removes every copy forever.",
+            "Reusing the same username across private and public identities."
+          ],
+          "details": [
+            "Data brokers collect and resell personal details from public records, breaches, forms, and commercial sources.",
+            "Opt-outs may need periodic repeats because data can reappear.",
+            "Reducing easy lookup data helps against targeted scams and impersonation."
+          ]
+        },
+        "email-aliases": {
+          "title": "Email aliases",
+          "short": "Compartmentalize signups and reduce spam correlation.",
+          "takeaway": "Use aliases for newsletters, shopping, and risky signups so one leak does not expose everything.",
+          "tags": ["email", "aliases", "spam", "compartmentalization"],
+          "doNow": [
+            "Create separate aliases for shopping, newsletters, banking, and public profiles.",
+            "Use your real primary email only where identity really matters.",
+            "Disable or delete aliases that start receiving suspicious spam.",
+            "Keep recovery email addresses private and protected."
+          ],
+          "avoid": [
+            "Using one email address for every website forever.",
+            "Publishing your account recovery email publicly.",
+            "Forwarding every alias to an inbox without filters or labels.",
+            "Using joke aliases for serious accounts where recovery may require identity proof."
+          ],
+          "details": [
+            "Aliases make it easier to see which service leaked or sold your address.",
+            "They reduce cross-site correlation but do not replace good passwords and MFA.",
+            "Use stable aliases for accounts you may need to recover later."
+          ]
+        },
+        "sim-swap": {
+          "title": "SIM swap & phone-number risk",
+          "short": "Phone numbers are convenient but weak identity keys.",
+          "takeaway": "Treat your phone number as public-ish; do not rely on SMS for your most valuable accounts if better MFA exists.",
+          "tags": ["sim swap", "sms", "phone", "mfa", "recovery"],
+          "doNow": [
+            "Set a carrier account PIN/passcode if your mobile provider supports it.",
+            "Move important accounts from SMS MFA to passkeys, security keys, or authenticator apps where possible.",
+            "Check which accounts use your phone number for recovery.",
+            "Be alert if your phone suddenly loses service unexpectedly."
+          ],
+          "avoid": [
+            "Using SMS as the only protection for email, banking, or crypto accounts.",
+            "Publishing your main phone number everywhere.",
+            "Ignoring carrier account security settings.",
+            "Assuming a text code proves the real owner is in control."
+          ],
+          "details": [
+            "SIM swap attacks move your number to an attacker-controlled SIM/eSIM.",
+            "SMS can still be better than no MFA, but stronger methods are preferable for important accounts.",
+            "Email recovery and phone-number recovery should both be reviewed."
+          ]
+        },
+        "home-router": {
+          "title": "Home router & Wi‑Fi",
+          "short": "Your router is the front door of your home network.",
+          "takeaway": "Update router firmware, use strong Wi‑Fi encryption, and separate guests/IoT where possible.",
+          "tags": ["router", "wifi", "home network", "iot"],
+          "doNow": [
+            "Change the router admin password if it is still default.",
+            "Use WPA2/WPA3 with a strong Wi‑Fi password.",
+            "Install router firmware updates from the official admin panel/app.",
+            "Use a guest network for visitors and smart devices if supported."
+          ],
+          "avoid": [
+            "Leaving router admin credentials as default.",
+            "Using WEP or open Wi‑Fi.",
+            "Installing router \"updates\" from random websites.",
+            "Sharing your main Wi‑Fi password with everyone."
+          ],
+          "details": [
+            "Old routers may stop receiving updates and become long-term weak points.",
+            "Guest networks help separate less trusted devices from laptops and phones.",
+            "A strong Wi‑Fi password prevents casual access but does not replace device updates."
+          ]
+        },
+        "cloud-storage": {
+          "title": "Cloud storage privacy",
+          "short": "Sync useful files without accidentally oversharing them.",
+          "takeaway": "Review shared links, device sync, and account protection on cloud drives.",
+          "tags": ["cloud", "sharing", "files", "backup"],
+          "doNow": [
+            "Review public/shared links in your cloud drive.",
+            "Remove access for old collaborators and old devices.",
+            "Protect the cloud account with MFA/passkeys.",
+            "Keep sensitive documents encrypted locally before upload if needed."
+          ],
+          "avoid": [
+            "Using \"anyone with the link\" for private documents.",
+            "Assuming deleted cloud files disappear instantly everywhere.",
+            "Syncing secrets into folders shared with others.",
+            "Treating cloud sync as your only backup."
+          ],
+          "details": [
+            "Cloud links are easy to forget and may remain accessible for years.",
+            "Shared folders can expose future files, not only current files.",
+            "Local encryption before upload is useful for highly sensitive archives."
+          ]
+        },
+        "social-media": {
+          "title": "Social media privacy",
+          "short": "Share less useful information with strangers and scammers.",
+          "takeaway": "Your public posts can become scam material, location clues, or account recovery hints.",
+          "tags": ["social media", "privacy", "posting", "osint"],
+          "doNow": [
+            "Review who can see your posts, friends list, phone, birthday, and email.",
+            "Remove old public posts that expose address, school, workplace, or family details.",
+            "Delay posting travel/location content until after you leave.",
+            "Be careful with quizzes that collect personal-history answers."
+          ],
+          "avoid": [
+            "Posting boarding passes, IDs, invoices, keys, or QR codes.",
+            "Accepting unknown friend requests just because they share mutuals.",
+            "Using public facts as account recovery answers.",
+            "Oversharing children's locations, routines, or school info."
+          ],
+          "details": [
+            "Scammers use public context to make messages feel personal and trustworthy.",
+            "Old posts often reveal answers to recovery questions.",
+            "Privacy settings change over time, so review them periodically."
+          ]
+        },
+        "location-privacy": {
+          "title": "Location privacy",
+          "short": "Control what reveals where you are and where you go.",
+          "takeaway": "Location leaks come from apps, photos, posts, maps history, Wi‑Fi, and routine sharing.",
+          "tags": ["location", "maps", "photos", "apps"],
+          "doNow": [
+            "Review app location permissions and switch many apps to approximate or while-in-use access.",
+            "Check whether camera photos store location metadata.",
+            "Review map/location history settings on accounts you use.",
+            "Avoid live-posting sensitive locations or home absence."
+          ],
+          "avoid": [
+            "Granting always-on location access by default.",
+            "Sharing screenshots/maps that reveal home, workplace, or route patterns.",
+            "Posting travel plans before/during the trip publicly.",
+            "Assuming cropping a photo removes metadata."
+          ],
+          "details": [
+            "Location privacy is about patterns, not only one GPS coordinate.",
+            "Approximate location is enough for many apps.",
+            "Metadata stripping helps before sharing images/documents publicly."
+          ]
+        },
+        "smart-home-iot": {
+          "title": "Smart home & IoT devices",
+          "short": "Cheap connected devices can become permanent weak points.",
+          "takeaway": "Update smart devices, change default passwords, and keep cameras/mics on a separate network when possible.",
+          "tags": ["iot", "smart home", "camera", "router"],
+          "doNow": [
+            "Change default passwords on cameras, doorbells, NAS, and smart devices.",
+            "Update firmware through official apps/admin panels.",
+            "Put IoT devices on a guest network if your router supports it.",
+            "Disable remote access features you do not use."
+          ],
+          "avoid": [
+            "Buying unknown cameras/routers with no update history.",
+            "Leaving admin panels open to the internet.",
+            "Using the same password on every device.",
+            "Forgetting about old devices after setup."
+          ],
+          "details": [
+            "Many IoT devices receive fewer updates than phones/computers.",
+            "Separate networks reduce damage if a smart device is compromised.",
+            "Cameras and microphones deserve stricter review than low-risk smart bulbs."
+          ]
+        },
+        "travel-security": {
+          "title": "Travel security",
+          "short": "Prepare devices before airports, hotels, and shared networks.",
+          "takeaway": "Travel increases device loss, public Wi‑Fi use, shoulder surfing, and account lockout risk.",
+          "tags": ["travel", "devices", "wifi", "border"],
+          "doNow": [
+            "Back up devices before travel.",
+            "Update OS/apps before leaving, not on airport Wi‑Fi.",
+            "Carry recovery codes securely if you may need account access abroad.",
+            "Use strong screen locks and avoid leaving devices unattended in hotels/cafes."
+          ],
+          "avoid": [
+            "Using public charging stations without care for data-capable cables/ports.",
+            "Typing passwords where people/cameras can watch easily.",
+            "Depending on one phone for all tickets, MFA, maps, and payments without backup.",
+            "Connecting to lookalike hotel/airport networks without verifying the name."
+          ],
+          "details": [
+            "Travel workflows should plan for loss, theft, network distrust, and account recovery problems.",
+            "A clean travel profile/device may be useful for high-risk trips.",
+            "Offline copies of essential documents can help without exposing every private file."
+          ]
+        },
+        "device-disposal-extra": {
+          "title": "Selling or recycling devices",
+          "short": "Remove accounts and data before devices leave your control.",
+          "takeaway": "Sign out, back up, factory reset, and remove device trust before selling or recycling hardware.",
+          "tags": ["device disposal", "factory reset", "storage", "privacy"],
+          "doNow": [
+            "Back up important files first.",
+            "Sign out of accounts and remove device from account trusted-device lists.",
+            "Factory reset phones/tablets/laptops before transfer.",
+            "Destroy or securely wipe removable drives/cards when appropriate."
+          ],
+          "avoid": [
+            "Selling devices still linked to your account or activation lock.",
+            "Forgetting SD cards, SIM cards, or external drives.",
+            "Assuming deleting files is enough on every storage type.",
+            "Giving away work devices without following company process."
+          ],
+          "details": [
+            "Factory reset flows are usually the right default for phones and tablets.",
+            "Account trusted-device lists can keep old devices connected after sale.",
+            "Storage type matters for secure deletion, especially SSDs and flash media."
+          ]
+        },
+        "incident-response": {
+          "title": "If an account is hacked",
+          "short": "A calm order of operations beats panic clicking.",
+          "takeaway": "Recover from a clean device, secure email first, rotate passwords, revoke sessions, and check forwarding/rules.",
+          "tags": ["incident response", "account hacked", "recovery"],
+          "doNow": [
+            "Use a trusted updated device, not the possibly infected one.",
+            "Secure your main email first: password, MFA, sessions, forwarding rules.",
+            "Change passwords for affected accounts and any reused passwords.",
+            "Revoke unknown sessions, connected apps, API tokens, and recovery methods."
+          ],
+          "avoid": [
+            "Changing passwords on a device that may still have malware.",
+            "Only changing the visible account password while ignoring email recovery.",
+            "Deleting evidence before checking what happened.",
+            "Paying random \"recovery experts\" in DMs."
+          ],
+          "details": [
+            "Attackers often keep access through sessions, app passwords, OAuth grants, or forwarding rules.",
+            "Email is usually the first account to secure because it controls resets elsewhere.",
+            "After recovery, watch financial accounts and identity-sensitive services."
+          ]
+        },
+        "qr-codes": {
+          "title": "QR codes & short links",
+          "short": "Convenient links can hide the real destination.",
+          "takeaway": "Preview QR/short-link destinations before login or payment, especially on posters, emails, and invoices.",
+          "tags": ["qr code", "links", "phishing", "payments"],
+          "doNow": [
+            "Check the destination domain before entering passwords or card details.",
+            "Use official apps/bookmarks for banking and payments instead of random QR links.",
+            "Be suspicious of QR codes covering older printed QR codes.",
+            "Treat shortened links in urgent messages as risky until verified."
+          ],
+          "avoid": [
+            "Logging in from a QR code in an unexpected email.",
+            "Paying invoices through QR codes without verifying the recipient.",
+            "Trusting a short link because it came from a known contact whose account may be compromised.",
+            "Ignoring browser warnings after scanning."
+          ],
+          "details": [
+            "QR phishing works because users cannot visually inspect the URL before scanning.",
+            "Short links add another layer of opacity.",
+            "A domain check stops many common scams."
+          ]
+        }
+      }
+    }
+  }
+}

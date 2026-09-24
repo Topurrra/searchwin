@@ -1,0 +1,480 @@
+[package]
+name = "keepitlocal"
+version = "0.1.0"
+description = "A Tauri App"
+authors = ["you"]
+edition = "2021"
+default-run = "keepitlocal"
+
+[profile.release]
+panic = "abort"
+codegen-units = 1
+lto = true
+opt-level = "z"
+strip = true
+
+# Compile every DEPENDENCY (image, tantivy, pdfium, resvg…) with full
+# optimizations even in `tauri dev`, while our own crate stays at the fast
+# debug opt-level. Without this, search/image/render math runs orders of
+# magnitude slower in dev than release.
+[profile.dev.package."*"]
+opt-level = 3
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+# ─── Cargo features ───────────────────────────────────────────────────
+#
+# `vosk` — the DEFAULT offline speech-recognition engine (alphacephei).
+#   Requires libvosk.dll + libvosk.lib + vosk_api.h on the build machine
+#   (via VOSK_LIB_DIR), plus libvosk.dll alongside the final exe at runtime
+#   (already shipped via tauri.conf.json bundle.resources). It is a default
+#   feature because it is the baseline voice engine — the Windows WinRT
+#   speech engine was removed (see CoreFeaturesPlan.md [Voice] #0). Build
+#   environments without libvosk can still compile with
+#   `--no-default-features`.
+#
+#   To build with Vosk:
+#     1. Download vosk-win64-0.3.45.zip from
+#        https://github.com/alphacep/vosk-api/releases
+#     2. Extract somewhere stable (e.g. C:\vosk-engine\)
+#     3. Set env var: setx VOSK_LIB_DIR "C:\vosk-engine"
+#     4. Build with: cargo build --features vosk
+#     5. Copy libvosk.dll next to the final keepitlocal.exe (or into PATH)
+#
+#   Without this feature the Vosk command paths return a `vosk_not_compiled`
+#   status that the frontend renders as a setup card.
+# `ocr-leptess` — in-process libtesseract OCR via the leptess crate. When
+#   enabled, OCR calls go through libtesseract.dll directly (no subprocess
+#   spawn), saving 100-300ms per file. Pure perf optimization — same OCR
+#   engine, same language packs, same accuracy. Realistic speedup:
+#   10-40% on small files (receipts, IDs), marginal on large scans.
+#
+#   Build setup (Windows, via vcpkg — the proven path used by this repo):
+#     1. Clone + bootstrap vcpkg:
+#          git clone https://github.com/microsoft/vcpkg.git C:\vcpkg
+#          C:\vcpkg\bootstrap-vcpkg.bat
+#     2. Install Tesseract via vcpkg (builds from source, ~9 min):
+#          C:\vcpkg\vcpkg.exe install tesseract:x64-windows --disable-metrics
+#     3. Set env vars so the leptonica-sys + tesseract-sys build scripts
+#        find vcpkg + use the dynamic-link triplet (NOT the default static):
+#          setx VCPKG_ROOT "C:\vcpkg"
+#          setx VCPKGRS_TRIPLET "x64-windows"
+#          setx VCPKGRS_DYNAMIC "1"
+#          setx TESSERACT_INCLUDE_PATHS "C:\vcpkg\installed\x64-windows\include"
+#          setx TESSERACT_LINK_PATHS    "C:\vcpkg\installed\x64-windows\lib"
+#          setx LEPTONICA_INCLUDE_PATH  "C:\vcpkg\installed\x64-windows\include\leptonica"
+#          setx LEPTONICA_LINK_PATHS    "C:\vcpkg\installed\x64-windows\lib"
+#        (Restart your shell so the env vars take effect.)
+#     4. The runtime DLLs that match vcpkg's libtesseract version live
+#        under `C:\vcpkg\installed\x64-windows\tools\tesseract\` — copy
+#        EVERY .dll and `tesseract.exe` from there into
+#        `src-tauri/tesseract-runtime/` (replace any stale UB-Mannheim
+#        DLLs that don't match the vcpkg version). The same `.dll`
+#        names appear in `tauri.conf.json bundle.resources`.
+#     5. Build: cargo build --features ocr-leptess
+#     6. Tauri bundle picks them up via tauri.conf.json bundle.resources.
+#
+#   Without this feature the OCR paths fall back to spawning tesseract.exe
+#   (the existing subprocess path). Both paths share the same language
+#   packs in src-tauri/tessdata-runtime/.
+[features]
+default = ["vosk", "ocr-leptess", "screenrec", "semantic", "image-background-removal"]
+vosk = ["dep:vosk", "dep:cpal", "dep:webrtc-vad"]
+ocr-leptess = ["dep:leptess"]
+image-background-removal = ["dep:ort", "ort/download-binaries"]
+# screenrec — Screen Recorder. Pulls `cpal` (microphone capture, INDEPENDENT of
+# the `vosk` feature so the recorder builds without libvosk), `wasapi` (WASAPI
+# system-audio loopback — cpal cannot do loopback on Windows), and `rubato`
+# (sample-rate conversion for the audio mix). Also expands the `windows` crate
+# with Windows.Graphics.Capture (screen), Direct3D11/DXGI (GPU frame staging),
+# Media Foundation (webcam) and WASAPI audio — gated so non-recorder builds stay
+# lean. Build the recorder without Vosk: `--no-default-features --features screenrec`.
+# semantic — Semantic file search (beta). Pulls `fastembed` → `ort` (the ONNX
+# Runtime) to embed content + queries with a bundled all-MiniLM-L6-v2 model
+# (Apache-2.0). Currently a bare gate so the rest of the plumbing (rank signal,
+# vector_cache, config toggle, query/index wiring) builds and stays inert
+# without the native runtime. To actually enable it, add the dep and flip this
+# to `semantic = ["dep:fastembed"]`:
+#     fastembed = { version = "4", optional = true }
+# then bundle model.onnx + tokenizer files under `src-tauri/embedding-runtime/`
+# (+ onnxruntime.dll in tauri.conf.json bundle.resources) and build with
+# `--features semantic`. See src/commands/embedding.rs for the loaded filenames.
+semantic = ["dep:fastembed"]
+screenrec = [
+    "dep:cpal",
+    "dep:wasapi",
+    "dep:rubato",
+    "windows/Graphics_Capture",
+    "windows/Graphics_DirectX",
+    "windows/Graphics_DirectX_Direct3D11",
+    "windows/Win32_System_WinRT_Graphics_Capture",
+    "windows/Win32_System_WinRT_Direct3D11",
+    "windows/Win32_Graphics_Direct3D",
+    "windows/Win32_Graphics_Direct3D11",
+    "windows/Win32_Graphics_Dxgi",
+    "windows/Win32_Graphics_Dxgi_Common",
+    "windows/Win32_Media_MediaFoundation",
+    "windows/Win32_Media_Audio",
+    "windows/Win32_Media_KernelStreaming",
+    "windows/Win32_System_Com_StructuredStorage",
+    "windows/Win32_UI_HiDpi",
+]
+
+[lib]
+# The `_lib` suffix may seem redundant but it is necessary
+# to make the lib name unique and wouldn't conflict with the bin name.
+# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
+name = "keepitlocal_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["protocol-asset", "tray-icon"] }
+tauri-plugin-opener = "2"
+tauri-plugin-global-shortcut = "2.3.1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri-plugin-dialog = "2.7.1"
+tauri-plugin-notification = "2"
+md-5 = "0.11.0"
+sha1 = "0.11.0"
+sha2 = "0.11.0"
+blake3 = "1.5"
+base64 = "0.22"
+urlencoding = "2.1"
+hex = "0.4"
+aes-gcm = { version = "0.10.3", features = ["std", "stream"] }
+hkdf = "0.13"
+# `default-features = false` is load-bearing, not cosmetic: fastembed's default
+# set includes `hf-hub-native-tls`, which pulls hf-hub -> reqwest + native-tls,
+# statically linking a full async HTTP/TLS client into the shipped binary and
+# breaking the About screen's "no HTTP client deps in the binary" claim. We
+# never hit HuggingFace at runtime (the model is local — see
+# embedding::set_model_dir), so hf-hub is dead weight. `ort-download-binaries`
+# is kept explicitly: it fetches the ONNX runtime once at BUILD time only
+# (build-dependency, never linked into the shipped binary). Vendoring
+# onnxruntime.dll + switching to ort-load-dynamic would remove that build-time
+# fetch too — not done yet, see embedding-runtime/README.md.
+fastembed = { version = "4", optional = true, default-features = false, features = [
+    "ort-download-binaries",
+] }
+# The image-background-removal feature uses the same ONNX Runtime version as
+# fastembed, but directly so Image Studio can run the bundled U2NETP model.
+ort = { version = "=2.0.0-rc.9", optional = true, default-features = false }
+
+# argon2 — memory-hard password KDF for the Encrypt/Decrypt tool. The password
+# is run through Argon2id (never used as a raw key); a keyfile, when supplied,
+# is mixed in as the Argon2 secret/pepper.
+argon2 = "0.5"
+# ssh-key — pure-Rust OpenSSH key handling for the SSH Key Manager: generate
+# Ed25519/RSA/ECDSA, parse/serialize keys, SHA-256 fingerprints, and passphrase
+# (bcrypt-pbkdf) encryption of private keys. No OpenSSL / native deps.
+ssh-key = { version = "0.6", features = ["ed25519", "rsa", "ecdsa", "encryption"] }
+p256 = { version = "0.14.0-rc.9", features = ["ecdh", "std"] }
+html-escape = "0.2"
+qrcode = "0.14"
+image = { version = "0.25.0", default-features = false, features = ["png", "jpeg", "webp", "bmp", "tiff", "ico", "gif"] }
+# imageproc — pure-Rust image-processing ops (Canny edges + contour finding +
+# Gaussian blur) for the offline CamScanner's document-quad detection. Tracks
+# the same `image` 0.25 ecosystem we already pull in. We disable its default
+# features (which would force `image/default`, plus the `text`/`fft` extras and
+# their ab_glyph/rustdct deps) and keep only `rayon`, which reuses the rayon
+# crate we already depend on. No native build. ~600 KB binary impact.
+imageproc = { version = "0.27", default-features = false, features = ["rayon"] }
+# ab_glyph — TrueType/OpenType rasterizer for the text watermark (real glyphs:
+# lowercase, accents, Cyrillic — replaces the old 5x7 ASCII-uppercase bitmap).
+# Pure Rust, no native build; the font itself is a Windows system font read at runtime.
+ab_glyph = "0.2"
+# nalgebra — linear algebra, used by the CamScanner to solve the 4-point DLT
+# projective homography (an 8×8 linear system) for perspective deskew. Pure
+# Rust, no native build. We only need the dense static-matrix solver, so default
+# features stay on (std). ~1.5 MB binary impact (mostly generic monomorphization,
+# heavily de-duplicated by LTO in release).
+nalgebra = "0.35"
+# Quality Pass Wave 1 / DF-1 (2026-05-29): perceptual image hashing.
+# Used by DuplicateFinder's "Similar images" mode to find photos that
+# are visually the same (resized / re-saved / lightly cropped) but not
+# byte-identical. 8 x 8 dHash by default → 64-bit fingerprint with
+# Hamming-distance comparison. The `image_hasher` crate is the
+# actively maintained fork of `img_hash` and tracks the modern
+# `image` crate (0.25) we already pull in above.
+image_hasher = "3.0"
+tauri-plugin-fs = "2.5.1"
+serde_yaml = "0.9"
+toml = "1.1.2"
+quick-xml = { version = "0.36.2", features = ["serialize"] }
+img-parts = "0.4.0"
+# `zip` is also used by the Archive Utility, which needs AES support for
+# password-protected ZIP create and extract operations.
+zip = { version = "8.6.0", default-features = false, features = ["deflate", "aes-crypto"] }
+tar = "0.4"
+flate2 = "1"
+xz2 = "0.1"
+sevenz-rust2 = { version = "0.13", features = ["compress", "util", "aes256"] }
+zstd = "0.13"
+rand = { version = "0.8", features = ["small_rng"] }
+walkdir = "2"
+fs2 = "0.4"
+# sysinfo — cross-platform live RAM / CPU / disk probes for the adaptive
+# resource module (`core::resources`). Replaces the Windows-only
+# GlobalMemoryStatusEx + PowerShell-CIM probes with one clean source.
+sysinfo = "0.39.3"
+# diffy — pure-Rust unified diff + 3-way merge (with conflict markers) for the
+# Folder Diff & 3-Way Merge tool.
+diffy = "0.4"
+lopdf = "0.34"
+# pdfium-render — Rust wrapper over Google's PDFium (BSD-licensed, Chrome's PDF
+# engine). Primary PDF text extractor for content indexing: lazy-loading (low
+# memory on huge PDFs) + accurate Unicode where lopdf returns nothing (verified
+# on a real Georgian-book corpus — see text_extract.rs). lopdf stays as the
+# automatic fallback. Needs pdfium.dll beside the exe (bundled via
+# tauri.conf.json bundle.resources, same as the Vosk DLLs).
+pdfium-render = "0.8"
+# leptess — Rust bindings for libtesseract (the C library behind tesseract.exe).
+# Optional and feature-gated (see [features] above). When enabled, OCR runs
+# in-process instead of spawning tesseract.exe per file, saving ~100-300ms
+# of subprocess overhead per call. Default subprocess path stays as fallback.
+# Build requires Tesseract dev libs + headers — see the feature comment.
+leptess = { version = "0.14", optional = true }
+calamine = "0.26"
+rust_xlsxwriter = "0.79"
+csv = "1.3"
+docx-rs = "0.4.15"
+docxide-pdf = "0.12.2"
+sqlformat = "0.2"
+# Elite Wave / SB-4 (2026-05-29): real SQL parsing for the formatter's
+# analysis panel. The old "Explain" was regex string-matching cosplaying
+# as a query planner; sqlparser gives an actual AST so we can do honest,
+# accurate static analysis — syntax validation, statement classification,
+# and high-value safety checks (UPDATE/DELETE with no WHERE = affects
+# every row). Pure Rust, no native build. NOT a database EXPLAIN plan
+# (we have no live DB/schema) — the UI is labelled "Lint" accordingly.
+sqlparser = "0.52"
+resvg = "0.44"
+usvg = "0.44"
+tiny-skia = "0.11"
+# ravif — AV1 (AVIF) image encoder for Image Studio output. rav1e's x86 assembly
+# needs `nasm` at build time (a build-machine requirement; SIMD-accelerated encode).
+ravif = "0.11"
+# mozjpeg — libjpeg-turbo + mozjpeg trellis quantization for the Image Studio JPEG
+# encoder (visibly smaller files than the baseline `image` encoder at the same
+# quality). Builds with the system C compiler; SIMD auto-disables without nasm.
+mozjpeg = "0.10"
+# Elite Wave / SB-2 (2026-05-29): real image-compression encoders.
+# The `image` crate's WebP path is LOSSLESS-only (it silently ignored the
+# quality slider and often produced files BIGGER than the source). `webp`
+# wraps libwebp for proper quality-controlled lossy WebP. `oxipng` is a
+# pure-Rust lossless PNG optimizer (real byte savings vs image's plain
+# deflate). Batch + these encoders is how the Compressor beats Squoosh
+# (which is one-image-at-a-time, in-browser).
+webp = "0.3"
+oxipng = { version = "9", default-features = false, features = ["parallel"] }
+kamadak-exif = "0.6"
+ico = "0.3"
+rayon = "1.10"
+redb = "2"
+tantivy = "0.26"
+# rusqlite — read-only SQLite for browser bookmarks + history (Chromium
+# `History`, Firefox `places.sqlite`). `bundled` compiles the SQLite
+# amalgamation via `cc`: no system SQLite, no vcpkg, no shipped DLL, and no new
+# build-machine requirement (mozjpeg/webp/imageproc already mandate a C
+# toolchain). Deliberately NOT feature-gated like vosk/ocr-leptess/screenrec/
+# semantic — those gates exist for external build deps or large runtime assets,
+# neither of which applies here. The FEATURE is gated at runtime by an
+# off-by-default preference instead.
+# We only ever open COPIES in our own temp dir; the user's browser files are
+# touched by `fs::copy` reads and nothing else. See browser_search.rs.
+rusqlite = { version = "0.40", features = ["bundled"] }
+notify = "8"
+ignore = "0.4"
+# Wave 3.3 — ripgrep's engine as a library, for live un-indexed content
+# search (the search-pillar fallback when Tantivy returns no results for
+# a folder-scoped query). Three small crates that together cover walk +
+# regex matcher + streaming search; no external binary, no subprocess.
+# `ignore` (above) handles .gitignore-aware traversal, same crate ripgrep
+# uses itself.
+grep-searcher = "0.1"
+grep-matcher = "0.1"
+grep-regex = "0.1"
+# grex — generate a regex from a list of example strings. Powers the
+# Regex Tool's "Suggest pattern from examples" feature so users can
+# build patterns without learning the syntax — paste a handful of
+# sample inputs, click Suggest, get a working pattern. Pure-Rust,
+# Apache-2.0, ~150 KB binary impact.
+grex = "1.4"
+# pulldown-cmark — CommonMark parser. Powers the Notes "Export as PDF"
+# pipeline: markdown → AST → docx-rs Docx → docxide_pdf → PDF. Wave
+# 3.1 (2026-05-27). Same parser the frontend's `marked` lib uses, so
+# the on-screen and on-PDF interpretations agree.
+pulldown-cmark = "0.13"
+# syntect — pandoc-grade syntax highlighting for code blocks in the
+# Notes PDF export (Wave 4.3b, 2026-05-27). Walks each code block
+# token-by-token, emitting per-token character styles (KeywordTok,
+# StringTok, etc.) into the OOXML so the rendered PDF shows
+# real syntax colors instead of plain monospaced text. Default
+# features include bundled syntax definitions for ~150 languages
+# (Rust, JS, Python, Go, …). Apache-2.0 + MIT licensed.
+syntect = { version = "5", default-features = false, features = ["default-syntaxes", "default-themes", "regex-onig"] }
+time = { version = "0.3", features = ["local-offset", "formatting"] }
+open = "5.3.3"
+# Pure-Rust math expression evaluator for the overlay's inline calculator
+# (e.g. "23 * 47" → "1081"). No code execution — just arithmetic + parens.
+evalexpr = "12"
+# Already in our transitive deps via `ignore`; pulled in as a direct dep for
+# `sensitive_scan` so the secret/credential detector can use `RegexSet`.
+regex = "1.10"
+# fancy-regex — regex engine WITH lookbehind / lookahead / backrefs (the real
+# `regex` crate deliberately omits them so it can keep its DFA O(n) guarantee).
+# Used in `sensitive_scan` so the noisy detectors (generic key=value, Bearer,
+# SSN context) can embed placeholder/ref REJECTION inside the pattern itself
+# via negative lookahead — instead of matching first and then running a Rust
+# validator function to throw the FP away. Two wins: (1) cleaner code — fewer
+# post-filters; (2) for Phase 6.5 span/blur correctness, we never produce a
+# span for a placeholder. ~120 KB binary cost; MIT licensed. NFA backtracking
+# is slightly slower than DFA but our text inputs are capped (~96 KB per scan)
+# so the wall-clock difference is microseconds. High-confidence prefixed
+# tokens stay on `RegexSet` (already unambiguous; no lookbehind needed).
+fancy-regex = "0.16"
+
+# ─── Vosk offline speech recognition (opt-in via `vosk` feature) ──────
+# Both crates are `optional = true` so the project still builds without
+# libvosk on the system. The `vosk` feature in [features] turns them on.
+#   • `vosk` — Rust binding to libvosk (links against libvosk.dll/.lib).
+#   • `cpal` — Cross-platform audio I/O. Used to capture raw 16 kHz mono
+#     PCM from the default microphone, which is exactly what Vosk
+#     expects. Pure-Rust on Windows (uses WASAPI under the hood).
+vosk = { version = "0.3", optional = true }
+cpal = { version = "0.15", optional = true }
+# webrtc-vad — a tiny, deterministic DSP voice-activity detector (the
+# WebRTC project's VAD, NOT an ML model). Voice upgrade #23: a pre-filter
+# ahead of Vosk so the recognizer is only fed speech (plus a trailing-
+# silence hangover) — less CPU and fewer noise-driven partials while
+# continuously listening. Optional, enabled by the `vosk` feature.
+webrtc-vad = { version = "0.4", optional = true }
+
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-autostart = "2"
+
+[target.'cfg(windows)'.dependencies]
+# winreg — ergonomic Windows registry access. Used by `privacy_audit` to
+# READ the per-user CapabilityAccessManager ConsentStore (which apps may use
+# the mic/camera). Read-only; the Privacy Audit never writes the registry.
+winreg = "0.52"
+# ntfs — pure-Rust read-only NTFS file system parser. Used by `mft_walker`
+# (DuplicateFinder Quality Pass Wave 1, 2026-05-29) to enumerate every
+# file on an NTFS volume directly from the MFT — orders of magnitude
+# faster than walking the directory tree with FindFirstFile/FindNextFile
+# (WizTree-style fast path). Falls back to the parallel walker on any
+# error (non-NTFS volume, network share, OneDrive virtualized files,
+# permission denied). Not used by the filename or content index — those
+# stay on the standard walker per Wave 6.
+ntfs = "0.4"
+# parselnk — pure-Rust parser for Windows .lnk shortcut files. Used by
+# `launcher_icons` to resolve a Start-Menu shortcut to the underlying .exe
+# *before* asking the shell for its icon. SHGetFileInfoW stamps the system
+# shortcut-arrow overlay on top of any HICON it returns for a `.lnk` path,
+# which made every shortcut-launched app render with a small arrow badge
+# in the overlay search results. By feeding the resolved target executable
+# to the shell instead, we get the clean icon. No background threads, no
+# network — purely synchronous binary parsing of a small file (~1–2 KB).
+parselnk = "0.1"
+# window-vibrancy — applies the Windows DWM acrylic backdrop to the command
+# palette window so the desktop behind it is blurred (real frosted glass,
+# the only way to blur the desktop behind a transparent window — CSS
+# backdrop-filter can't reach it). Opt-in + reversible via Settings; off by
+# default because acrylic can square the rounded corners on some builds.
+# Takes `impl HasWindowHandle`, which Tauri 2's WebviewWindow implements,
+# so no manual HWND/version juggling with the `windows` crate below.
+window-vibrancy = "0.6"
+# wasapi — safe Rust wrapper over the Win32 WASAPI APIs. Used by the Screen
+# Recorder (`screenrec` feature) for SYSTEM-AUDIO LOOPBACK capture of the default
+# render endpoint — cpal cannot do loopback on Windows (its loopback PR was
+# reverted before 0.15). MIT-licensed, pure-Rust over the OS API, no bundled DLL.
+wasapi = { version = "0.15", optional = true }
+# rubato — high-quality (windowed-sinc) asynchronous sample-rate converter. Used
+# by the Screen Recorder to resample the microphone + loopback streams onto one
+# 48 kHz/stereo mixing canvas; the naive linear resampler in `voice.rs` aliases on
+# full-range music/system audio and stays reserved for 16 kHz speech. MIT, pure-Rust.
+rubato = { version = "0.16", optional = true }
+windows = { version = "0.54.0", features = [
+    "Data_Pdf",
+    "Foundation",
+    "Storage",
+    "Storage_Streams",
+    "Win32_System_WinRT",
+    # Used by launcher_icons for extracting app icons from .exe / .lnk paths.
+    "Win32_Foundation",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_Graphics_Gdi",
+    # DWM window-corner rounding for the command palette acrylic mode
+    # (DwmSetWindowAttribute / DWMWA_WINDOW_CORNER_PREFERENCE).
+    "Win32_Graphics_Dwm",
+    # OS build-number detection (OSVERSIONINFOW + RtlGetVersion) to gate the
+    # Win11-only acrylic blur toggle off on Windows 10.
+    "Win32_System_SystemInformation",
+    "Wdk_System_SystemServices",
+    "Win32_Storage_FileSystem",
+    # Used by quick_actions for lock/sleep/shutdown/restart commands.
+    "Win32_System_Shutdown",
+    "Win32_System_Power",
+    # Used by clipboard_history for capturing clipboard changes + identifying
+    # the foreground app that did the copy. The LibraryLoader feature is
+    # needed for GetModuleHandleW used when registering the hidden message-
+    # only window class for the event-driven clipboard listener.
+    "Win32_System_DataExchange",
+    "Win32_System_Memory",
+    "Win32_System_Threading",
+    "Win32_System_ProcessStatus",
+    # Wave 6 (2026-05-28): `Win32_System_Ioctl` + `Win32_System_IO` were
+    # required by the MFT/USN fast-path (FSCTL_ENUM_USN_DATA via
+    # DeviceIoControl). Removed with the engine — the walker only needs
+    # the standard `notify` watcher.
+    # 2026-05-29 update: re-added for DuplicateFinder ONLY (Quality
+    # Pass Wave 1) so a single ad-hoc "find dupes in my 900 k-photo
+    # library" scan can use raw MFT enumeration via DeviceIoControl
+    # and read FSCTL_GET_NTFS_VOLUME_DATA. The filename/content index
+    # path stays on the standard walker.
+    "Win32_System_IO",
+    "Win32_System_Ioctl",
+    # Out-of-process content extractor pool (Phase 4, task 11) — each extractor
+    # child runs inside a Job Object with a hard per-process memory cap, so a
+    # pathological file can never spike RAM past the OS-enforced ceiling.
+    "Win32_System_JobObjects",
+    "Win32_System_LibraryLoader",
+    # Used by clipboard_history for synthetic Ctrl+V keystroke injection via
+    # SendInput. Lets us auto-paste a selected history entry into the app the
+    # user was working in before they invoked the clipboard overlay.
+    "Win32_UI_Input_KeyboardAndMouse",
+    # DPAPI (CryptProtectData / CryptUnprotectData) — used by util::dpapi
+    # for at-rest encryption of all values in the local redb database. The
+    # key is derived from the user's Windows account, so the encrypted
+    # blobs are only readable from this user account on this machine.
+    "Win32_Security_Cryptography",
+    # Token + privilege APIs needed by quick_actions::execute_system_command
+    # to enable SE_SHUTDOWN_NAME on the current process before calling
+    # ExitWindowsEx. Without this, shutdown / restart / signout fail with
+    # ERROR_PRIVILEGE_NOT_HELD (0x80070522) even though the user has the
+    # right by default — Windows requires the privilege to be explicitly
+    # enabled in the token, not merely present.
+    "Win32_Security",
+    # UI Automation (voice accessibility control, #20) — voice_ui reads the
+    # focused window's control tree via the IUIAutomation COM API to list
+    # interactive elements (buttons, links, menu items) for the numbered
+    # "show elements" overlay. Win32_System_Com supplies CoCreateInstance /
+    # CoInitializeEx for instantiating the automation object.
+    "Win32_UI_Accessibility",
+    "Win32_System_Com",
+    # WinRT Radio API (Wave 2.2: palette commands "wifi", "bluetooth",
+    # "airplane"). Lets us read + toggle the Wi-Fi and Bluetooth radios
+    # WITHOUT admin elevation — unlike `netsh interface` which needs UAC.
+    # User grants per-app radio access on first invoke via
+    # Radio::RequestAccessAsync. Falls back gracefully when access is
+    # denied or no radio of that kind is present (desktop with no Wi-Fi).
+    # `Foundation_Collections` is required because Radio::GetRadiosAsync
+    # returns IVectorView<Radio> — without it the static fn is gated out.
+    "Devices_Radios",
+    "Foundation_Collections",
+] }

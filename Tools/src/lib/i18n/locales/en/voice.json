@@ -1,0 +1,15 @@
+{
+  "voice": {
+    "engine": "Engine",
+    "engineWindows": "Windows (built-in)",
+    "engineVosk": "Vosk (offline)",
+    "speakOnce": "Speak once",
+    "continuousDictation": "Continuous dictation",
+    "stop": "Stop",
+    "listening": "Listening…",
+    "transcribing": "Transcribing {seconds}s of audio…",
+    "clickToCancel": "Click to cancel recording",
+    "modelPath": "Model path",
+    "pickModel": "Pick model"
+  }
+}

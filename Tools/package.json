@@ -1,0 +1,75 @@
+{
+  "name": "keepitlocal",
+  "version": "0.1.0",
+  "description": "",
+  "type": "module",
+  "scripts": {
+    "dev": "vite dev",
+    "build": "vite build",
+    "preview": "vite preview",
+    "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+    "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint:rust": "cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings",
+    "tauri": "tauri",
+    "tauri:dev:vosk": "tauri dev --features vosk",
+    "tauri:build:vosk": "tauri build --features vosk",
+    "installer": "tauri build --bundles nsis"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@lucide/svelte": "^1.14.0",
+    "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-autostart": "~2.5.1",
+    "@tauri-apps/plugin-dialog": "^2.7.1",
+    "@tauri-apps/plugin-fs": "^2.5.1",
+    "@tauri-apps/plugin-notification": "^2.3.3",
+    "@tauri-apps/plugin-opener": "^2",
+    "@tiptap/core": "^2.27.2",
+    "@tiptap/extension-image": "^2.27.2",
+    "@tiptap/extension-link": "^2.27.2",
+    "@tiptap/extension-placeholder": "^2.27.2",
+    "@tiptap/extension-table": "^2.27.2",
+    "@tiptap/extension-table-cell": "^2.27.2",
+    "@tiptap/extension-table-header": "^2.27.2",
+    "@tiptap/extension-table-row": "^2.27.2",
+    "@tiptap/extension-task-item": "^2.27.2",
+    "@tiptap/extension-task-list": "^2.27.2",
+    "@tiptap/pm": "^2.27.2",
+    "@tiptap/starter-kit": "^2.27.2",
+    "@tiptap/suggestion": "^2.27.2",
+    "@types/canvas-confetti": "^1.9.0",
+    "canvas-confetti": "^1.9.4",
+    "highlight.js": "^11.11.1",
+    "marked": "^18.0.3",
+    "svelte-i18n": "^4.0.1",
+    "tiptap-markdown": "^0.9.0"
+  },
+  "devDependencies": {
+    "@sveltejs/adapter-static": "^3.0.6",
+    "@sveltejs/kit": "^2.9.0",
+    "@sveltejs/vite-plugin-svelte": "^5.0.0",
+    "@tauri-apps/cli": "^2",
+    "@types/markdown-it": "^14.1.2",
+    "@types/node": "^24.6.0",
+    "autoprefixer": "^10.5.0",
+    "markdown-it": "^14.1.1",
+    "postcss": "^8.5.14",
+    "svelte": "^5.0.0",
+    "svelte-check": "^4.0.0",
+    "tailwindcss": "^3.4.19",
+    "typescript": "~5.6.2",
+    "vite": "^6.0.3",
+    "vitest": "^3.2.4"
+  },
+  "pnpm": {
+    "//": "pnpm 9+ blocks postinstall scripts unless approved (security default) and treats unapproved ones as a hard error in non-interactive contexts. es5-ext (a transitive dep of svelte-i18n) ships a postinstall that just prints a sponsorship message — we deliberately skip it. Listing it in ignoredBuiltDependencies is pnpm's official 'I've reviewed this and chose not to run it' opt-out, which silences ERR_PNPM_IGNORED_BUILDS so `pnpm tauri build` succeeds.",
+    "ignoredBuiltDependencies": [
+      "es5-ext"
+    ],
+    "overrides": {
+      "es5-ext": "0.10.64"
+    }
+  }
+}

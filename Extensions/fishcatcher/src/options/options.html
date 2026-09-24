@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="../ui/base.css">
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+  <header>
+    <img src="../icons/icon32.png" alt="">
+    <h1><span data-i18n="appName">FishCatcher</span> <span data-i18n="optionsHeading">Settings</span></h1>
+  </header>
+
+  <section>
+    <label class="row">
+      <input type="checkbox" id="strict">
+      <span data-i18n="strictLabel">Strict mode: show a warning banner on risky pages</span>
+    </label>
+    <p class="hint" data-i18n="strictHint">Off by default. The banner never blocks the page and can always be dismissed.</p>
+  </section>
+
+  <section>
+    <label class="row">
+      <input type="checkbox" id="remote">
+      <span data-i18n="remoteLabel">Keep threat lists updated automatically</span>
+    </label>
+    <p class="hint" data-i18n="remoteHint">Optional. Only a JSON file is downloaded. Nothing leaves your device.</p>
+    <p class="hint"><span data-i18n="remoteDefaultHint">Updates come from</span> <a href="https://github.com/Topurrra/fishcatcher-registry" target="_blank" rel="noopener noreferrer" data-i18n="remoteSourceLink">the FishCatcher registry on GitHub</a></p>
+    <div id="remote-status" class="statusline" hidden><span class="si-icon"></span><span class="si-text"></span></div>
+  </section>
+
+  <section>
+    <label class="row">
+      <input type="checkbox" id="cloud">
+      <span data-i18n="cloudLabel">Cloud age check: ask public RDAP how old the domain is</span>
+    </label>
+    <p class="hint" data-i18n="cloudHint">Sends only the registrable domain to rdap.org. Off by default.</p>
+    <div id="cloud-status" class="statusline" hidden><span class="si-icon"></span><span class="si-text"></span></div>
+  </section>
+
+  <section>
+    <label class="row">
+      <input type="checkbox" id="downloads">
+      <span data-i18n="downloadGuardLabel">Download guard: warn about disguised or dangerous downloads</span>
+    </label>
+    <p class="hint" data-i18n="downloadGuardHint">Checks each download's real type against its name. Needs download and notification access, requested when you turn it on. Off by default.</p>
+    <div id="download-status" class="statusline" hidden><span class="si-icon"></span><span class="si-text"></span></div>
+  </section>
+
+  <section>
+    <label class="row">
+      <input type="checkbox" id="gsb">
+      <span data-i18n="gsbLabel">Google Safe Browsing check</span>
+    </label>
+    <p class="hint" data-i18n="gsbHint">Checks the address you visit against Google Safe Browsing. It sends the address to Google and needs your own free Google API key. Off by default.</p>
+    <label class="row url">
+      <span data-i18n="gsbKeyLabel">Google API key</span>
+      <input type="password" id="gsb-key" autocomplete="off" spellcheck="false" placeholder="AIza...">
+    </label>
+    <p class="hint"><a href="https://developers.google.com/safe-browsing/v4/get-started" target="_blank" rel="noopener noreferrer" data-i18n="gsbKeyGuide">How to get a free key</a></p>
+    <div id="gsb-status" class="statusline" hidden><span class="si-icon"></span><span class="si-text"></span></div>
+  </section>
+
+  <section>
+    <label class="row">
+      <input type="checkbox" id="senior">
+      <span data-i18n="seniorLabel">Family mode: bigger text and a clear alert on dangerous sites</span>
+    </label>
+    <p class="hint" data-i18n="seniorHint">A larger, simpler view for anyone who wants it. You can add a helper to be told when a site looks dangerous.</p>
+    <label class="row url">
+      <span data-i18n="seniorHelperLabel">Helper email (optional)</span>
+      <input type="email" id="senior-helper" autocomplete="off" spellcheck="false" placeholder="name@example.com">
+    </label>
+    <p class="hint" data-i18n="seniorHelperHint">On a dangerous site, one tap opens an email to this person. Nothing is sent until you press send.</p>
+  </section>
+
+  <section>
+    <h2 data-i18n="trustTitle">Trusted sites</h2>
+    <p id="trust-empty" class="hint" data-i18n="trustEmpty" hidden>No trusted sites yet.</p>
+    <ul id="trust-list"></ul>
+  </section>
+
+  <script type="module" src="options.js"></script>
+</body>
+</html>

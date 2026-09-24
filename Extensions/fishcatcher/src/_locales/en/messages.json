@@ -1,0 +1,470 @@
+{
+  "appName": {
+    "message": "Fish Catcher",
+    "description": "Extension name"
+  },
+  "appDescription": {
+    "message": "Detects phishing-like URL patterns and explains the warning signs in plain language, without blocking anything.",
+    "description": "Extension description shown in the store and extension manager"
+  },
+  "m0Status": {
+    "message": "Detection engine coming soon",
+    "description": "Placeholder status shown until the M1 engine ships"
+  },
+  "m0Note": {
+    "message": "FishCatcher is installed. URL analysis arrives with the next update. Nothing is sent anywhere, everything stays on your device.",
+    "description": "Placeholder explanation shown in popup and panel"
+  },
+  "panelHint": {
+    "message": "When you visit a page, FishCatcher will show its verdict here and explain every warning sign it finds.",
+    "description": "Panel placeholder explaining the future behavior"
+  },
+  "reasonBrand": {
+    "message": "Domain looks like a misspelling of $1",
+    "description": "S1 typo-squat signal; $1 = real brand domain"
+  },
+  "reasonHomoglyph": {
+    "message": "Uses look-alike characters to imitate $1",
+    "description": "S2 IDN/homoglyph signal; $1 = imitated brand name"
+  },
+  "reasonBrandSubdomain": {
+    "message": "Mentions $1 but is not a $1 domain",
+    "description": "S3 brand-in-subdomain signal; $1 = brand name"
+  },
+  "reasonIp": {
+    "message": "Address is a raw IP number. Legitimate sites rarely do this",
+    "description": "S4 IP-address URL signal"
+  },
+  "reasonAtSign": {
+    "message": "Everything before @ in the address is ignored by the browser",
+    "description": "S5 user@host trick signal"
+  },
+  "reasonTld": {
+    "message": "Uses a high-abuse domain ending (.$1)",
+    "description": "S6 suspicious TLD signal; $1 = TLD"
+  },
+  "reasonKeyword": {
+    "message": "Contains a word often used in phishing pages ($1)",
+    "description": "S7 phishy keyword signal; $1 = keyword"
+  },
+  "reasonSubdomains": {
+    "message": "Unusually deep chain of subdomains ($1 parts)",
+    "description": "S8 deep subdomain signal; $1 = label count"
+  },
+  "reasonHttp": {
+    "message": "Connection is not encrypted (http instead of https)",
+    "description": "S9 plaintext connection signal"
+  },
+  "reasonDigits": {
+    "message": "Domain has an unusual mix of digits and hyphens",
+    "description": "S10 generated-domain signal"
+  },
+  "reasonShort": {
+    "message": "Very short, random-looking domain",
+    "description": "S11 short random domain signal"
+  },
+  "levelLow": {
+    "message": "No suspicious signs found",
+    "description": "Low risk verdict"
+  },
+  "levelElevated": {
+    "message": "Some unusual signs. Double-check the address",
+    "description": "Elevated risk verdict"
+  },
+  "levelHigh": {
+    "message": "Multiple phishing indicators. Be careful before logging in",
+    "description": "High risk verdict"
+  },
+  "levelCritical": {
+    "message": "Strong phishing signs. Don't enter passwords here",
+    "description": "Critical risk verdict"
+  },
+  "trustButton": {
+    "message": "Trust this site",
+    "description": "Popup button: whitelist the current registrable domain locally"
+  },
+  "untrustButton": {
+    "message": "Stop trusting this site",
+    "description": "Popup button: remove local whitelist entry"
+  },
+  "recheckButton": {
+    "message": "Check again",
+    "description": "Popup button: re-score the current tab"
+  },
+  "reasonsTitle": {
+    "message": "Why am I seeing this?",
+    "description": "Popup heading above the reasons list"
+  },
+  "noCheck": {
+    "message": "This page can't be checked (browser pages are out of scope)",
+    "description": "Popup status for chrome:// and other uncheckable pages"
+  },
+  "optionsHeading": {
+    "message": "Settings",
+    "description": "Options page heading"
+  },
+  "strictLabel": {
+    "message": "Strict mode: show a warning banner on risky pages",
+    "description": "Options: strict mode toggle"
+  },
+  "strictHint": {
+    "message": "Off by default. The banner never blocks the page and can always be dismissed.",
+    "description": "Options: strict mode explanation"
+  },
+  "remoteLabel": {
+    "message": "Keep threat lists updated automatically",
+    "description": "Options: remote update toggle"
+  },
+  "remoteUrlLabel": {
+    "message": "Update URL",
+    "description": "Options: remote update URL field label"
+  },
+  "remoteHint": {
+    "message": "Optional. Only a JSON file is downloaded. Nothing leaves your device.",
+    "description": "Options: remote update privacy note"
+  },
+  "trustTitle": {
+    "message": "Trusted sites",
+    "description": "Options: trusted sites section heading"
+  },
+  "trustEmpty": {
+    "message": "No trusted sites yet.",
+    "description": "Options: empty trusted list"
+  },
+  "removeTrust": {
+    "message": "Remove",
+    "description": "Options: remove trusted site button"
+  },
+  "bannerDismiss": {
+    "message": "Dismiss",
+    "description": "Strict-mode banner dismiss button"
+  },
+  "reasonBlocklist": {
+    "message": "This domain is on the local blocklist of known-bad sites",
+    "description": "S12 blocklist signal"
+  },
+  "reasonPasswordForm": {
+    "message": "The page asks for a password on a site that isn't a known legitimate domain",
+    "description": "S13 login-form probe signal"
+  },
+  "reasonDeviceCode": {
+    "message": "This page tries to make you enter a device-login code, a known scam pattern",
+    "description": "S14 device-code scam signal"
+  },
+  "deviceCodeNotice": {
+    "message": "Only enter a code here if YOU started the linking process from a trusted app. Scammers show codes on other sites and ask you to type them here.",
+    "description": "Educational notice on legitimate device-code entry pages"
+  },
+  "qrTitle": {
+    "message": "Check a QR code",
+    "description": "Panel QR section heading"
+  },
+  "qrPick": {
+    "message": "Choose image…",
+    "description": "Panel QR file picker button"
+  },
+  "qrCamera": {
+    "message": "Use camera",
+    "description": "Panel QR camera button"
+  },
+  "qrStop": {
+    "message": "Stop camera",
+    "description": "Panel QR camera stop button"
+  },
+  "qrNone": {
+    "message": "No QR code found in that image.",
+    "description": "Panel QR decode failure note"
+  },
+  "qrResultNote": {
+    "message": "Result for the scanned QR code:",
+    "description": "Panel note above a QR check result"
+  },
+  "qrUnreadable": {
+    "message": "Could not read a QR code from that image. Try saving it and using Check a QR image in the panel.",
+    "description": "Context-menu QR check: image could not be fetched or decoded"
+  },
+  "qrNotUrl": {
+    "message": "This QR code does not contain a web address, so there is nothing to check.",
+    "description": "Context-menu QR check: payload is not an http(s) URL"
+  },
+  "ctxCheckQr": {
+    "message": "Check QR code with FishCatcher",
+    "description": "Right-click context menu item on images"
+  },
+  "reasonYoungDomain": {
+    "message": "Domain was registered only $1 days ago. Fresh domains are common in phishing",
+    "description": "S15 opt-in RDAP age check signal; $1 = age in days"
+  },
+  "reasonBloom": {
+    "message": "Matches the community threat feed (probabilistic match)",
+    "description": "S16 bloom-filter community feed signal"
+  },
+  "cloudLabel": {
+    "message": "Cloud age check: ask public RDAP how old the domain is",
+    "description": "Options: RDAP age check toggle"
+  },
+  "cloudHint": {
+    "message": "Sends only the registrable domain to rdap.org. Off by default.",
+    "description": "Options: RDAP privacy note"
+  },
+  "remoteDefaultHint": {
+    "message": "Updates come from",
+    "description": "Options: lead-in before the registry link"
+  },
+  "remoteSourceLink": {
+    "message": "the FishCatcher registry on GitHub",
+    "description": "Options: link text pointing to the registry repository"
+  },
+  "remoteReadyNoCount": {
+    "message": "Threat list is up to date.",
+    "description": "Update status when the count is not known"
+  },
+  "reasonMl": {
+    "message": "The address matches letter patterns common in phishing and randomly generated domains",
+    "description": "S17 lexical model signal"
+  },
+  "linksNone": {
+    "message": "No risky links found on this page.",
+    "description": "Panel note when a link scan finds nothing"
+  },
+  "linkTextMismatch": {
+    "message": "Link shows $1 but actually goes to $2",
+    "description": "Link finding: visible text domain differs from destination; $1 shown, $2 real"
+  },
+  "linkDownloadMismatch": {
+    "message": "Saved as .$2 but it is really a .$1 file",
+    "description": "Link finding: download attribute hides the real file type; $1 real ext, $2 claimed ext"
+  },
+  "linkShortener": {
+    "message": "Shortened link ($1). The real destination is hidden",
+    "description": "Link finding: known URL shortener; $1 = shortener domain"
+  },
+  "linkRisky": {
+    "message": "$1 looks risky",
+    "description": "Link finding: destination scored high/critical by the engine; $1 = domain"
+  },
+  "downloadGuardLabel": {
+    "message": "Download guard: warn about disguised or dangerous downloads",
+    "description": "Options: download guard toggle"
+  },
+  "downloadGuardHint": {
+    "message": "Checks each download's real type against its name. Needs download and notification access, requested when you turn it on. Off by default.",
+    "description": "Options: download guard explanation"
+  },
+  "downloadWarnTitle": {
+    "message": "Risky download",
+    "description": "Download guard notification title"
+  },
+  "downloadMismatchBody": {
+    "message": "\"$1\" is actually a $2, not what its name suggests. Do not open it unless you trust the source.",
+    "description": "Download guard: filename disguises the real type; $1 name, $2 real type"
+  },
+  "downloadDangerousBody": {
+    "message": "\"$1\" is a program ($2), not a document. Only open it if you trust the source.",
+    "description": "Download guard: dangerous executable; $1 name, $2 extension"
+  },
+  "downloadCancel": {
+    "message": "Cancel download",
+    "description": "Download guard notification button"
+  },
+  "downloadKeep": {
+    "message": "Keep",
+    "description": "Download guard notification button"
+  },
+  "remoteUpdating": {
+    "message": "Updating the threat list…",
+    "description": "Shown while the registry download is in progress"
+  },
+  "remoteReady": {
+    "message": "$1 known bad sites, updated $2",
+    "description": "Shown after a successful update; $1 = count, $2 = date"
+  },
+  "remoteError": {
+    "message": "Could not reach the registry. Using the built-in list.",
+    "description": "Shown when the update download fails"
+  },
+  "linksChecked": {
+    "message": "Checked $1 links on this page.",
+    "description": "Shown after a link scan; $1 = number of links checked"
+  },
+  "linksNoneToCheck": {
+    "message": "No links to check on this page.",
+    "description": "Shown after a scan that found no links at all"
+  },
+  "linksUnavailable": {
+    "message": "Could not read this page's links, but the address above was still checked.",
+    "description": "Shown when the page contents cannot be read (error page, browser page, or not loaded)"
+  },
+  "checkingLabel": {
+    "message": "Checking…",
+    "description": "Button label while re-checking the page and its links"
+  },
+  "trustConfirm": {
+    "message": "Now trusting $1",
+    "description": "Confirmation after trusting a site; $1 = domain"
+  },
+  "untrustConfirm": {
+    "message": "No longer trusting $1",
+    "description": "Confirmation after removing trust; $1 = domain"
+  },
+  "downloadActive": {
+    "message": "Watching downloads for disguised files.",
+    "description": "Settings status when the download guard is on"
+  },
+  "cloudActive": {
+    "message": "Checking domain age on risky sites.",
+    "description": "Settings status when the cloud age check is on"
+  },
+  "ageChecking": {
+    "message": "Checking domain age…",
+    "description": "Panel note while an RDAP age lookup is in progress"
+  },
+  "reasonAitmMismatch": {
+    "message": "This page asks for your $1 sign-in, but $2 is not an official $1 site",
+    "description": "M8 AiTM primary signal: identity interaction + claimed brand + origin mismatch; $1 = brand name, $2 = registrable domain"
+  },
+  "reasonAitmResourceGraph": {
+    "message": "Nearly all of this sign-in page is served from a single unrelated site, a pattern seen in relay attacks",
+    "description": "M8 AiTM corroborator: reverse-proxy resource-origin graph collapse"
+  },
+  "reasonAitmDrift": {
+    "message": "The site icon or app manifest is served from a different domain than the page itself",
+    "description": "M8 AiTM soft boost: favicon/manifest cross-origin drift"
+  },
+  "reasonGsbDeceptive": {
+    "message": "Google Safe Browsing flags this as a deceptive (phishing) site",
+    "description": "S18 Google Safe Browsing: SOCIAL_ENGINEERING"
+  },
+  "reasonGsbMalware": {
+    "message": "Google Safe Browsing flags this as a malware site",
+    "description": "S18 Google Safe Browsing: MALWARE"
+  },
+  "reasonGsbUnwanted": {
+    "message": "Google Safe Browsing flags this as hosting unwanted software",
+    "description": "S18 Google Safe Browsing: UNWANTED_SOFTWARE"
+  },
+  "reasonGsbHarmfulApp": {
+    "message": "Google Safe Browsing flags this as a harmful app",
+    "description": "S18 Google Safe Browsing: POTENTIALLY_HARMFUL_APPLICATION"
+  },
+  "reasonGsbUnsafe": {
+    "message": "Google Safe Browsing flags this site as unsafe",
+    "description": "S18 Google Safe Browsing: unknown threat type fallback"
+  },
+  "gsbLabel": {
+    "message": "Google Safe Browsing check",
+    "description": "Options: GSB toggle"
+  },
+  "gsbHint": {
+    "message": "Checks the address you visit against Google Safe Browsing. It sends the address to Google and needs your own free Google API key. Off by default.",
+    "description": "Options: GSB explanation"
+  },
+  "gsbKeyLabel": {
+    "message": "Google API key",
+    "description": "Options: GSB API key field label"
+  },
+  "gsbKeyGuide": {
+    "message": "How to get a free key",
+    "description": "Options: link to Google's Safe Browsing key guide"
+  },
+  "gsbActive": {
+    "message": "Checking sites against Google Safe Browsing.",
+    "description": "Options status when GSB is on"
+  },
+  "reasonCryptoSeed": {
+    "message": "This page asks you to type your wallet recovery phrase or private key. Real wallets never ask for this",
+    "description": "Crypto scam pack: imperative request to enter a seed/recovery phrase or private key"
+  },
+  "reasonTechSupport": {
+    "message": "This page tries to scare you into calling a number to unlock your computer. That is a known scam",
+    "description": "Tech-support / browser-locker scam pack: scare text plus a phone or fullscreen lock"
+  },
+  "seniorLabel": {
+    "message": "Family mode: bigger text and a clear alert on dangerous sites",
+    "description": "Options: family/senior mode toggle"
+  },
+  "seniorHint": {
+    "message": "A larger, simpler view for anyone who wants it. You can add a helper to be told when a site looks dangerous.",
+    "description": "Options: family mode explanation"
+  },
+  "seniorHelperLabel": {
+    "message": "Helper email (optional)",
+    "description": "Options: family mode helper email field label"
+  },
+  "seniorHelperHint": {
+    "message": "On a dangerous site, one tap opens an email to this person. Nothing is sent until you press send.",
+    "description": "Options: family mode helper email explanation"
+  },
+  "seniorTellHelper": {
+    "message": "Tell my helper",
+    "description": "Button that opens a pre-filled email to the chosen helper"
+  },
+  "seniorAlertTitle": {
+    "message": "This site looks dangerous",
+    "description": "Family mode: big in-panel alert title on high/critical sites"
+  },
+  "seniorNotifyTitle": {
+    "message": "FishCatcher: this site looks dangerous",
+    "description": "Family mode: system notification title on a dangerous site"
+  },
+  "seniorNotifyBody": {
+    "message": "$1 shows strong signs of a scam. Do not enter passwords or codes.",
+    "description": "Family mode: system notification body; $1 = domain"
+  },
+  "seniorMailSubject": {
+    "message": "A website looked dangerous",
+    "description": "Subject of the pre-filled helper email"
+  },
+  "seniorMailBody": {
+    "message": "FishCatcher warned me that this website looks dangerous:\n$1\n\nCan you help me check it before I do anything?",
+    "description": "Body of the pre-filled helper email; $1 = domain"
+  },
+  "reportButton": {
+    "message": "Report this site",
+    "description": "Panel button: report the current site to the community registry"
+  },
+  "reportOpening": {
+    "message": "Opening a report form in a new tab.",
+    "description": "Confirmation shown after the report button is pressed"
+  },
+  "reasonFormAction": {
+    "message": "The login form sends what you type to $1, not to this site",
+    "description": "S20 form-action signal; $1 = destination domain"
+  },
+  "reasonFormExfil": {
+    "message": "The login form sends what you type to $1, a service scammers use to collect passwords",
+    "description": "S20 form-action signal, known exfil endpoint; $1 = destination domain"
+  },
+  "openRealSite": {
+    "message": "Open $1",
+    "description": "Button: open the real site of the impersonated brand; $1 = brand domain"
+  },
+  "welcomeTitle": {
+    "message": "Fish Catcher is ready",
+    "description": "First-run page heading and tab title"
+  },
+  "welcomeIntro": {
+    "message": "It checks every page you open, on your device, and warns you in plain language when a page looks like phishing. It never blocks a page.",
+    "description": "First-run page: one-sentence description"
+  },
+  "welcomeLevels": {
+    "message": "The toolbar icon shows one of four colors",
+    "description": "First-run page: heading above the four risk levels"
+  },
+  "welcomeOpenPanel": {
+    "message": "Click the Fish Catcher icon in the toolbar to see the verdict for the current page and the reasons behind it.",
+    "description": "First-run page: how to open the panel (side panel on Chromium, popup on Firefox)"
+  },
+  "welcomeTryDemo": {
+    "message": "Try it on a test page",
+    "description": "First-run page: button opening the demo page on fishcatcher.dev"
+  },
+  "welcomeSettings": {
+    "message": "Settings are optional. Everything works out of the box.",
+    "description": "First-run page: note that no setup is needed"
+  },
+  "welcomeOpenSettings": {
+    "message": "Open settings",
+    "description": "First-run page: link to the options page"
+  }
+}

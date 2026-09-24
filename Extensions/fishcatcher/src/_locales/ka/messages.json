@@ -1,0 +1,470 @@
+{
+  "appName": {
+    "message": "Fish Catcher",
+    "description": "Extension name"
+  },
+  "appDescription": {
+    "message": "ამოიცნობს ფიშინგისთვის დამახასიათებელ URL-ნიშნებს და გასაგებად განგიმარტავთ, რატომ გაფრთხილებთ, და არაფერს ბლოკავს.",
+    "description": "Extension description shown in the store and extension manager"
+  },
+  "m0Status": {
+    "message": "შემოწმების ძრავა მალე გამოჩნდება",
+    "description": "Placeholder status shown until the M1 engine ships"
+  },
+  "m0Note": {
+    "message": "FishCatcher დაყენებულია. URL-ების ანალიზი შემდეგ განახლებასთან ერთად გამოჩნდება. არაფერი იგზავნება, ყველაფერი თქვენს მოწყობილობაზე რჩება.",
+    "description": "Placeholder explanation shown in popup and panel"
+  },
+  "panelHint": {
+    "message": "გვერდზე შესვლისას FishCatcher აქ გაჩვენებთ გადაწყვეტილებას და განმარტავს ყველა ნაპოვნ საეჭვო ნიშანს.",
+    "description": "Panel placeholder explaining the future behavior"
+  },
+  "reasonBrand": {
+    "message": "დომენი ჰგავს $1-ის დამახინჯებულ ვარიანტს",
+    "description": "S1 typo-squat signal; $1 = real brand domain"
+  },
+  "reasonHomoglyph": {
+    "message": "იყენებს მსგავს სიმბოლოებს, რომ მოიჩვენოს როგორც $1",
+    "description": "S2 IDN/homoglyph signal; $1 = imitated brand name"
+  },
+  "reasonBrandSubdomain": {
+    "message": "ახსენებს $1-ს, მაგრამ $1-ის დომენი არ არის",
+    "description": "S3 brand-in-subdomain signal; $1 = brand name"
+  },
+  "reasonIp": {
+    "message": "მისამართი სუფთა IP-რიცხვია. ნამდვილი საიტები იშვიათად ასე იქცევიან",
+    "description": "S4 IP-address URL signal"
+  },
+  "reasonAtSign": {
+    "message": "ბრაუზერი მისამართში @-მდე ნაწილს იგნორირებას უკეთებს",
+    "description": "S5 user@host trick signal"
+  },
+  "reasonTld": {
+    "message": "იყენებს სარისკო დომენურ დაბოლოებას (.$1)",
+    "description": "S6 suspicious TLD signal; $1 = TLD"
+  },
+  "reasonKeyword": {
+    "message": "შეიცავს სიტყვას, რომელსაც ფიშინგური გვერდები ხშირად იყენებენ ($1)",
+    "description": "S7 phishy keyword signal; $1 = keyword"
+  },
+  "reasonSubdomains": {
+    "message": "ქვედომენების არაბუნებრივად გრძელი ჯაჭვი ($1 ნაწილი)",
+    "description": "S8 deep subdomain signal; $1 = label count"
+  },
+  "reasonHttp": {
+    "message": "კავშირი არ არის დაშიფრული (https-ის ნაცვლად http)",
+    "description": "S9 plaintext connection signal"
+  },
+  "reasonDigits": {
+    "message": "დომენს ციფრებისა და დეფისების არაბუნებრივი ნაზავი აქვს",
+    "description": "S10 generated-domain signal"
+  },
+  "reasonShort": {
+    "message": "ძალიან მოკლე, შემთხვევითი სახის დომენი",
+    "description": "S11 short random domain signal"
+  },
+  "levelLow": {
+    "message": "საეჭვო ნიშნები არ ჩანს",
+    "description": "Low risk verdict"
+  },
+  "levelElevated": {
+    "message": "რამდენიმე უჩვეულო ნიშანი. კიდევ ერთხელ შეამოწმეთ მისამართი",
+    "description": "Elevated risk verdict"
+  },
+  "levelHigh": {
+    "message": "ფიშინგის რამდენიმე ნიშანი. სიფრთხილე, სანამ შეხვალთ",
+    "description": "High risk verdict"
+  },
+  "levelCritical": {
+    "message": "ფიშინგის ძლიერი ნიშნები. ნუ შეიყვანთ აქ პაროლებს",
+    "description": "Critical risk verdict"
+  },
+  "trustButton": {
+    "message": "ენდე ამ საიტს",
+    "description": "Popup button: whitelist the current registrable domain locally"
+  },
+  "untrustButton": {
+    "message": "ნდობის გაუქმება",
+    "description": "Popup button: remove local whitelist entry"
+  },
+  "recheckButton": {
+    "message": "თავიდან შემოწმება",
+    "description": "Popup button: re-score the current tab"
+  },
+  "reasonsTitle": {
+    "message": "რატომ ვხედავ ამას?",
+    "description": "Popup heading above the reasons list"
+  },
+  "noCheck": {
+    "message": "ამ გვერდის შემოწმება შეუძლებელია (ბრაუზერის გვერდები არ მოწმდება)",
+    "description": "Popup status for chrome:// and other uncheckable pages"
+  },
+  "optionsHeading": {
+    "message": "პარამეტრები",
+    "description": "Options page heading"
+  },
+  "strictLabel": {
+    "message": "მკაცრი რეჟიმი: გამაფრთხილებელი ბანერი სარისკო გვერდებზე",
+    "description": "Options: strict mode toggle"
+  },
+  "strictHint": {
+    "message": "ნაგულისხმევად გამორთული. ბანერი არასდროს ბლოკავს გვერდს და ყოველთვის დახურვადია.",
+    "description": "Options: strict mode explanation"
+  },
+  "remoteLabel": {
+    "message": "საფრთხის სიების ავტომატური განახლება",
+    "description": "Options: remote update toggle"
+  },
+  "remoteUrlLabel": {
+    "message": "განახლების URL",
+    "description": "Options: remote update URL field label"
+  },
+  "remoteHint": {
+    "message": "არასავალდებულო. მხოლოდ JSON-ფაილი იტვირთება. არაფერი გადის თქვენი მოწყობილობიდან.",
+    "description": "Options: remote update privacy note"
+  },
+  "trustTitle": {
+    "message": "ნდობით აღნიშნული საიტები",
+    "description": "Options: trusted sites section heading"
+  },
+  "trustEmpty": {
+    "message": "ჯერ არ გაქვთ ნდობით აღნიშნული საიტი.",
+    "description": "Options: empty trusted list"
+  },
+  "removeTrust": {
+    "message": "წაშლა",
+    "description": "Options: remove trusted site button"
+  },
+  "bannerDismiss": {
+    "message": "დახურვა",
+    "description": "Strict-mode banner dismiss button"
+  },
+  "reasonBlocklist": {
+    "message": "ეს დომენი ცნობილ საშიშ საიტების ლოკალურ ბლოკსიაშია",
+    "description": "S12 blocklist signal"
+  },
+  "reasonPasswordForm": {
+    "message": "გვერდი პაროლს ითხოვს საიტზე, რომელიც ცნობილ ლეგიტიმურ დომენად არ ითვლება",
+    "description": "S13 login-form probe signal"
+  },
+  "reasonDeviceCode": {
+    "message": "გვერდი ცდილობს შეგაყვანინოთ მოწყობილობის შესვლის კოდი, ცნობილი თაღლითობის სქემა",
+    "description": "S14 device-code scam signal"
+  },
+  "deviceCodeNotice": {
+    "message": "კოდი აქ მხოლოდ მაშინ შეიყვანეთ, თუ თქვენ თავად დაიწყეთ მიბმის პროცესი სანდო აპიდან. თაღლითები კოდებს სხვა საიტებზე აჩვენებენ და აქ შეყვანას გთხოვენ.",
+    "description": "Educational notice on legitimate device-code entry pages"
+  },
+  "qrTitle": {
+    "message": "QR-კოდის შემოწმება",
+    "description": "Panel QR section heading"
+  },
+  "qrPick": {
+    "message": "აირჩიეთ სურათი…",
+    "description": "Panel QR file picker button"
+  },
+  "qrCamera": {
+    "message": "კამერის გამოყენება",
+    "description": "Panel QR camera button"
+  },
+  "qrStop": {
+    "message": "კამერის გათიშვა",
+    "description": "Panel QR camera stop button"
+  },
+  "qrNone": {
+    "message": "ამ სურათში QR-კოდი ვერ მოიძებნა.",
+    "description": "Panel QR decode failure note"
+  },
+  "qrResultNote": {
+    "message": "სკანირებული QR-კოდის შედეგი:",
+    "description": "Panel note above a QR check result"
+  },
+  "qrUnreadable": {
+    "message": "ამ სურათიდან QR-კოდის წაკითხვა ვერ მოხერხდა. სცადეთ მისი შენახვა და პანელში „QR სურათის შემოწმების“ გამოყენება.",
+    "description": "Context-menu QR check: image could not be fetched or decoded"
+  },
+  "qrNotUrl": {
+    "message": "ეს QR-კოდი ვებმისამართს არ შეიცავს, ამიტომ შესამოწმებელი არაფერია.",
+    "description": "Context-menu QR check: payload is not an http(s) URL"
+  },
+  "ctxCheckQr": {
+    "message": "QR-კოდის შემოწმება FishCatcher-ით",
+    "description": "Right-click context menu item on images"
+  },
+  "reasonYoungDomain": {
+    "message": "დომენი მხოლოდ $1 დღის წინ დარეგისტრირდა. ახალი დომენები ფიშინგში ხშირია",
+    "description": "S15 opt-in RDAP age check signal; $1 = age in days"
+  },
+  "reasonBloom": {
+    "message": "ემთხვევა საზოგადოებრივ საფრთხეების სიას (ალბათური დამთხვევა)",
+    "description": "S16 bloom-filter community feed signal"
+  },
+  "cloudLabel": {
+    "message": "ღრუბლოვანი შემოწმება: RDAP-ს ეკითხება დომენის ასაკს",
+    "description": "Options: RDAP age check toggle"
+  },
+  "cloudHint": {
+    "message": "rdap.org-ს მხოლოდ რეგისტრირებად დომენს უგზავნის. ნაგულისხმევად გამორთული.",
+    "description": "Options: RDAP privacy note"
+  },
+  "remoteDefaultHint": {
+    "message": "განახლებები მოდის",
+    "description": "Options: lead-in before the registry link"
+  },
+  "remoteSourceLink": {
+    "message": "FishCatcher-ის რეესტრიდან GitHub-ზე",
+    "description": "Options: link text pointing to the registry repository"
+  },
+  "remoteReadyNoCount": {
+    "message": "საფრთხის სია განახლებულია.",
+    "description": "Update status when the count is not known"
+  },
+  "reasonMl": {
+    "message": "მისამართი ემთხვევა ასოების იმ ნაკადებს, რომლებიც გავრცელებულია ფიშინგურ და ავტოგენერირებულ დომენებში",
+    "description": "S17 lexical model signal"
+  },
+  "linksNone": {
+    "message": "საეჭვო ბმულები ვერ მოიძებნა.",
+    "description": "Panel note when a link scan finds nothing"
+  },
+  "linkTextMismatch": {
+    "message": "ბმული აჩვენებს $1-ს, მაგრამ რეალურად გადადის $2-ზე",
+    "description": "Link finding: visible text domain differs from destination; $1 shown, $2 real"
+  },
+  "linkDownloadMismatch": {
+    "message": "ინახება როგორც .$2, მაგრამ სინამდვილეში .$1 ფაილია",
+    "description": "Link finding: download attribute hides the real file type; $1 real ext, $2 claimed ext"
+  },
+  "linkShortener": {
+    "message": "შემოკლებული ბმული ($1). რეალური მისამართი დამალულია",
+    "description": "Link finding: known URL shortener; $1 = shortener domain"
+  },
+  "linkRisky": {
+    "message": "$1 საეჭვოდ გამოიყურება",
+    "description": "Link finding: destination scored high/critical by the engine; $1 = domain"
+  },
+  "downloadGuardLabel": {
+    "message": "ჩამოტვირთვების დაცვა: გააფრთხილე შენიღბული ან საშიში ფაილების შესახებ",
+    "description": "Options: download guard toggle"
+  },
+  "downloadGuardHint": {
+    "message": "ამოწმებს ჩამოტვირთვის რეალურ ტიპს სახელთან შედარებით. ჩართვისას ითხოვს ჩამოტვირთვისა და შეტყობინების ნებართვას. ნაგულისხმევად გამორთულია.",
+    "description": "Options: download guard explanation"
+  },
+  "downloadWarnTitle": {
+    "message": "საშიში ჩამოტვირთვა",
+    "description": "Download guard notification title"
+  },
+  "downloadMismatchBody": {
+    "message": "„$1“ სინამდვილეში $2-ია და არა ის, რასაც სახელი გვთავაზობს. არ გახსნათ, თუ წყაროს არ ენდობით.",
+    "description": "Download guard: filename disguises the real type; $1 name, $2 real type"
+  },
+  "downloadDangerousBody": {
+    "message": "„$1“ არის პროგრამა ($2), და არა დოკუმენტი. გახსენით მხოლოდ იმ შემთხვევაში, თუ წყაროს ენდობით.",
+    "description": "Download guard: dangerous executable; $1 name, $2 extension"
+  },
+  "downloadCancel": {
+    "message": "ჩამოტვირთვის გაუქმება",
+    "description": "Download guard notification button"
+  },
+  "downloadKeep": {
+    "message": "დატოვება",
+    "description": "Download guard notification button"
+  },
+  "remoteUpdating": {
+    "message": "საფრთხის სია ახლდება…",
+    "description": "Shown while the registry download is in progress"
+  },
+  "remoteReady": {
+    "message": "$1 ცნობილი საშიში საიტი, განახლდა $2",
+    "description": "Shown after a successful update; $1 = count, $2 = date"
+  },
+  "remoteError": {
+    "message": "რეესტრთან დაკავშირება ვერ მოხერხდა. გამოიყენება ჩაშენებული სია.",
+    "description": "Shown when the update download fails"
+  },
+  "linksChecked": {
+    "message": "შემოწმდა $1 ბმული ამ გვერდზე.",
+    "description": "Shown after a link scan; $1 = number of links checked"
+  },
+  "linksNoneToCheck": {
+    "message": "ამ გვერდზე შესამოწმებელი ბმული არ არის.",
+    "description": "Shown after a scan that found no links at all"
+  },
+  "linksUnavailable": {
+    "message": "ამ გვერდის ბმულების წაკითხვა ვერ მოხერხდა, თუმცა ზემოთ მისამართი მაინც შემოწმდა.",
+    "description": "Shown when the page contents cannot be read (error page, browser page, or not loaded)"
+  },
+  "checkingLabel": {
+    "message": "მოწმდება…",
+    "description": "Button label while re-checking the page and its links"
+  },
+  "trustConfirm": {
+    "message": "$1 ახლა სანდოა",
+    "description": "Confirmation after trusting a site; $1 = domain"
+  },
+  "untrustConfirm": {
+    "message": "$1 აღარ არის სანდო",
+    "description": "Confirmation after removing trust; $1 = domain"
+  },
+  "downloadActive": {
+    "message": "ვამოწმებ ჩამოტვირთვებს შენიღბულ ფაილებზე.",
+    "description": "Settings status when the download guard is on"
+  },
+  "cloudActive": {
+    "message": "ვამოწმებ დომენის ასაკს სარისკო საიტებზე.",
+    "description": "Settings status when the cloud age check is on"
+  },
+  "ageChecking": {
+    "message": "დომენის ასაკი მოწმდება…",
+    "description": "Panel note while an RDAP age lookup is in progress"
+  },
+  "reasonAitmMismatch": {
+    "message": "ეს გვერდი ითხოვს თქვენს $1-ის ავტორიზაციას, მაგრამ $2 არ არის $1-ის ოფიციალური საიტი",
+    "description": "M8 AiTM primary signal: identity interaction + claimed brand + origin mismatch; $1 = brand name, $2 = registrable domain"
+  },
+  "reasonAitmResourceGraph": {
+    "message": "ამ ავტორიზაციის გვერდის თითქმის ყველა ნაწილი ერთი უცხო საიტიდან იტვირთება, რაც გადამისამართების შეტევებისთვის დამახასიათებელია",
+    "description": "M8 AiTM corroborator: reverse-proxy resource-origin graph collapse"
+  },
+  "reasonAitmDrift": {
+    "message": "საიტის ხატულა ან აპლიკაციის მანიფესტი გვერდისგან განსხვავებული დომენიდან იტვირთება",
+    "description": "M8 AiTM soft boost: favicon/manifest cross-origin drift"
+  },
+  "reasonGsbDeceptive": {
+    "message": "Google Safe Browsing მას მოტყუებით (ფიშინგ) საიტად აღნიშნავს",
+    "description": "S18 Google Safe Browsing: SOCIAL_ENGINEERING"
+  },
+  "reasonGsbMalware": {
+    "message": "Google Safe Browsing მას მავნე პროგრამის საიტად აღნიშნავს",
+    "description": "S18 Google Safe Browsing: MALWARE"
+  },
+  "reasonGsbUnwanted": {
+    "message": "Google Safe Browsing აღნიშნავს, რომ ის არასასურველ პროგრამას მასპინძლობს",
+    "description": "S18 Google Safe Browsing: UNWANTED_SOFTWARE"
+  },
+  "reasonGsbHarmfulApp": {
+    "message": "Google Safe Browsing მას საზიანო აპლიკაციად აღნიშნავს",
+    "description": "S18 Google Safe Browsing: POTENTIALLY_HARMFUL_APPLICATION"
+  },
+  "reasonGsbUnsafe": {
+    "message": "Google Safe Browsing ამ საიტს საშიშად აღნიშნავს",
+    "description": "S18 Google Safe Browsing: unknown threat type fallback"
+  },
+  "gsbLabel": {
+    "message": "Google Safe Browsing შემოწმება",
+    "description": "Options: GSB toggle"
+  },
+  "gsbHint": {
+    "message": "ამოწმებს თქვენ მიერ მონახულებულ მისამართს Google Safe Browsing-თან. ის აგზავნის მისამართს Google-ში და საჭიროებს თქვენს პირად უფასო Google API-გასაღებს. ნაგულისხმევად გამორთულია.",
+    "description": "Options: GSB explanation"
+  },
+  "gsbKeyLabel": {
+    "message": "Google API-გასაღები",
+    "description": "Options: GSB API key field label"
+  },
+  "gsbKeyGuide": {
+    "message": "როგორ მივიღოთ უფასო გასაღები",
+    "description": "Options: link to Google's Safe Browsing key guide"
+  },
+  "gsbActive": {
+    "message": "საიტები მოწმდება Google Safe Browsing-ით.",
+    "description": "Options status when GSB is on"
+  },
+  "reasonCryptoSeed": {
+    "message": "ეს გვერდი გთხოვთ შეიყვანოთ თქვენი საფულის აღდგენის ფრაზა ან პირადი გასაღები. ნამდვილი საფულეები ამას არასდროს ითხოვენ",
+    "description": "Crypto scam pack: imperative request to enter a seed/recovery phrase or private key"
+  },
+  "reasonTechSupport": {
+    "message": "ეს გვერდი ცდილობს დაგაშინოთ, რომ დარეკოთ ნომერზე კომპიუტერის განსაბლოკად. ეს ცნობილი თაღლითობაა",
+    "description": "Tech-support / browser-locker scam pack: scare text plus a phone or fullscreen lock"
+  },
+  "seniorLabel": {
+    "message": "საოჯახო რეჟიმი: დიდი ტექსტი და მკაფიო გაფრთხილება საშიშ საიტებზე",
+    "description": "Options: family/senior mode toggle"
+  },
+  "seniorHint": {
+    "message": "უფრო დიდი და მარტივი ხედი ყველასთვის. შეგიძლიათ დაამატოთ დამხმარე, რომელსაც შეატყობინებთ, როცა საიტი საშიშად გამოიყურება.",
+    "description": "Options: family mode explanation"
+  },
+  "seniorHelperLabel": {
+    "message": "დამხმარის ელფოსტა (არასავალდებულო)",
+    "description": "Options: family mode helper email field label"
+  },
+  "seniorHelperHint": {
+    "message": "საშიშ საიტზე ერთი შეხებით იხსნება ამ ადამიანისთვის წერილი. არაფერი იგზავნება, სანამ თავად არ დააჭერთ გაგზავნას.",
+    "description": "Options: family mode helper email explanation"
+  },
+  "seniorTellHelper": {
+    "message": "დამხმარეს შევატყობინო",
+    "description": "Button that opens a pre-filled email to the chosen helper"
+  },
+  "seniorAlertTitle": {
+    "message": "ეს საიტი საშიშად გამოიყურება",
+    "description": "Family mode: big in-panel alert title on high/critical sites"
+  },
+  "seniorNotifyTitle": {
+    "message": "FishCatcher: ეს საიტი საშიშად გამოიყურება",
+    "description": "Family mode: system notification title on a dangerous site"
+  },
+  "seniorNotifyBody": {
+    "message": "$1 ავლენს თაღლითობის ძლიერ ნიშნებს. არ შეიყვანოთ პაროლები ან კოდები.",
+    "description": "Family mode: system notification body; $1 = domain"
+  },
+  "seniorMailSubject": {
+    "message": "ვებსაიტი საშიშად გამოიყურებოდა",
+    "description": "Subject of the pre-filled helper email"
+  },
+  "seniorMailBody": {
+    "message": "FishCatcher-მა გამაფრთხილა, რომ ეს ვებსაიტი საშიშად გამოიყურება:\n$1\n\nდამეხმარები შემოწმებაში, სანამ რამეს გავაკეთებ?",
+    "description": "Body of the pre-filled helper email; $1 = domain"
+  },
+  "reportButton": {
+    "message": "ამ საიტის დაფიქსირება",
+    "description": "Panel button: report the current site to the community registry"
+  },
+  "reportOpening": {
+    "message": "დაფიქსირების ფორმა იხსნება ახალ ჩანართში.",
+    "description": "Confirmation shown after the report button is pressed"
+  },
+  "reasonFormAction": {
+    "message": "შესვლის ფორმა თქვენს მონაცემებს აგზავნის $1-ზე და არა ამ საიტზე",
+    "description": "S20 form-action signal; $1 = destination domain"
+  },
+  "reasonFormExfil": {
+    "message": "შესვლის ფორმა თქვენს მონაცემებს აგზავნის $1-ზე, სერვისზე, რომელსაც თაღლითები პაროლების შესაგროვებლად იყენებენ",
+    "description": "S20 form-action signal, known exfil endpoint; $1 = destination domain"
+  },
+  "openRealSite": {
+    "message": "გახსენით $1",
+    "description": "Button: open the real site of the impersonated brand; $1 = brand domain"
+  },
+  "welcomeTitle": {
+    "message": "Fish Catcher მზადაა",
+    "description": "First-run page heading and tab title"
+  },
+  "welcomeIntro": {
+    "message": "ის ამოწმებს ყველა გახსნილ გვერდს თქვენსავე მოწყობილობაზე და მარტივი ენით გაფრთხილებთ, როცა გვერდი ფიშინგს ჰგავს. ის არასდროს ბლოკავს გვერდს.",
+    "description": "First-run page: one-sentence description"
+  },
+  "welcomeLevels": {
+    "message": "ხელსაწყოთა ზოლის ხატულა ოთხი ფერიდან ერთ-ერთს აჩვენებს",
+    "description": "First-run page: heading above the four risk levels"
+  },
+  "welcomeOpenPanel": {
+    "message": "დააწკაპუნეთ Fish Catcher-ის ხატულაზე ხელსაწყოთა ზოლში, რომ ნახოთ მიმდინარე გვერდის შეფასება და მისი მიზეზები.",
+    "description": "First-run page: how to open the panel (side panel on Chromium, popup on Firefox)"
+  },
+  "welcomeTryDemo": {
+    "message": "სცადეთ სატესტო გვერდზე",
+    "description": "First-run page: button opening the demo page on fishcatcher.dev"
+  },
+  "welcomeSettings": {
+    "message": "პარამეტრები არასავალდებულოა. ყველაფერი თავიდანვე მუშაობს.",
+    "description": "First-run page: note that no setup is needed"
+  },
+  "welcomeOpenSettings": {
+    "message": "პარამეტრების გახსნა",
+    "description": "First-run page: link to the options page"
+  }
+}

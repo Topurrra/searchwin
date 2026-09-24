@@ -1,10 +1,17 @@
 [package]
-name = "keepitlocal"
+name = "kil-engine"
 version = "0.1.0"
-description = "A Tauri App"
-authors = ["you"]
+description = "Search's engine: KeepItLocal Workspace's Rust core, headless, answering the browser over a pipe"
 edition = "2021"
-default-run = "keepitlocal"
+default-run = "kil-engine"
+
+# The engine's own copy of the few Tauri APIs its commands use (see compat/).
+[workspace]
+members = [".", "compat/tauri", "compat/tauri-macros"]
+
+[[bin]]
+name = "kil-engine"
+path = "src/main.rs"
 
 [profile.release]
 panic = "abort"
@@ -125,19 +132,13 @@ screenrec = [
 # to make the lib name unique and wouldn't conflict with the bin name.
 # This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
 name = "keepitlocal_lib"
-crate-type = ["staticlib", "cdylib", "rlib"]
-
-[build-dependencies]
-tauri-build = { version = "2", features = [] }
+crate-type = ["rlib"]
 
 [dependencies]
-tauri = { version = "2", features = ["protocol-asset", "tray-icon"] }
-tauri-plugin-opener = "2"
-tauri-plugin-global-shortcut = "2.3.1"
+tauri = { path = "compat/tauri" }
+tokio = { version = "1", features = ["rt-multi-thread", "net", "io-util", "sync", "time", "macros"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-tauri-plugin-dialog = "2.7.1"
-tauri-plugin-notification = "2"
 md-5 = "0.11.0"
 sha1 = "0.11.0"
 sha2 = "0.11.0"
@@ -201,7 +202,6 @@ nalgebra = "0.35"
 # actively maintained fork of `img_hash` and tracks the modern
 # `image` crate (0.25) we already pull in above.
 image_hasher = "3.0"
-tauri-plugin-fs = "2.5.1"
 serde_yaml = "0.9"
 toml = "1.1.2"
 quick-xml = { version = "0.36.2", features = ["serialize"] }
@@ -257,7 +257,9 @@ usvg = "0.44"
 tiny-skia = "0.11"
 # ravif — AV1 (AVIF) image encoder for Image Studio output. rav1e's x86 assembly
 # needs `nasm` at build time (a build-machine requirement; SIMD-accelerated encode).
-ravif = "0.11"
+# Search: built without rav1e's assembly (`asm`) so the engine builds without
+# NASM installed; AVIF encodes are slower. Re-enable for release builds.
+ravif = { version = "0.11", default-features = false, features = ["threading"] }
 # mozjpeg — libjpeg-turbo + mozjpeg trellis quantization for the Image Studio JPEG
 # encoder (visibly smaller files than the baseline `image` encoder at the same
 # quality). Builds with the system C compiler; SIMD auto-disables without nasm.
@@ -354,9 +356,6 @@ cpal = { version = "0.15", optional = true }
 # continuously listening. Optional, enabled by the `vosk` feature.
 webrtc-vad = { version = "0.4", optional = true }
 
-[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
-tauri-plugin-autostart = "2"
-
 [target.'cfg(windows)'.dependencies]
 # winreg — ergonomic Windows registry access. Used by `privacy_audit` to
 # READ the per-user CapabilityAccessManager ConsentStore (which apps may use
@@ -380,14 +379,6 @@ ntfs = "0.4"
 # to the shell instead, we get the clean icon. No background threads, no
 # network — purely synchronous binary parsing of a small file (~1–2 KB).
 parselnk = "0.1"
-# window-vibrancy — applies the Windows DWM acrylic backdrop to the command
-# palette window so the desktop behind it is blurred (real frosted glass,
-# the only way to blur the desktop behind a transparent window — CSS
-# backdrop-filter can't reach it). Opt-in + reversible via Settings; off by
-# default because acrylic can square the rounded corners on some builds.
-# Takes `impl HasWindowHandle`, which Tauri 2's WebviewWindow implements,
-# so no manual HWND/version juggling with the `windows` crate below.
-window-vibrancy = "0.6"
 # wasapi — safe Rust wrapper over the Win32 WASAPI APIs. Used by the Screen
 # Recorder (`screenrec` feature) for SYSTEM-AUDIO LOOPBACK capture of the default
 # render endpoint — cpal cannot do loopback on Windows (its loopback PR was
@@ -460,6 +451,9 @@ windows = { version = "0.54.0", features = [
     # right by default — Windows requires the privilege to be explicitly
     # enabled in the token, not merely present.
     "Win32_Security",
+    # The pipe to the browser is locked to this user (src/server.rs).
+    "Win32_Security_Authorization",
+    "Win32_System_Pipes",
     # UI Automation (voice accessibility control, #20) — voice_ui reads the
     # focused window's control tree via the IUIAutomation COM API to list
     # interactive elements (buttons, links, menu items) for the numbered

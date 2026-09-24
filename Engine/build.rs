@@ -1,4 +1,4 @@
-// Tauri build script + (optional) libvosk linker hookup.
+// Build script: the (optional) libvosk linker hookup.
 //
 // The libvosk hookup is conditional on the `vosk` Cargo feature so the
 // project keeps building cleanly on machines that don't have the engine
@@ -16,8 +16,6 @@
 // link error 5 minutes into the build).
 
 fn main() {
-    tauri_build::build();
-
     #[cfg(feature = "vosk")]
     wire_vosk();
 }

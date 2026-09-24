@@ -61,7 +61,7 @@ pub fn system_info() -> Result<SystemInfo, String> {
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| "Unknown".to_string());
 
-    let logical_cores = crate::core::resources::cpu_cores() as u32;
+    let logical_cores = crate::core::throttle::cpu_cores() as u32;
 
     let ram_total_bytes = sys.total_memory();
     // `total - available` is the conventional "used" figure (matches the

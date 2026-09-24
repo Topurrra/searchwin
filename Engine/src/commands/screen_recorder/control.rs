@@ -42,7 +42,7 @@ pub fn start(
     let target = crate::core::safe_path::validate_user_write_target(&out_path)?;
     // Pre-flight: refuse to start with almost no free space (video is ~GBs/hour),
     // so the user isn't surprised by a take that dies a few minutes in.
-    if let Some(free) = crate::core::resources::free_disk_bytes(&target) {
+    if let Some(free) = crate::core::throttle::free_disk_bytes(&target) {
         const MIN_FREE: u64 = 500 * 1024 * 1024; // 500 MB
         if free < MIN_FREE {
             return Err(format!(

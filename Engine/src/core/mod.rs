@@ -1,4 +1,4 @@
-﻿// Shared utilities
+// Shared utilities
 
 // Windows DPAPI wrapper for at-rest encryption of the local redb database.
 // Public so commands/local_db.rs can call it; cfg-gated to Windows so the
@@ -13,11 +13,6 @@ pub mod dpapi;
 // folder, AppData, etc.) before doing any FS work.
 pub mod safe_path;
 
-// Adaptive resource awareness — live RAM / CPU / disk probes (sysinfo) plus
-// pure, unit-tested decision logic (`recommend_workers`, `disk_preflight`).
-// Ported from the kil-privacy-suite; the single source of truth for "how many
-// workers can this machine sustain right now." Used by the Cleaner/Analyzer to
-// size its WalkDir concurrency by live free RAM (only ever reduces under
-// pressure). See the consolidation note: search.rs's private
-// `available_ram_bytes()` can later delegate here.
-pub mod resources;
+// How hard the engine may work right now: live cores, free RAM and free
+// disk, and a worker count sized to them, leaving room for the browser.
+pub mod throttle;

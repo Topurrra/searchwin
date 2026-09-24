@@ -14,7 +14,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter};
 use walkdir::WalkDir;
 
-use crate::core::resources;
+use crate::core::throttle as resources;
 
 // CREATE_NO_WINDOW — suppress the cmd console flash when the File
 // Cleaner / Analyzer runs `reg query` (startup items). Without this,

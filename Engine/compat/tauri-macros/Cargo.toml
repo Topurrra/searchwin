@@ -1,0 +1,14 @@
+[package]
+name = "tauri-macros"
+version = "2.0.0-search"
+edition = "2021"
+description = "The two macros the engine's commands use, made to register with Search's engine dispatcher instead of a Tauri app"
+publish = false
+
+[lib]
+proc-macro = true
+
+[dependencies]
+proc-macro2 = "1"
+quote = "1"
+syn = { version = "2", features = ["full"] }

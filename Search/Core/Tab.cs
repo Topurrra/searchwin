@@ -141,7 +141,8 @@ public sealed partial class Tab : Model
         // The app's own find bar stands in for Edge's (see FindBar).
         core.Profile.PreferredColorScheme = Palette.Dark ? CoreWebView2PreferredColorScheme.Dark : CoreWebView2PreferredColorScheme.Light;
 
-        core.DocumentTitleChanged += (_, _) => Title = core.DocumentTitle ?? "";
+        // An error page's title is the engine's, not the site's.
+        core.DocumentTitleChanged += (_, _) => { if (Failure == null) Title = core.DocumentTitle ?? ""; };
         core.SourceChanged += (_, _) =>
         {
             if (!Uri.TryCreate(core.Source, UriKind.Absolute, out var fresh)) return;
@@ -166,7 +167,15 @@ public sealed partial class Tab : Model
             Loading = true;
             Progress = 0.1;
         };
-        core.ContentLoading += (_, _) => Progress = 0.5;
+        core.ContentLoading += (_, e) =>
+        {
+            Progress = 0.5;
+            // Search's trouble page stays up until real content arrives, and
+            // covers the engine's error page from the moment it does — so
+            // Edge's "can't reach this page" is never seen, not even in passing.
+            if (!e.IsErrorPage) Failure = null;
+            else if (Failure == null) Fail(new PageTrouble(TroubleKind.Broken, PageTrouble.HostOf(Address)));
+        };
         core.DOMContentLoaded += (_, _) =>
         {
             Progress = 0.8;
@@ -214,10 +223,18 @@ public sealed partial class Tab : Model
     public bool CanGoBack { get => canGoBack; private set => Set(ref canGoBack, value); }
     public bool CanGoForward { get => canGoForward; private set => Set(ref canGoForward, value); }
 
-    private string? failure;
+    private PageTrouble? failure;
     /// Set when the page never arrived — no host, no network, a refused
-    /// connection. Shown in place of the page rather than in a dialog.
-    public string? Failure { get => failure; set => Set(ref failure, value); }
+    /// connection. Search's own page shows in place of it (see Stage).
+    public PageTrouble? Failure { get => failure; set => Set(ref failure, value); }
+
+    /// The page didn't come. The engine's own error page is underneath,
+    /// with its own title; the tab goes by the address instead.
+    public void Fail(PageTrouble trouble)
+    {
+        Failure = trouble;
+        Title = "";
+    }
 
     private double reading;
     /// How far down the page you are, nought to one. The tab's own pill fills
@@ -319,7 +336,6 @@ public sealed partial class Tab : Model
         // state flashes back for an instant on its way out.
         Address = url;
         Title = "";
-        Failure = null;
         Reading = 0;
         Reader = false;
         Typing = false;
@@ -358,7 +374,6 @@ public sealed partial class Tab : Model
     public void SetAddressOptimistically(Uri url)
     {
         Address = url;
-        Failure = null;
         AdoptIcon();
     }
 
@@ -368,7 +383,6 @@ public sealed partial class Tab : Model
     {
         if (Pending is not { } url) return false;
         Pending = null;
-        Failure = null;
         Reading = 0;
         Reader = false;
         Typing = false;
@@ -595,7 +609,6 @@ public sealed partial class Tab : Model
     public void RecoverFromCrash()
     {
         if (Address is not { } url) return;
-        Failure = null;
         if (Core is { } core) Open(core, url);
     }
 

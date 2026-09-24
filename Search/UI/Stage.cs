@@ -18,7 +18,11 @@ public sealed partial class Stage : Grid
     private readonly Image cover = new() { Stretch = Stretch.UniformToFill, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top, IsHitTestVisible = false };
     private readonly Grid away = new() { Background = Palette.Ground, Visibility = Visibility.Collapsed };
     private readonly Grid trouble = new() { Background = Palette.Ground, Visibility = Visibility.Collapsed };
-    private readonly TextBlock troubleText = Kit.Text("", 14);
+    private readonly TextBlock troubleText = Kit.Text("", 22, semibold: true);
+    private readonly TextBlock troubleDetail = Kit.Text("", 14, Palette.Muted);
+    private readonly FontIcon troubleIcon = Icons.Make(Icons.Globe, 28, Palette.Muted);
+    private readonly StackPanel troubleActions = new() { Orientation = Orientation.Horizontal, Spacing = 8 };
+    private PageTrouble? shownTrouble;
     private readonly Grid blank = new() { Background = Palette.Ground };
     private Tab? watched;
 
@@ -43,17 +47,19 @@ public sealed partial class Stage : Grid
         away.Children.Add(awayText);
         Children.Add(away);
 
-        // What there is to say when the page never came. One line, and the
-        // only thing worth offering — another go.
-        var words = new StackPanel { Spacing = 10, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
-        troubleText.HorizontalAlignment = HorizontalAlignment.Center;
+        // What there is to say when the page never came: Search's own page,
+        // never the engine's. What happened, in a sentence, and what's worth
+        // doing about it.
+        var words = new StackPanel { Spacing = 12, MaxWidth = 460, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+        troubleIcon.HorizontalAlignment = HorizontalAlignment.Left;
+        words.Children.Add(troubleIcon);
+        troubleText.TextWrapping = TextWrapping.Wrap;
         words.Children.Add(troubleText);
-        var again = new Press { HorizontalAlignment = HorizontalAlignment.Center };
-        var againText = Kit.Text("Try again", 12, Palette.Muted);
-        again.Children.Add(againText);
-        again.Hovered += on => againText.Foreground = on ? Palette.Ink : Palette.Muted;
-        again.Clicked += _ => browser.Active?.Reload();
-        words.Children.Add(again);
+        troubleDetail.TextWrapping = TextWrapping.Wrap;
+        troubleDetail.LineHeight = 20;
+        words.Children.Add(troubleDetail);
+        troubleActions.Margin = new Thickness(0, 8, 0, 0);
+        words.Children.Add(troubleActions);
         trouble.Children.Add(words);
         Motion.Fades(trouble);
         Children.Add(trouble);
@@ -89,8 +95,56 @@ public sealed partial class Stage : Grid
         cover.Source = tab?.Cover;
         cover.Opacity = tab?.Cover != null ? 1 : 0;
         away.Visibility = tab?.Floating == true ? Visibility.Visible : Visibility.Collapsed;
-        troubleText.Text = tab?.Failure ?? "";
-        trouble.Visibility = tab?.Failure != null ? Visibility.Visible : Visibility.Collapsed;
+        ShowTrouble(tab?.Failure);
+    }
+
+    private void ShowTrouble(PageTrouble? failure)
+    {
+        trouble.Visibility = failure != null ? Visibility.Visible : Visibility.Collapsed;
+        if (failure == null || failure == shownTrouble) return;
+        shownTrouble = failure;
+        troubleIcon.Glyph = failure.Glyph;
+        troubleText.Text = failure.Headline;
+        troubleDetail.Text = failure.Detail;
+        troubleActions.Children.Clear();
+        switch (failure.Kind)
+        {
+            case TroubleKind.Offline:
+                // Nothing to press: it comes back by itself.
+                troubleActions.Children.Add(Action("Try now", browser.TryAgain, primary: false));
+                break;
+            case TroubleKind.NoSuchSite:
+                troubleActions.Children.Add(Action("Search the web", browser.SearchForTrouble, primary: true));
+                troubleActions.Children.Add(Action("Try again", browser.TryAgain, primary: false));
+                break;
+            case TroubleKind.Insecure:
+                troubleActions.Children.Add(Action("Go back", browser.LeaveTrouble, primary: true));
+                troubleActions.Children.Add(Action($"Continue to {failure.Host} anyway", browser.TrustAnyway, primary: false));
+                break;
+            default:
+                troubleActions.Children.Add(Action("Try again", browser.TryAgain, primary: true));
+                break;
+        }
+    }
+
+    /// A button on Search's trouble page: the one to press, filled; the
+    /// other, just words.
+    private static Press Action(string text, Action act, bool primary)
+    {
+        var button = new Press { HorizontalAlignment = HorizontalAlignment.Left };
+        var ground = Kit.Rounded(9, primary ? Palette.Ink : null);
+        var words = Kit.Text(text, 13, primary ? Palette.Ground : Palette.Muted, medium: true);
+        words.Margin = new Thickness(14, 8, 14, 8);
+        button.Children.Add(ground);
+        button.Children.Add(words);
+        button.Hovered += on =>
+        {
+            if (primary) ground.Opacity = on ? 0.85 : 1;
+            else ground.Background = on ? Palette.Hover : null;
+            if (!primary) words.Foreground = on ? Palette.Ink : Palette.Muted;
+        };
+        button.Clicked += _ => act();
+        return button;
     }
 }
 

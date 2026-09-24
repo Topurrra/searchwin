@@ -550,7 +550,7 @@ public sealed class Bench
             UI.After(0.25, () =>
             {
                 var out_ = Describe(tab);
-                if (tab.Failure is { } failure) out_["failure"] = failure;
+                if (tab.Failure is { } failure) out_["failure"] = failure.Headline;
                 answer(out_);
             });
             return;

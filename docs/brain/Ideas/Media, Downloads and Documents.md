@@ -1,10 +1,20 @@
 ---
 tags: [searchwin, ideas, media, installer, licensing]
 updated: 2026-09-25
-status: proposal
+status: decided (2026-09-25)
 ---
 
 # Media, downloads and documents, and what the installer carries
+
+> **Decided 2026-09-25 (user):**
+> - **No home-made converters.** The user spent a month on a pdfium-based
+>   converter in Workspace, and its quality wasn't close to iLovePDF's.
+>   Word ⇄ PDF uses **Microsoft Word, silently, when installed**, else LibreOffice.
+>   Neither installed: Settings offers LibreOffice as a download.
+> - **yt-dlp removed entirely.** Not now; Store rejection isn't worth it.
+> - **FFmpeg:** LGPL build without x264/x265; Search stays MIT.
+> - **NASM** is only for the build machine; users never need it (see §1).
+>   Downloads from Settings are for packs (FFmpeg, voice models, OCR, LibreOffice…), the way Workspace does AI models.
 
 Back to [[README]] · Related: [[Master Plan]], [[Build and Release]]
 

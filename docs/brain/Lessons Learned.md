@@ -298,3 +298,16 @@ the fix lives. *(uncertain)* marks things that weren't proven.
   scripted replaces must detect the newline first, or use the Edit tool.
 - **computer-use:** app grants reset each session, so request `search.exe` and
   `msedgewebview2.exe` again. A window launched minimized needs `ShowWindow(SW_RESTORE)`.
+### Search's own pages (2026-09-25)
+- **A Rust exe links the VC++ runtime dynamically by default.** Check with
+  `dumpbin /dependents`, and use `+crt-static` for anything shipped to clean PCs.
+- **Cancelling a certificate error reads as "cancelled"** to
+  `NavigationCompleted`. Show the warning in `ServerCertificateErrorDetected`
+  itself, where the reason is known.
+- **Retry by navigating to the tab's address, not `Reload()`.** When the
+  engine never got to the new page, reload repeats whatever document it last had.
+- **`ContentLoading.IsErrorPage`** is the moment to cover the engine's error
+  page. Clearing the cover at navigation start flashes the old error page.
+- **Cross-origin `fetch()` from tool pages to `files.search` needs CORS**
+  (`<img>`/`<video>` don't). A suffix range (`bytes=-100`) isn't CORS-safelisted, so answer the `OPTIONS` preflight.
+- Chromium refuses some ports outright (9, 25…) as unsafe. That's a "Broken" page, not "Refused".

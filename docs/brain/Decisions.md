@@ -141,3 +141,26 @@ Newest at the bottom.
 ### D23 · Portable logic lives in `Search.Kit`, namespace `SearchKit` (2026-09-25)
 - **Why:** it builds and tests without WinUI, on any OS. The namespace isn't
   `Search.Kit`, because the browser's UI class `Kit` would hide it.
+
+### D24 · Word ⇄ PDF through Word or LibreOffice, never our own converter (2026-09-25)
+- **Decision:**
+  - Microsoft Word first, driven silently through its automation interface
+    (hidden, no alert dialogs, always quits, with a hard timeout);
+  - then LibreOffice headless, with its own profile folder;
+  - neither installed: Settings offers LibreOffice as a download.
+- **Why:** the user's month on a pdfium-based converter came nowhere near
+  iLovePDF's quality. The technique follows KeepItLocal Redact's desktop app
+  (`privacy_core/office/convert.rs`), **re-written** for Search, not copied (D18).
+
+### D25 · No yt-dlp (2026-09-25)
+- **Why:** Microsoft Store rejects YouTube downloaders, and the Store is the
+  distribution plan. Revisit only for a direct-download-only edition.
+
+### D26 · Search's own pages and dialogs, never Edge's (2026-09-25)
+- **Decision:**
+  - a page that fails gets Search's trouble page (`PageTrouble`, drawn in `Stage`);
+  - a bad certificate gets Search's warning, with "continue anyway" for that site for the session;
+  - `alert`/`confirm`/`prompt`/"leave page?" and HTTP sign-in get Search's dialogs.
+- **How:** `ContentLoading.IsErrorPage` covers the engine's error page the
+  moment it arrives. `ServerCertificateErrorDetected` → Cancel shows our
+  warning. `AreDefaultScriptDialogsEnabled = false` + `ScriptDialogOpening`, and `BasicAuthenticationRequested`.

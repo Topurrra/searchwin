@@ -56,7 +56,7 @@ public sealed partial class Browser : IPageHost
         {
             if (!e.IsSuccess)
             {
-                Fail(tab, e.WebErrorStatus);
+                Fail(tab, core, e.WebErrorStatus);
                 return;
             }
             tab.Failure = null;
@@ -97,6 +97,7 @@ public sealed partial class Browser : IPageHost
         };
 
         core.ContextMenuRequested += (_, e) => Extensions.Shared.AddMenuItems(tab, core, e);
+        AttachOwnPages(tab, core);
 
         // Next and previous land a moment after they are asked for; the
         // count beside the find field follows the engine, not the asking.
@@ -156,28 +157,6 @@ public sealed partial class Browser : IPageHost
             deferral.Complete();
         });
         RememberSession();
-    }
-
-    private void Fail(Tab tab, CoreWebView2WebErrorStatus status)
-    {
-        tab.Uncover();
-        // Cancelled is not a failure: it's what a redirect, a stopped load, or
-        // a second Enter in quick succession looks like from here. Nor is a
-        // page that turned into a download.
-        if (status is CoreWebView2WebErrorStatus.OperationCanceled or CoreWebView2WebErrorStatus.ConnectionAborted
-            or CoreWebView2WebErrorStatus.Unknown) return;
-        tab.Failure = status switch
-        {
-            CoreWebView2WebErrorStatus.HostNameNotResolved => "No site at that address.",
-            CoreWebView2WebErrorStatus.Disconnected => "No connection.",
-            CoreWebView2WebErrorStatus.Timeout => "The site took too long to answer.",
-            CoreWebView2WebErrorStatus.ServerUnreachable or CoreWebView2WebErrorStatus.CannotConnect
-                or CoreWebView2WebErrorStatus.ConnectionReset => "The site refused the connection.",
-            CoreWebView2WebErrorStatus.CertificateCommonNameIsIncorrect or CoreWebView2WebErrorStatus.CertificateExpired
-                or CoreWebView2WebErrorStatus.ClientCertificateContainsErrors or CoreWebView2WebErrorStatus.CertificateRevoked
-                or CoreWebView2WebErrorStatus.CertificateIsInvalid => "The connection isn't secure.",
-            _ => "The page didn't load.",
-        };
     }
 
     // MARK: - the camera and the microphone

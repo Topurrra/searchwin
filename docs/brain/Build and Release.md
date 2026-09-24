@@ -12,6 +12,8 @@ Back to [[README]] · Problems we hit: [[Lessons Learned#Build and Native AOT]]
 - .NET 9 SDK (`winget install Microsoft.DotNet.SDK.9`, or `dotnet-install.ps1 -Channel 9.0` into `%USERPROFILE%\.dotnet`; the scripts find either)
 - For **Native AOT**: Visual Studio 2022 or its Build Tools with *Desktop development with C++* (the MSVC linker)
 - For the installer: **NSIS 3** (`makensis.exe` in Program Files)
+- For the engine: **Rust** (stable, MSVC), and **NASM** for fast AVIF encoding (optional; the build falls back without it). On this PC: NASM 3.02 in `%LOCALAPPDATA%\Programs\nasm`, on the user PATH.
+- For the tool pages: **Node 22+** and **pnpm**
 - WebView2 runtime (already on Windows 11)
 
 ## Commands (run in `searchwin\`)

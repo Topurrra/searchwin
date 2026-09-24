@@ -311,3 +311,12 @@ the fix lives. *(uncertain)* marks things that weren't proven.
 - **Cross-origin `fetch()` from tool pages to `files.search` needs CORS**
   (`<img>`/`<video>` don't). A suffix range (`bytes=-100`) isn't CORS-safelisted, so answer the `OPTIONS` preflight.
 - Chromium refuses some ports outright (9, 25…) as unsafe. That's a "Broken" page, not "Refused".
+
+### GitHub push protection (2026-09-25)
+- **A test fixture that looks like a secret blocks the push.** A fake Slack
+  webhook in `sensitive_scan.rs`'s tests stopped a push with GH013. Fix:
+  build such strings at run time (`format!` / `repeat`), or allow it with the link GitHub gives.
+- **If the commits aren't pushed yet, fix the history:** `filter-branch
+  --tree-filter` over `origin/main..main`, with a backup branch first.
+- **`sed -i` in Git Bash strips CRLF.** Use `sed -b -i` to keep a Windows
+  file's line endings, or the whole file shows as changed.

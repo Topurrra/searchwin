@@ -32,7 +32,8 @@ What `build.ps1` does:
    -p:IlcUseEnvironmentalTools=true -p:PublishReadyToRun=false -p:DebugType=none`.
 3. Otherwise runs `dotnet publish -p:PublishReadyToRun=true` (about 215 MB, because it carries the .NET runtime).
 4. Moves `*.pdb` out to `build\`: symbols are kept but not shipped.
-5. `-Installer`: downloads the WebView2 Evergreen bootstrapper once into
+5. Builds **the engine** (`cargo build --release --no-default-features`, copied beside the exe as `kil-engine.exe`) and **the tool pages** (`pnpm build` in `Tools/`, copied to `tools\`). Each is skipped, with a note, when cargo or pnpm isn't installed.
+6. `-Installer`: downloads the WebView2 Evergreen bootstrapper once into
    `build\redist` and **checks its Microsoft signature**, then runs `makensis`.
 
 ## Csproj essentials (`Search\Search.csproj`)

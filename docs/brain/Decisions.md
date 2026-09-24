@@ -114,3 +114,30 @@ Newest at the bottom.
 - **Why:** Edge SmartScreen sends every site to Microsoft. FishCatcher works
   on the device. The installer's "Windows protected your PC" warning goes
   away through Microsoft Store signing (phase 7).
+
+### D20 · A stand-in Tauri crate, not a rewrite of the commands (2026-09-25)
+- **Decision:** `Engine/compat/tauri` + `tauri-macros` provide the few Tauri
+  APIs the engine's commands use. `#[tauri::command]` generates a hidden module
+  with a JSON entry point; `generate_handler!` builds the name → entry table.
+- **Why:** 390 commands and 650 Tauri references would take weeks to rewrite,
+  and would drift from Workspace. With the stand-in, the command code is
+  unchanged: only 3 import lines moved (the throttle module).
+
+### D21 · The engine is a separate process, over a user-only named pipe (2026-09-25)
+- **Why:**
+  - the first window stays fast;
+  - a crash in a heavy tool doesn't take the browser down;
+  - the engine can later stay resident alone (tray mode).
+- **Security:** a protected DACL with a single entry (the current user), remote
+  clients rejected, and the first instance claims the name (a second engine exits with code 2).
+
+### D22 · Tool pages: hash routing, served from a folder mapping (2026-09-25)
+- **Decision:** `https://tools.search/index.html#/tool/<id>`, with WebView2
+  `SetVirtualHostNameToFolderMapping`, and a bridge over `chrome.webview.postMessage`.
+- **Why:** there's no server to answer deep links (hash routing), and there's no
+  custom scheme to register. The bridge answers only pages whose top-level
+  source is tools.search, and web pages can't navigate a tab there.
+
+### D23 · Portable logic lives in `Search.Kit`, namespace `SearchKit` (2026-09-25)
+- **Why:** it builds and tests without WinUI, on any OS. The namespace isn't
+  `Search.Kit`, because the browser's UI class `Kit` would hide it.

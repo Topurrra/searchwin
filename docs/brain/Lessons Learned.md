@@ -252,3 +252,49 @@ the fix lives. *(uncertain)* marks things that weren't proven.
   - move the test window clear of other windows;
   - PowerShell `CopyFromScreen` needs `SetProcessDPIAware()`.
 - **UI text must match what Windows actually does** (import wording, "pipe" not "socket").
+
+## Sprint 0 (2026-09-25)
+
+### Engine and Rust
+- **Re-hosting a Tauri app:** a stand-in `tauri` crate (a path dependency
+  with the same name) and a proc macro is far cheaper than rewriting the commands.
+  Put the generated entry in a **module with the command's name**: `use
+  a::cmd;` then imports it too, since modules and functions are different
+  namespaces.
+- **`State<'_, T>` in sync commands** run on the blocking pool must be
+  `'static`. The stand-in's `State` owns an `Arc<T>`, so the macro takes a `'static` one.
+- **Named pipes:** the default DACL lets Everyone read. Set an SDDL
+  `D:P(A;;GA;;;<user SID>)`. `first_pipe_instance(true)` on a name already
+  taken fails with **Access is denied**, not "already exists".
+- **`rav1e` needs NASM:** build `ravif` with `default-features = false,
+  features = ["threading"]` when NASM isn't installed (slower AVIF encoding).
+- `windows` 0.54's `HLOCAL` wraps `*mut c_void`, not `isize`.
+
+### WebView2
+- **`SetVirtualHostNameToFolderMapping` doesn't serve `index.html` for `/`**:
+  it gives `ERR_ACCESS_DENIED`. Always name the file.
+- The WebView2 message's `Source` is the top-level document, so a bridge can
+  trust it and refuse framed pages. `NavigationKind` tells back/forward/reload apart from a new document.
+
+### SvelteKit
+- The hash router (`kit.router.type = "hash"`) forbids page options:
+  delete `+layout.ts`'s `ssr = false`.
+- Vite `resolve.alias` with exact regexes swaps every `@tauri-apps/*` import for a shim.
+
+### C#
+- **Namespace hiding:** a class `Search.Kit` hides a namespace `Search.Kit`
+  (CS0437). Name the library namespace `SearchKit`.
+- CS8126: `Rest` can't be a tuple element name.
+- **The discard trap again:** `using var _ = …` declares a variable called `_`. Name it.
+- **A reader closing the pipe mid-write** throws `ObjectDisposedException`
+  from the writer. Map it to "engine went away" (a test caught this).
+
+### Tooling
+- **`… | Select -First N` stops the command upstream.** It cut a `cargo build`
+  off halfway. Filter with `Where-Object` instead.
+- **PowerShell aliases beat functions:** a helper called `R` ran
+  `Invoke-History`. Don't name helpers after aliases (`r`, `h`, `ls`…).
+- **Mixed line endings across the repo** (CRLF in some files, LF in others):
+  scripted replaces must detect the newline first, or use the Edit tool.
+- **computer-use:** app grants reset each session, so request `search.exe` and
+  `msedgewebview2.exe` again. A window launched minimized needs `ShowWindow(SW_RESTORE)`.

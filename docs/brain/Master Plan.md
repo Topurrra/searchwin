@@ -191,7 +191,7 @@ in KeepItLocal Redact" when it's installed: a hand-off, not an integration.
 
 | # | Phase | Ships | Rough size |
 |---|---|---|---|
-| **0** | **Foundations** | Repo layout; copy the engine and strip Tauri (dispatcher + pipe); tools host + shim; command registry; packs framework; provenance/NOTICE | 3–5 wks |
+| **0** ✅ | **Foundations** (2026-09-25: engine headless, engine client, tool pages, command registry; packs framework moved to phase 3) | Repo layout; copy the engine and strip Tauri (dispatcher + pipe); tools host + shim; command registry; packs framework; provenance/NOTICE | 3–5 wks |
 | **1** | **Protection** | FishCatcher (extension stopgap, then native); Shields 2.0 (lists, YouTube, cookies, params, debounce, forget-on-close) | 3–4 wks |
 | **2** | **The universal field** | Converters, bangs/custom commands, files + apps from the engine index, clipboard history + secret guard, open files in tabs | 3–4 wks |
 | **3** | **Tools as pages** | Pack by pack: Utilities → Files (file manager) → Privacy → Images → Documents → Dev → Media → Focus, each restyled and tested | 4–8 wks |

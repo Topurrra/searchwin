@@ -30,6 +30,7 @@ behave like the Mac app, with the same UI, keys and data.
 | [[Ideas/Agentic Browser]] | Proposal: Brave-grade shields plus a private, visible AI agent |
 | [[Ideas/Built-in Tools]] | Brainstorm: converters, bangs, voice, clipboard, file search, FishCatcher, file manager, free AI — checked against the user's own projects |
 | [[Ideas/KeepItLocal Workspace]] | How the user's Workspace app (search, clipboard, voice, tools) feeds Search: port, wrap, or leave |
+| [[Ideas/Media, Downloads and Documents]] | FFmpeg player, yt-dlp downloads, Word ⇄ PDF, what the installer carries, licences |
 | [[Conventions]] | Rules for working on it: git identity, code style, don't-touch list |
 | [[Changelog]] | What landed, commit by commit |
 | [[Log/2026-09-24]] | Session journal |

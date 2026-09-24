@@ -54,7 +54,12 @@ Get-ChildItem $out -Filter *.pdb | Move-Item -Destination build -Force
 # are packs and aren't built in here.
 if (Get-Command cargo -ErrorAction SilentlyContinue) {
     Push-Location Engine
-    cargo build --release --no-default-features
+    # NASM is a build tool, not something users need: with it, AVIF encoding
+    # uses rav1e's assembly and is several times faster.
+    $features = @()
+    if (Get-Command nasm -ErrorAction SilentlyContinue) { $features = @('--features', 'fast-avif') }
+    else { "No NASM here: the engine's AVIF encoder builds without its assembly (slower)." }
+    cargo build --release --no-default-features @features
     $built = $LASTEXITCODE
     Pop-Location
     if ($built -ne 0) { throw "the engine didn't build" }

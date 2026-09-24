@@ -107,6 +107,10 @@ image-background-removal = ["dep:ort", "ort/download-binaries"]
 # (+ onnxruntime.dll in tauri.conf.json bundle.resources) and build with
 # `--features semantic`. See src/commands/embedding.rs for the loaded filenames.
 semantic = ["dep:fastembed"]
+# fast-avif — rav1e's hand-written assembly for AVIF encoding (several times
+# faster). Needs NASM on the BUILD machine only; build.ps1 turns it on when
+# nasm is found. Nothing extra ships to users.
+fast-avif = ["ravif/asm"]
 screenrec = [
     "dep:cpal",
     "dep:wasapi",

@@ -1,0 +1,8 @@
+# The C runtime is linked into kil-engine.exe itself, so the engine runs on a
+# PC that has never had the Visual C++ redistributable installed. (Search.exe
+# is Native AOT and needs only the Universal CRT, which Windows 10+ ships.)
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
+
+[target.aarch64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]

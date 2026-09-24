@@ -96,6 +96,14 @@ public static class ToolsHost
             e.Response = core.Environment.CreateWebResourceResponse(null, 403, "Forbidden", "");
             return;
         }
+        // fetch() with a Range the browser doesn't consider simple (a suffix,
+        // "the last N bytes") asks first.
+        if (e.Request.Method == "OPTIONS")
+        {
+            e.Response = core.Environment.CreateWebResourceResponse(null, 204, "No Content",
+                $"{ToolsOnly}\r\nAccess-Control-Allow-Methods: GET, HEAD\r\nAccess-Control-Allow-Headers: Range\r\nAccess-Control-Max-Age: 600");
+            return;
+        }
         var query = new Uri(e.Request.Uri).Query.TrimStart('?').Split('&')
             .Select(pair => pair.Split('=', 2))
             .FirstOrDefault(pair => pair[0] == "path");
@@ -105,20 +113,43 @@ public static class ToolsHost
             e.Response = core.Environment.CreateWebResourceResponse(null, 404, "Not Found", "");
             return;
         }
+        var range = e.Request.Headers.Contains("Range") ? e.Request.Headers.GetHeader("Range") : null;
         using var deferral = e.GetDeferral();
         try
         {
             var file = await Windows.Storage.StorageFile.GetFileFromPathAsync(path);
+            var size = (await file.GetBasicPropertiesAsync()).Size;
+            var type = string.IsNullOrEmpty(file.ContentType) ? "application/octet-stream" : file.ContentType;
+            if (SearchKit.Web.ByteRange.Parse(range, size) is var (start, end))
+            {
+                // A video seeking asks for a piece: answer with at most one
+                // chunk of it, and the player asks for the next.
+                using var input = await file.OpenReadAsync();
+                input.Seek(start);
+                var buffer = new Windows.Storage.Streams.Buffer((uint)(end - start + 1));
+                await input.ReadAsync(buffer, buffer.Capacity, Windows.Storage.Streams.InputStreamOptions.None);
+                var piece = new Windows.Storage.Streams.InMemoryRandomAccessStream();
+                await piece.WriteAsync(buffer);
+                piece.Seek(0);
+                e.Response = core.Environment.CreateWebResourceResponse(piece, 206, "Partial Content",
+                    $"Content-Type: {type}\r\nContent-Range: bytes {start}-{start + buffer.Length - 1}/{size}\r\n" +
+                    $"Content-Length: {buffer.Length}\r\nAccept-Ranges: bytes\r\nCache-Control: no-store\r\n{ToolsOnly}");
+                return;
+            }
             var stream = await file.OpenReadAsync();
-            var type = string.IsNullOrEmpty(stream.ContentType) ? "application/octet-stream" : stream.ContentType;
             e.Response = core.Environment.CreateWebResourceResponse(stream, 200, "OK",
-                $"Content-Type: {type}\r\nCache-Control: no-store");
+                $"Content-Type: {type}\r\nContent-Length: {size}\r\nAccept-Ranges: bytes\r\nCache-Control: no-store\r\n{ToolsOnly}");
         }
         catch
         {
             e.Response = core.Environment.CreateWebResourceResponse(null, 500, "Unreadable", "");
         }
     }
+
+    /// Tool pages (and only they) may read these with fetch(), not just show
+    /// them in an <img> or <video>.
+    private const string ToolsOnly =
+        "Access-Control-Allow-Origin: https://" + Host + "\r\nAccess-Control-Expose-Headers: Content-Range, Content-Length, Accept-Ranges";
 
     // MARK: - the bridge
 

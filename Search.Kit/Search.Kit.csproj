@@ -23,6 +23,10 @@
       Read on first use, on a worker thread (FishCatcher.Warm), never at startup.
     -->
     <EmbeddedResource Include="FishCatcher\Data\*.json;FishCatcher\Data\*.bin" LogicalName="FishCatcher/%(Filename)%(Extension)" />
+    <!-- FilterParser is internal on purpose (it's a parsing detail, not part
+         of the surface FilterList exposes); the tests still exercise it
+         directly, per line, to check what gets skipped-and-counted. -->
+    <InternalsVisibleTo Include="Search.Kit.Tests" />
   </ItemGroup>
 
 </Project>

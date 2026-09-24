@@ -153,8 +153,36 @@ public sealed class NetworkRule
     /// bucket instead of narrowing anything.
     public IEnumerable<string> CandidateTokens() => AnchorDomain != null ? [] : pattern.IndexTokens();
 
+    /// A plain `||domain^` block, optionally `$third-party`, and nothing
+    /// else — most of a real list (93k of EasyList + EasyPrivacy's 110k
+    /// network rules). `FilterList` keeps these as bare names in a set
+    /// rather than as rule objects: about a third of the memory, and a
+    /// lookup instead of a rule test.
+    internal bool IsPlainDomain =>
+        !IsException && !Important && Kinds == ResourceKinds.All && ThirdParty != false
+        && DomainIncludes == null && DomainExcludes == null && AnchorDomain != null && pattern.IsDomainOnly;
+
+    /// `@@||domain^$generichide` (or `$ghide`): the site asks for no generic
+    /// cosmetic rules — usually because hiding every `.ad` breaks it or sets
+    /// off its ad-block detector. Only the plain domain shape is understood;
+    /// anything fancier is left to the caller to count as unsupported.
+    internal static string? GenericHideDomain(string line)
+    {
+        if (!line.StartsWith("@@||", StringComparison.Ordinal)) return null;
+        var dollar = line.IndexOf('$');
+        if (dollar < 0) return null;
+        var options = line[(dollar + 1)..].Split(',');
+        if (options.Length != 1 || options[0].Trim().ToLowerInvariant() is not ("generichide" or "ghide")) return null;
+        var domain = line[4..dollar].TrimEnd('^').ToLowerInvariant();
+        return IsPlausibleDomain(domain) ? domain : null;
+    }
+
+    // Without building "." + domain: this runs for every `$domain=` rule a
+    // request meets, and for every `~site` a stylesheet is checked against.
     internal static bool HostMatches(string host, string domain) =>
-        host.Equals(domain, StringComparison.Ordinal) || host.EndsWith("." + domain, StringComparison.Ordinal);
+        host.Length == domain.Length
+            ? host.Equals(domain, StringComparison.Ordinal)
+            : host.Length > domain.Length && host[host.Length - domain.Length - 1] == '.' && host.EndsWith(domain, StringComparison.Ordinal);
 
     private static bool AnyHostMatch(string[] domains, string host)
     {

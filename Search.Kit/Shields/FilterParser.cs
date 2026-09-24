@@ -10,7 +10,13 @@ internal static class FilterParser
     // is classified under when more than one text happens to appear.
     private static readonly string[] CosmeticMarkers = ["#@#", "#?#", "#$#", "#%#", "##"];
 
-    public static void ParseLine(string rawLine, List<NetworkRule> network, List<CosmeticRule> cosmetic, FilterStats stats)
+    public static void ParseLine(string rawLine, List<NetworkRule> network, List<CosmeticRule> cosmetic, FilterStats stats) =>
+        ParseLine(rawLine, network, cosmetic, null, stats);
+
+    /// `genericHide` collects the sites that asked for no generic cosmetic
+    /// rules (`@@||site^$generichide`); without it such a line is skipped
+    /// and counted like any other option this engine doesn't act on.
+    public static void ParseLine(string rawLine, List<NetworkRule> network, List<CosmeticRule> cosmetic, List<string>? genericHide, FilterStats stats)
     {
         var line = rawLine.Trim();
         if (line.Length == 0) { stats.Blank++; return; }
@@ -39,6 +45,13 @@ internal static class FilterParser
             var rule = new CosmeticRule(body, marker == "#@#", domains, excluded);
             cosmetic.Add(rule);
             if (rule.IsException) stats.CosmeticExceptions++; else stats.CosmeticRules++;
+            return;
+        }
+
+        if (genericHide != null && NetworkRule.GenericHideDomain(line) is { } site)
+        {
+            genericHide.Add(site);
+            stats.NetworkExceptions++;
             return;
         }
 

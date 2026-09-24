@@ -3,41 +3,101 @@ namespace SearchKit.Shields;
 /// One compiled filter set — every network and cosmetic rule from however
 /// many source lists were fed to `Compile`, indexed so a request costs a
 /// handful of dictionary lookups rather than a scan of every rule.
-/// `ShouldBlock` and `CssFor` are the only two calls the browser makes per
-/// request/navigation; everything else here is either building that index
-/// (`Compile`) or reloading it without re-parsing text (`Save`/`Load`).
+/// `ShouldBlock` is the one call the browser makes per request, and
+/// `GenericCss`/`SiteCss` the ones it makes per list and per site;
+/// everything else here is either building that index (`Compile`) or
+/// reloading it without re-parsing text (`Save`/`Load`).
 public sealed class FilterList
 {
     private readonly NetworkRule[] rules;
     private readonly Dictionary<string, int[]> domainAnchored;
+    private readonly Dictionary<string, int[]>.AlternateLookup<ReadOnlySpan<char>> domainAnchoredBySpan;
     private readonly Dictionary<string, int[]> tokenIndex;
+    private readonly Dictionary<string, int[]>.AlternateLookup<ReadOnlySpan<char>> tokenIndexBySpan;
     private readonly int[] genericPlain;
+
+    // Plain `||domain^` blocks as bare names (see NetworkRule.IsPlainDomain).
+    private readonly HashSet<string> plainDomains;
+    private readonly HashSet<string>.AlternateLookup<ReadOnlySpan<char>> plainDomainsBySpan;
+    private readonly HashSet<string> plainThirdPartyDomains;
+    private readonly HashSet<string>.AlternateLookup<ReadOnlySpan<char>> plainThirdPartyBySpan;
 
     private readonly List<CosmeticRule> genericCosmetic;
     private readonly List<CosmeticRule> genericCosmeticExceptions;
     private readonly Dictionary<string, List<CosmeticRule>> cosmeticByDomain;
     private readonly List<CosmeticRule> hostScopedCosmetic;
 
+    // The generic hide rules split in two: those that hold on every site
+    // (one stylesheet, the same for every page), and the few that some
+    // exception or `~site` turns off somewhere, decided per site instead.
+    private readonly string[] unconditionalSelectors;
+    private readonly HashSet<string> unconditional;
+    private readonly List<CosmeticRule> conditionalGeneric;
+    private readonly HashSet<string> genericHide;
+
+    // Every name any cosmetic rule mentions — scoped to it, excluding it,
+    // or excepting it — and what a site none of them mention gets. Most
+    // sites are such a site, and for them `SiteCss` is a lookup.
+    private readonly HashSet<string> mentioned;
+    private string? unmentionedCss;
+
     private readonly IRegistrableDomain sites;
 
     public FilterStats Stats { get; }
 
+    /// Every rule that holds on every site, as one stylesheet: the same text
+    /// for every page, so the browser can hand it over once per tab rather
+    /// than once per navigation. Not for sites in `GenericHideSites`.
+    public string GenericCss { get; }
+
+    /// Sites that asked for no generic cosmetic rules (`$generichide`).
+    public IReadOnlyCollection<string> GenericHideSites => genericHide;
+
     private FilterList(
         NetworkRule[] rules, Dictionary<string, int[]> domainAnchored, Dictionary<string, int[]> tokenIndex, int[] genericPlain,
+        HashSet<string> plainDomains, HashSet<string> plainThirdPartyDomains,
         List<CosmeticRule> genericCosmetic, List<CosmeticRule> genericCosmeticExceptions,
         Dictionary<string, List<CosmeticRule>> cosmeticByDomain, List<CosmeticRule> hostScopedCosmetic,
-        FilterStats stats, IRegistrableDomain sites)
+        HashSet<string> genericHide, FilterStats stats, IRegistrableDomain sites)
     {
         this.rules = rules;
         this.domainAnchored = domainAnchored;
+        domainAnchoredBySpan = domainAnchored.GetAlternateLookup<ReadOnlySpan<char>>();
         this.tokenIndex = tokenIndex;
+        tokenIndexBySpan = tokenIndex.GetAlternateLookup<ReadOnlySpan<char>>();
         this.genericPlain = genericPlain;
+        this.plainDomains = plainDomains;
+        plainDomainsBySpan = plainDomains.GetAlternateLookup<ReadOnlySpan<char>>();
+        this.plainThirdPartyDomains = plainThirdPartyDomains;
+        plainThirdPartyBySpan = plainThirdPartyDomains.GetAlternateLookup<ReadOnlySpan<char>>();
         this.genericCosmetic = genericCosmetic;
         this.genericCosmeticExceptions = genericCosmeticExceptions;
         this.cosmeticByDomain = cosmeticByDomain;
         this.hostScopedCosmetic = hostScopedCosmetic;
+        this.genericHide = genericHide;
         Stats = stats;
         this.sites = sites;
+
+        // A selector any exception names anywhere can't go in the shared
+        // sheet: there'd be no taking it back on the one site that asked.
+        var excepted = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var rule in genericCosmeticExceptions) excepted.Add(rule.Selector);
+        foreach (var rule in hostScopedCosmetic) if (rule.IsException) excepted.Add(rule.Selector);
+        unconditional = new HashSet<string>(StringComparer.Ordinal);
+        conditionalGeneric = [];
+        foreach (var rule in genericCosmetic)
+        {
+            if (rule.ExcludedDomains.Length == 0 && !excepted.Contains(rule.Selector)) unconditional.Add(rule.Selector);
+            else conditionalGeneric.Add(rule);
+        }
+        unconditionalSelectors = [.. unconditional.Where(Css.IsSafe).OrderBy(s => s, StringComparer.Ordinal)];
+        GenericCss = Css.Chunked(unconditionalSelectors);
+
+        mentioned = new HashSet<string>(genericHide, StringComparer.Ordinal);
+        mentioned.UnionWith(cosmeticByDomain.Keys);
+        foreach (var rule in genericCosmetic) mentioned.UnionWith(rule.ExcludedDomains);
+        foreach (var rule in genericCosmeticExceptions) mentioned.UnionWith(rule.ExcludedDomains);
+        foreach (var rule in hostScopedCosmetic) mentioned.UnionWith(rule.ExcludedDomains);
     }
 
     public static FilterList Compile(IEnumerable<string> lines, IRegistrableDomain? sites = null) =>
@@ -51,18 +111,32 @@ public sealed class FilterList
         var stats = new FilterStats();
         var network = new List<NetworkRule>();
         var cosmetic = new List<CosmeticRule>();
+        var genericHide = new List<string>();
         foreach (var lines in lists)
             foreach (var line in lines)
-                FilterParser.ParseLine(line, network, cosmetic, stats);
-        return Build(network, cosmetic, stats, sites ?? SimpleRegistrableDomain.Instance);
+                FilterParser.ParseLine(line, network, cosmetic, genericHide, stats);
+
+        var plain = new List<string>();
+        var plainThirdParty = new List<string>();
+        var rest = new List<NetworkRule>(network.Count / 4);
+        foreach (var rule in network)
+        {
+            if (!rule.IsPlainDomain) rest.Add(rule);
+            else if (rule.ThirdParty == true) plainThirdParty.Add(rule.AnchorDomain!);
+            else plain.Add(rule.AnchorDomain!);
+        }
+        return Build(rest, plain, plainThirdParty, cosmetic, genericHide, stats, sites ?? SimpleRegistrableDomain.Instance);
     }
 
-    private static FilterList Build(List<NetworkRule> network, List<CosmeticRule> cosmetic, FilterStats stats, IRegistrableDomain sites)
+    private static FilterList Build(List<NetworkRule> network, List<string> plain, List<string> plainThirdParty,
+        List<CosmeticRule> cosmetic, List<string> genericHide, FilterStats stats, IRegistrableDomain sites)
     {
         var (rules, domainAnchored, tokenIndex, genericPlain) = IndexNetwork(network);
         var (genericCosmetic, genericCosmeticExceptions, cosmeticByDomain, hostScopedCosmetic) = IndexCosmetic(cosmetic);
         return new FilterList(rules, domainAnchored, tokenIndex, genericPlain,
-            genericCosmetic, genericCosmeticExceptions, cosmeticByDomain, hostScopedCosmetic, stats, sites);
+            new HashSet<string>(plain, StringComparer.Ordinal), new HashSet<string>(plainThirdParty, StringComparer.Ordinal),
+            genericCosmetic, genericCosmeticExceptions, cosmeticByDomain, hostScopedCosmetic,
+            new HashSet<string>(genericHide, StringComparer.Ordinal), stats, sites);
     }
 
     private static (NetworkRule[] Rules, Dictionary<string, int[]> DomainAnchored, Dictionary<string, int[]> TokenIndex, int[] GenericPlain)
@@ -154,6 +228,12 @@ public sealed class FilterList
     /// for a top-level navigation) and what kind of resource it is.
     /// `$important` blocks override even a matching exception; short of
     /// that, any matching exception wins over any matching block.
+    ///
+    /// Called for every request a page makes, on the thread that draws the
+    /// window, so it allocates as little as it can: lookups go by span
+    /// rather than by substring, and a rule met twice (a token repeated in
+    /// the address) is simply tested twice — the answer is the same, and
+    /// cheaper than a set to remember it in.
     public bool ShouldBlock(Uri request, string? pageHost, ResourceKind kind)
     {
         if (request.Scheme is not ("http" or "https")) return false;
@@ -163,14 +243,12 @@ public sealed class FilterList
         var lowerUrl = request.AbsoluteUri.ToLowerInvariant();
         var afterHost = request.GetLeftPart(UriPartial.Authority).Length;
 
-        var seen = new HashSet<int>();
         var blocked = false;
         var important = false;
         var excepted = false;
 
         void Consider(int idx)
         {
-            if (!seen.Add(idx)) return;
             var rule = rules[idx];
             if (!rule.MatchesContext(kind, thirdParty, pageHost)) return;
             if (!rule.MatchesUrl(lowerUrl, afterHost, host)) return;
@@ -178,9 +256,11 @@ public sealed class FilterList
             else { blocked = true; if (rule.Important) important = true; }
         }
 
-        for (var at = host; ; )
+        for (var at = host.AsSpan(); ; )
         {
-            if (domainAnchored.TryGetValue(at, out var bucket))
+            if (!blocked && (plainDomainsBySpan.Contains(at) || (thirdParty && plainThirdPartyBySpan.Contains(at))))
+                blocked = true;
+            if (domainAnchoredBySpan.TryGetValue(at, out var bucket))
                 foreach (var idx in bucket) Consider(idx);
             if (important) return true; // nothing can un-block an $important match
             var dot = at.IndexOf('.');
@@ -188,10 +268,14 @@ public sealed class FilterList
             at = at[(dot + 1)..];
         }
 
-        foreach (var token in AbpPattern.AlnumRuns(lowerUrl))
+        var url = lowerUrl.AsSpan();
+        for (var i = 0; i < url.Length; )
         {
-            if (token.Length < 3) continue;
-            if (tokenIndex.TryGetValue(token, out var bucket))
+            if (!char.IsAsciiLetterOrDigit(url[i])) { i++; continue; }
+            var start = i;
+            while (i < url.Length && char.IsAsciiLetterOrDigit(url[i])) i++;
+            if (i - start < 3) continue;
+            if (tokenIndexBySpan.TryGetValue(url[start..i], out var bucket))
                 foreach (var idx in bucket) Consider(idx);
         }
         foreach (var idx in genericPlain) Consider(idx);
@@ -199,43 +283,106 @@ public sealed class FilterList
         return important || (blocked && !excepted);
     }
 
+    /// Whether the generic rules apply on `host` at all.
+    public bool HidesGenerics(string host)
+    {
+        for (var at = host.ToLowerInvariant(); ; )
+        {
+            if (genericHide.Contains(at)) return false;
+            var dot = at.IndexOf('.');
+            if (dot < 0) return true;
+            at = at[(dot + 1)..];
+        }
+    }
+
+    /// What `host` gets on top of `GenericCss`: its own rules, and the
+    /// generic ones that depend on where they are — minus every exception
+    /// that applies there, and minus what `GenericCss` already hides. Each
+    /// selector is a rule of its own, so one the engine can't parse takes
+    /// nothing else down with it. "" when there is nothing to add.
+    public string SiteCss(string host)
+    {
+        host = host.ToLowerInvariant();
+        if (!Mentions(host)) return unmentionedCss ??= Compose("\u0001");
+        return Compose(host);
+    }
+
+    private bool Mentions(string host)
+    {
+        for (var at = host; ; )
+        {
+            if (mentioned.Contains(at)) return true;
+            var dot = at.IndexOf('.');
+            if (dot < 0) return false;
+            at = at[(dot + 1)..];
+        }
+    }
+
+    private string Compose(string host)
+    {
+        var generics = HidesGenerics(host);
+        var selectors = new HashSet<string>(StringComparer.Ordinal);
+        var excepted = new HashSet<string>(StringComparer.Ordinal);
+
+        if (generics)
+            foreach (var rule in conditionalGeneric)
+                if (!Excludes(rule, host)) selectors.Add(rule.Selector);
+        foreach (var rule in genericCosmeticExceptions)
+            if (!Excludes(rule, host)) excepted.Add(rule.Selector);
+        Scoped(host, selectors, excepted);
+
+        selectors.ExceptWith(excepted);
+        if (generics) selectors.ExceptWith(unconditional);
+        if (selectors.Count == 0) return "";
+        return string.Join("\n", selectors.Where(Css.IsSafe).OrderBy(s => s, StringComparer.Ordinal).Select(s => s + " { display: none !important; }"));
+    }
+
     /// The stylesheet hiding every cosmetic rule that applies to `host` and
     /// isn't cancelled by an exception — one `display: none !important`
     /// rule covering every matching selector, or "" when nothing applies.
+    /// `GenericCss` + `SiteCss` is the same set, split for the browser.
     public string CssFor(string host)
     {
         host = host.ToLowerInvariant();
         var selectors = new HashSet<string>(StringComparer.Ordinal);
         var excepted = new HashSet<string>(StringComparer.Ordinal);
 
-        bool HostOrSub(string domain) => host == domain || host.EndsWith("." + domain, StringComparison.Ordinal);
-
-        foreach (var rule in genericCosmetic)
-            if (rule.ExcludedDomains.Length == 0 || !Array.Exists(rule.ExcludedDomains, HostOrSub))
-                selectors.Add(rule.Selector);
+        if (HidesGenerics(host))
+            foreach (var rule in genericCosmetic)
+                if (!Excludes(rule, host)) selectors.Add(rule.Selector);
         foreach (var rule in genericCosmeticExceptions)
-            if (rule.ExcludedDomains.Length == 0 || !Array.Exists(rule.ExcludedDomains, HostOrSub))
-                excepted.Add(rule.Selector);
-
-        for (var at = host; ; )
-        {
-            if (cosmeticByDomain.TryGetValue(at, out var list))
-                foreach (var rule in list)
-                {
-                    if (rule.ExcludedDomains.Length > 0 && Array.Exists(rule.ExcludedDomains, HostOrSub)) continue;
-                    (rule.IsException ? excepted : selectors).Add(rule.Selector);
-                }
-            var dot = at.IndexOf('.');
-            if (dot < 0) break;
-            at = at[(dot + 1)..];
-        }
+            if (!Excludes(rule, host)) excepted.Add(rule.Selector);
+        Scoped(host, selectors, excepted);
 
         selectors.ExceptWith(excepted);
         if (selectors.Count == 0) return "";
         return string.Join(", ", selectors.OrderBy(s => s, StringComparer.Ordinal)) + " { display: none !important; }";
     }
 
-    private const int FormatVersion = 1;
+    private void Scoped(string host, HashSet<string> selectors, HashSet<string> excepted)
+    {
+        for (var at = host; ; )
+        {
+            if (cosmeticByDomain.TryGetValue(at, out var list))
+                foreach (var rule in list)
+                {
+                    if (Excludes(rule, host)) continue;
+                    (rule.IsException ? excepted : selectors).Add(rule.Selector);
+                }
+            var dot = at.IndexOf('.');
+            if (dot < 0) break;
+            at = at[(dot + 1)..];
+        }
+    }
+
+    private static bool Excludes(CosmeticRule rule, string host)
+    {
+        foreach (var domain in rule.ExcludedDomains)
+            if (NetworkRule.HostMatches(host, domain)) return true;
+        return false;
+    }
+
+    private const int FormatVersion = 2;
 
     /// The compact binary form: every compiled rule, with no re-parsing of
     /// list text needed to use it again — `Load` rebuilds the same indices
@@ -247,6 +394,9 @@ public sealed class FilterList
 
         w.Write(rules.Length);
         foreach (var rule in rules) rule.WriteTo(w);
+        Names(plainDomains);
+        Names(plainThirdPartyDomains);
+        Names(genericHide);
 
         w.Write(genericCosmetic.Count);
         foreach (var r in genericCosmetic) r.WriteTo(w);
@@ -262,6 +412,12 @@ public sealed class FilterList
         w.Write(Stats.SkippedUnsupported);
         w.Write(Stats.Comments);
         w.Write(Stats.Blank);
+
+        void Names(HashSet<string> names)
+        {
+            w.Write(names.Count);
+            foreach (var name in names) w.Write(name);
+        }
     }
 
     public static FilterList Load(Stream stream, IRegistrableDomain? sites = null)
@@ -273,6 +429,9 @@ public sealed class FilterList
         var networkCount = r.ReadInt32();
         var network = new List<NetworkRule>(networkCount);
         for (var i = 0; i < networkCount; i++) network.Add(NetworkRule.ReadFrom(r));
+        var plain = Names();
+        var plainThirdParty = Names();
+        var genericHide = Names();
 
         var cosmetic = new List<CosmeticRule>();
         var genericCount = r.ReadInt32();
@@ -293,6 +452,59 @@ public sealed class FilterList
             Blank = r.ReadInt32(),
         };
 
-        return Build(network, cosmetic, stats, sites ?? SimpleRegistrableDomain.Instance);
+        return Build(network, plain, plainThirdParty, cosmetic, genericHide, stats, sites ?? SimpleRegistrableDomain.Instance);
+
+        List<string> Names()
+        {
+            var count = r.ReadInt32();
+            var names = new List<string>(count);
+            for (var i = 0; i < count; i++) names.Add(r.ReadString());
+            return names;
+        }
+    }
+}
+
+/// Turning selectors into a stylesheet a page can take.
+internal static class Css
+{
+    /// Selectors a stylesheet can't hold, or shouldn't: the extended
+    /// pseudo-classes other blockers run in script (`:-abp-has`,
+    /// `:has-text`…), which a browser rejects — and with them the whole rule
+    /// they sit in — and anything that could close the rule and start one of
+    /// its own (`{`, `}`, `;`, a comment), which a list has no business
+    /// sending.
+    private static readonly string[] Refused =
+    [
+        "{", "}", ";", "/*", "*/", "<", ":-abp-", ":has-text(", ":contains(", ":xpath(", ":style(", ":remove(",
+        ":matches-css", ":upward(", ":watch-attr(", ":min-text-length(", ":others(", ":matches-path(",
+        ":matches-attr(", ":matches-prop(", ":if(", ":if-not(", ":nth-ancestor(", ":remove-attr(", ":remove-class(",
+    ];
+
+    public static bool IsSafe(string selector)
+    {
+        if (selector.Length == 0 || selector[0] == '@') return false;
+        foreach (var bad in Refused)
+            if (selector.Contains(bad, StringComparison.OrdinalIgnoreCase)) return false;
+        return true;
+    }
+
+    /// One rule per hundred selectors. A browser drops a whole rule when a
+    /// single selector in it doesn't parse; a hundred at a time keeps that
+    /// loss small without paying for thirteen thousand separate rules.
+    public static string Chunked(IReadOnlyList<string> selectors, int size = 100)
+    {
+        if (selectors.Count == 0) return "";
+        var text = new System.Text.StringBuilder(selectors.Count * 24);
+        for (var i = 0; i < selectors.Count; i += size)
+        {
+            var end = Math.Min(i + size, selectors.Count);
+            for (var j = i; j < end; j++)
+            {
+                if (j > i) text.Append(',');
+                text.Append(selectors[j]);
+            }
+            text.Append("{display:none!important}\n");
+        }
+        return text.ToString();
     }
 }

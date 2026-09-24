@@ -59,6 +59,13 @@ internal sealed class AbpPattern
     /// exactly there, not merely somewhere at or after it.
     public bool IsMatch(string haystack, int from) => tokens.Length == 0 || Search(haystack, 0, from);
 
+    /// Nothing after a `||domain` but at most its closing `^`: the rule is
+    /// the domain and nothing else, so a set of names can stand in for it.
+    /// After a host there is always a separator (`/`, `:`, `?`) or the end,
+    /// so the `^` can't fail once the host has matched.
+    public bool IsDomainOnly =>
+        !endAnchor && (tokens.Length == 0 || (tokens.Length == 1 && tokens[0].Kind == Kind.Separator));
+
     /// Every token this pattern's literal pieces contain that's at least
     /// three plain letters/digits long, longest first — `FilterList` picks
     /// the first one as the index key for a non-domain-anchored rule, so a

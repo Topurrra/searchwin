@@ -25,9 +25,9 @@
     // became the Documents-pack "Markdown Converter" tool, which absorbed it
     // wholesale and added HTML/PDF/Word/text file export. A writer converting
     // notes into a Word file was never going to look under Developer Tools.
-    // `devkit/MarkdownPanel.svelte` is kept on disk as the backup copy; it is
-    // no longer imported. Its state stores still live in `devkitPanels.ts`.
-    // import MarkdownPanel from './devkit/MarkdownPanel.svelte';
+    // `devkit/MarkdownPanel.svelte` was the dead backup copy of that panel
+    // (deleted 2026-09-25, phase 3 cleanup — nothing imported it). Its state
+    // stores still live in `devkitPanels.ts`, now owned by MarkdownConverter.
     import IdGenPanel from './devkit/IdGenPanel.svelte';
     import FakeDataPanel from './devkit/FakeDataPanel.svelte';
     import CronPanel from './devkit/CronPanel.svelte';

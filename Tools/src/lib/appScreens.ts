@@ -145,7 +145,7 @@ export const toolPacks: ToolPackDefinition[] = [
     {
         id: 'development',
         name: 'Development Pack',
-        description: 'JWT, SQL, regex, diff, JSON, fake data, IDs, and Markdown helpers.',
+        description: 'JWT, SQL, regex, diff, IDs, fake data, cron, secret scanning, SSH keys, and encryption.',
         defaultEnabled: false,
     },
     {
@@ -858,13 +858,13 @@ export const toolScreens: ToolScreen[] = [
         id: 'dev-toolkit',
         name: 'Developer Tools',
         category: 'Development',
-        description: 'JWT, regex, SQL, diff, Markdown, ID/data generators, cron, and secret scanning in one hub',
+        description: 'JWT, regex, SQL, diff, ID/data generators, cron, and secret scanning in one hub',
         available: true,
         icon: Wrench,
         kind: 'tool',
         loader: () => import('$lib/tools/Development/DevToolkit.svelte'),
         docs: {
-            use: 'A local-first developer toolbox grouped into Format & Inspect (JWT decoder, regex, SQL formatter, diff, Markdown), Generate (IDs, fake data, cron), and Secure (secret scanner). Pick a tool from the left rail.',
+            use: 'A local-first developer toolbox grouped into Format & Inspect (JWT decoder, regex, SQL formatter, diff), Generate (IDs, fake data, cron), and Secure (secret scanner). Pick a tool from the left rail.',
             offline: 'Tokens, queries, snippets, and logs often carry secrets, IDs, or production data. Every tool runs on-device with no upload.',
             tip: 'SSH Key Manager and Encrypt / Decrypt stay separate tools — they manage on-disk key material and files.',
         },

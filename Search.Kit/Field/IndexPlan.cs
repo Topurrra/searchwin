@@ -20,6 +20,7 @@ public static class IndexPlan
         "keepitlocal-cache", "system volume information", "target", "temp", "tmp", "users/*/appdata/local/temp",
         "venv", "windows/debug", "windows/logs", "windows/panther", "windows/prefetch",
         "windows/softwaredistribution/download", "windows/temp", "windows/winsxs/temp",
+        "desktop.ini", "thumbs.db", "*/ntuser.*", "*/~$*",
     ];
 
     /// Never indexed, whatever folder is chosen, even when it's one of them:

@@ -116,7 +116,7 @@ fn now_secs() -> u64 {
 }
 
 fn open_db(path: &Path) -> Result<Database, String> {
-    let (db, _) = super::local_db::open_redb(path)?;
+    let (db, _) = super::local_db::open_redb(path, super::local_db::CACHE_WAIT)?;
     let write_txn = db
         .begin_write()
         .map_err(|e| format!("Cannot initialize perceptual cache: {e}"))?;

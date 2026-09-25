@@ -157,6 +157,14 @@ const DEFAULT_EXCLUDE_FOLDERS: &[&str] = &[
     "windows/softwaredistribution/download",
     "windows/temp",
     "windows/winsxs/temp",
+    // Files Windows and Office keep beside the user's own, usually hidden
+    // (which the walks skip) but not always, and the watcher sees them: the
+    // registry hive and its logs, folder settings, thumbnail caches, and the
+    // `~$` owner file of a document open in Office.
+    "desktop.ini",
+    "thumbs.db",
+    "*/ntuser.*",
+    "*/~$*",
 ];
 const REQUIRED_EXCLUDE_FOLDERS: &[&str] = &["com.keepitlocal.app"];
 const DEFAULT_EXCLUDE_EXTENSIONS: &[&str] = &[
@@ -1241,20 +1249,8 @@ fn reconcile_filename_index(
     let mut seen: HashSet<String> = HashSet::with_capacity(indexed.len());
     let mut events: Vec<notify::Result<Event>> = Vec::new();
 
-    for root in &options.roots {
-        let mut builder = WalkBuilder::new(root);
-        builder.git_ignore(true);
-        builder.git_exclude(true);
-        builder.ignore(true);
-        builder.parents(true);
-        // Wave 7.7 (2026-05-28): walker is permanently non-following.
-        // See FileSearchStatus comment for rationale.
-        builder.follow_links(false);
-        builder.standard_filters(true);
-        // After standard_filters, which turns hiding back on: dot-folders
-        // are walked when hidden ones are, and the exclusions choose.
-        builder.hidden(!options.include_hidden);
-        for entry in builder.build().flatten() {
+    for root in walked_roots(options) {
+        for entry in index_walk(root, options).build().flatten() {
             let path = entry.path();
             if !should_include_path(path, options) {
                 continue;
@@ -2777,11 +2773,9 @@ fn search_local_files_inner(
         && !query_keywords.is_empty()
         && natural_plan.date_filter.is_none()
     {
-        if let Some(prefix_query) = build_prefix_tantivy_query(
-            &query_keywords,
-            engine.fields.file_name,
-            engine.fields.path,
-        ) {
+        if let Some(prefix_query) =
+            build_prefix_tantivy_query(&query_keywords, &[engine.fields.file_name, engine.fields.path])
+        {
             pass1_5_fired = true;
             let (prefix_total, prefix_matches) = fetch_results(prefix_query.as_ref(), false, false)?;
             if !prefix_matches.is_empty() {
@@ -2803,7 +2797,6 @@ fn search_local_files_inner(
     // filename index is absent this is skipped, identical to the pre-7c path.
     if let Ok(filename_guard) = FILENAME_ENGINE.lock() {
         if let Some(filename_handle) = filename_guard.as_ref() {
-            let filename_fetch_limit = (offset + limit).saturating_mul(8).clamp(limit, 8_000);
             if let Ok(filename_matches) = search_filename_index(
                 filename_handle,
                 natural_language,
@@ -2813,7 +2806,7 @@ fn search_local_files_inner(
                 &normalized_rank_query,
                 &effective_extension_filters,
                 path_filter.as_deref(),
-                filename_fetch_limit,
+                offset + limit,
                 &frecency,
             ) {
                 let seen: std::collections::HashSet<String> =
@@ -2984,9 +2977,10 @@ fn search_filename_index(
     normalized_rank_query: &str,
     effective_extension_filters: &[String],
     path_filter: Option<&str>,
-    fetch_limit: usize,
+    page: usize,
     frecency: &super::frecency::FrecencySnapshot,
 ) -> Result<Vec<FileSearchResultItem>, String> {
+    let fetch_limit = page.saturating_mul(8).min(8_000);
     let searcher = handle.reader.searcher();
     let result_fields = handle.fields.result_doc_fields();
 
@@ -3020,9 +3014,9 @@ fn search_filename_index(
         }
     };
 
-    let run = |query: &dyn Query, use_fuzzy: bool| -> Result<Vec<FileSearchResultItem>, String> {
+    let run = |query: &dyn Query, use_fuzzy: bool, fetch: usize| -> Result<Vec<FileSearchResultItem>, String> {
         let top_docs = searcher
-            .search(query, &TopDocs::with_limit(fetch_limit).order_by_score())
+            .search(query, &TopDocs::with_limit(fetch).order_by_score())
             .map_err(|error| format!("Filename index search failed: {error}"))?;
         let mut items = Vec::new();
         for (score, address) in top_docs {
@@ -3046,19 +3040,33 @@ fn search_filename_index(
         Ok(items)
     };
 
-    let mut matched = run(main_query.as_ref(), false)?;
+    let mut matched = run(main_query.as_ref(), false, fetch_limit)?;
 
     // A typed word also finds the names it begins a word of ("note" →
     // notebook.txt), even when exact terms (its own or a related term's)
     // already matched: typing on must not drop what the shorter word found.
-    if natural_language && natural_plan.date_filter.is_none() && !natural_plan.typed_words.is_empty() {
-        if let Some(prefix_query) = build_prefix_tantivy_query(
-            &natural_plan.typed_words,
-            handle.fields.file_name,
-            handle.fields.path,
-        ) {
+    // Names only (everything below a `notes` folder begins "note" in its
+    // path), words of three letters or more, the filters in the query so
+    // what's read ahead can be shown, and not at all when a page of names
+    // holding the typed text is already there.
+    let typed_words: Vec<String> =
+        natural_plan.typed_words.iter().filter(|word| word.len() >= 3).cloned().collect();
+    let named = matched
+        .iter()
+        .filter(|item| item.file_name.to_lowercase().contains(&natural_plan.typed_text))
+        .count();
+    if natural_language && natural_plan.date_filter.is_none() && !typed_words.is_empty() && named < page {
+        if let Some(prefix_query) = build_prefix_tantivy_query(&typed_words, &[handle.fields.file_name]) {
+            let mut clauses: Vec<(Occur, Box<dyn Query>)> = vec![(Occur::Must, prefix_query)];
+            push_filter_clauses(
+                &mut clauses,
+                handle.fields.extension,
+                Some(handle.fields.entry_type),
+                effective_extension_filters,
+                natural_plan.entry_type_filter.as_deref(),
+            );
             let seen: HashSet<String> = matched.iter().map(|item| item.path.to_lowercase()).collect();
-            for item in run(prefix_query.as_ref(), false)? {
+            for item in run(&BooleanQuery::new(clauses), false, page.saturating_mul(2))? {
                 if !seen.contains(&item.path.to_lowercase()) {
                     matched.push(item);
                 }
@@ -3074,9 +3082,9 @@ fn search_filename_index(
         && natural_plan.date_filter.is_none()
     {
         if let Some(prefix_query) =
-            build_prefix_tantivy_query(query_keywords, handle.fields.file_name, handle.fields.path)
+            build_prefix_tantivy_query(query_keywords, &[handle.fields.file_name, handle.fields.path])
         {
-            matched = run(prefix_query.as_ref(), false)?;
+            matched = run(prefix_query.as_ref(), false, fetch_limit)?;
         }
     }
 
@@ -3090,7 +3098,7 @@ fn search_filename_index(
         if let Some(fuzzy_query) =
             build_fuzzy_tantivy_query(query_keywords, handle.fields.file_name, handle.fields.path)
         {
-            matched = run(fuzzy_query.as_ref(), true)?;
+            matched = run(fuzzy_query.as_ref(), true, fetch_limit)?;
         }
     }
 
@@ -3106,7 +3114,7 @@ fn search_filename_index(
     {
         if let Some(decompound) = build_decompound_query_string(query_keywords) {
             let (parsed, _warnings) = parser.parse_query_lenient(&decompound);
-            matched = run(parsed.as_ref(), false)?;
+            matched = run(parsed.as_ref(), false, fetch_limit)?;
         }
     }
 
@@ -3244,7 +3252,6 @@ fn query_filename_index(
         &query_text
     });
 
-    let fetch_limit = (offset + limit).saturating_mul(8).clamp(limit, 8_000);
     let mut matched = search_filename_index(
         handle,
         natural_language,
@@ -3254,7 +3261,7 @@ fn query_filename_index(
         &normalized_rank_query,
         &effective_extension_filters,
         path_filter.as_deref(),
-        fetch_limit,
+        offset + limit,
         frecency,
     )?;
 
@@ -6235,33 +6242,12 @@ fn content_index_unchanged(
     // Deduplicate roots exactly like the rebuild walk so the discovered set
     // matches what a real build would index (a child path already covered by a
     // parent root must not be walked twice).
-    let mut deduped_roots: Vec<&String> = Vec::new();
-    'outer: for root in &options.roots {
-        let root_path = Path::new(root);
-        for existing in &deduped_roots {
-            if root_path.starts_with(Path::new(existing)) {
-                continue 'outer;
-            }
-        }
-        deduped_roots.retain(|existing| !Path::new(existing).starts_with(root_path));
-        deduped_roots.push(root);
-    }
+    let deduped_roots = walked_roots(options);
 
     let mut matched: u64 = 0;
     let mut scanned: u64 = 0;
     for root in deduped_roots {
-        let mut builder = WalkBuilder::new(root);
-        builder.git_ignore(true);
-        builder.git_exclude(true);
-        builder.ignore(true);
-        builder.parents(true);
-        // Wave 7.7 (2026-05-28): walker is permanently non-following.
-        // See FileSearchStatus comment for rationale.
-        builder.follow_links(false);
-        builder.standard_filters(true);
-        // After standard_filters, which turns hiding back on: dot-folders
-        // are walked when hidden ones are, and the exclusions choose.
-        builder.hidden(!options.include_hidden);
+        let builder = index_walk(root, options);
         // Single-threaded on purpose: metadata-only stat work is cheap, the walk
         // bails on the first change, and a sequential walk avoids sharing the
         // cache across threads. It is still orders of magnitude faster than the
@@ -6459,18 +6445,7 @@ fn build_index_in_worker(
     // Deduplicate roots so that a child path (e.g. /home/user/docs) that is
     // already covered by a parent root (e.g. /home/user) doesn't get walked
     // twice and produce duplicate index entries.
-    let mut deduped_roots: Vec<&String> = Vec::new();
-    'outer: for root in &options.roots {
-        let root_path = std::path::Path::new(root);
-        for existing in &deduped_roots {
-            if root_path.starts_with(std::path::Path::new(existing)) {
-                continue 'outer;
-            }
-        }
-        // Also drop any previously accepted roots that are children of this new one.
-        deduped_roots.retain(|existing| !std::path::Path::new(existing).starts_with(root_path));
-        deduped_roots.push(root);
-    }
+    let deduped_roots = walked_roots(options);
 
     // Build in parallel. The `ignore` crate's parallel walker spawns N worker
     // threads that each enumerate part of the tree AND run the per-file
@@ -6614,18 +6589,7 @@ fn build_index_in_worker(
             break;
         }
 
-        let mut builder = WalkBuilder::new(root);
-        builder.git_ignore(true);
-        builder.git_exclude(true);
-        builder.ignore(true);
-        builder.parents(true);
-        // Wave 7.7 (2026-05-28): walker is permanently non-following.
-        // See FileSearchStatus comment for rationale.
-        builder.follow_links(false);
-        builder.standard_filters(true);
-        // After standard_filters, which turns hiding back on: dot-folders
-        // are walked when hidden ones are, and the exclusions choose.
-        builder.hidden(!options.include_hidden);
+        let mut builder = index_walk(root, options);
         // Per-mode parallelism. On an 8-core machine this gives 7 threads in
         // "fast", 8 (capped) in "balanced" (default), and just 2 in "quiet"
         // (1 on a 4-core). Each thread independently extracts content from its
@@ -7111,17 +7075,7 @@ fn build_filename_index_in_worker(
 
     // Deduplicate roots so a child path covered by a parent root isn't walked
     // twice and producing duplicate entries.
-    let mut deduped_roots: Vec<&String> = Vec::new();
-    'outer: for root in &options.roots {
-        let root_path = std::path::Path::new(root);
-        for existing in &deduped_roots {
-            if root_path.starts_with(std::path::Path::new(existing)) {
-                continue 'outer;
-            }
-        }
-        deduped_roots.retain(|existing| !std::path::Path::new(existing).starts_with(root_path));
-        deduped_roots.push(root);
-    }
+    let deduped_roots = walked_roots(options);
 
     let performance_mode = options.performance_mode.clone();
     let on_battery = is_on_battery();
@@ -7133,18 +7087,7 @@ fn build_filename_index_in_worker(
             break;
         }
 
-        let mut builder = WalkBuilder::new(root);
-        builder.git_ignore(true);
-        builder.git_exclude(true);
-        builder.ignore(true);
-        builder.parents(true);
-        // Wave 7.7 (2026-05-28): walker is permanently non-following.
-        // See FileSearchStatus comment for rationale.
-        builder.follow_links(false);
-        builder.standard_filters(true);
-        // After standard_filters, which turns hiding back on: dot-folders
-        // are walked when hidden ones are, and the exclusions choose.
-        builder.hidden(!options.include_hidden);
+        let mut builder = index_walk(root, options);
         builder.threads(index_walker_threads(&performance_mode, on_battery));
 
         let walker = builder.build_parallel();
@@ -7648,20 +7591,8 @@ fn reconcile_watched_index(
     let mut seen: HashSet<String> = HashSet::with_capacity(cache.map.len());
     let mut events: Vec<notify::Result<Event>> = Vec::new();
 
-    for root in &options.roots {
-        let mut builder = WalkBuilder::new(root);
-        builder.git_ignore(true);
-        builder.git_exclude(true);
-        builder.ignore(true);
-        builder.parents(true);
-        // Wave 7.7 (2026-05-28): walker is permanently non-following.
-        // See FileSearchStatus comment for rationale.
-        builder.follow_links(false);
-        builder.standard_filters(true);
-        // After standard_filters, which turns hiding back on: dot-folders
-        // are walked when hidden ones are, and the exclusions choose.
-        builder.hidden(!options.include_hidden);
-        for entry in builder.build().flatten() {
+    for root in walked_roots(options) {
+        for entry in index_walk(root, options).build().flatten() {
             let path = entry.path();
             if !should_include_path(path, options) {
                 continue;
@@ -8742,37 +8673,20 @@ fn write_search_config_for_state(
 
 fn read_search_config_for_state(state_dir: &Path) -> Result<Option<StoredSearchConfig>, String> {
     let db_path = local_db::database_path_for_dir(state_dir);
-    if let Some(mut parsed) =
-        local_db::read_json_shared::<StoredSearchConfig>(&db_path, SEARCH_CONFIG_FILE)?
-    {
-        parsed.options.exclude_folders = normalize_exclude_folders(&parsed.options.exclude_folders);
-        parsed.options.exclude_extensions =
-            normalize_exclude_extensions(&parsed.options.exclude_extensions);
-        parsed.options.performance_mode =
-            normalize_index_performance_mode(&parsed.options.performance_mode);
-        if parsed.options.watcher_settings_version == 0 && !parsed.options.watcher_enabled {
-            parsed.options.watcher_enabled = true;
-            parsed.options.watcher_paused = true;
+    let stored = local_db::read_json_shared::<StoredSearchConfig>(&db_path, SEARCH_CONFIG_FILE)?;
+    let legacy = stored.is_none();
+    let mut parsed = match stored {
+        Some(parsed) => parsed,
+        None => {
+            let path = search_config_path_for_state(state_dir);
+            if !path.exists() {
+                return Ok(None);
+            }
+            let raw = fs::read_to_string(&path)
+                .map_err(|error| format!("Cannot read search config: {error}"))?;
+            serde_json::from_str(&raw).map_err(|error| format!("Cannot parse search config: {error}"))?
         }
-        if !parsed.options.watcher_enabled {
-            parsed.options.watcher_paused = false;
-        }
-        parsed.options.watcher_settings_version = WATCHER_SETTINGS_VERSION;
-        if parsed.options.filename_roots.is_empty() {
-            parsed.options.filename_roots = parsed.options.roots.clone();
-        }
-        parsed.rebuild_schedule = normalize_rebuild_schedule(parsed.rebuild_schedule);
-        return Ok(Some(parsed));
-    }
-
-    let path = search_config_path_for_state(state_dir);
-    if !path.exists() {
-        return Ok(None);
-    }
-    let raw =
-        fs::read_to_string(&path).map_err(|error| format!("Cannot read search config: {error}"))?;
-    let mut parsed: StoredSearchConfig = serde_json::from_str(&raw)
-        .map_err(|error| format!("Cannot parse search config: {error}"))?;
+    };
     parsed.options.exclude_folders = normalize_exclude_folders(&parsed.options.exclude_folders);
     parsed.options.exclude_extensions =
         normalize_exclude_extensions(&parsed.options.exclude_extensions);
@@ -8790,7 +8704,9 @@ fn read_search_config_for_state(state_dir: &Path) -> Result<Option<StoredSearchC
         parsed.options.filename_roots = parsed.options.roots.clone();
     }
     parsed.rebuild_schedule = normalize_rebuild_schedule(parsed.rebuild_schedule);
-    local_db::write_json(&db_path, SEARCH_CONFIG_FILE, &parsed)?;
+    if legacy {
+        write_search_config_for_state(state_dir, &parsed)?;
+    }
     Ok(Some(parsed))
 }
 
@@ -8932,6 +8848,75 @@ fn hydrate_status_from_filename_worker_files(app: &AppHandle) {
         update_status(|status| {
             status.filename_index_message = Some(status_file.message.clone());
         });
+    }
+}
+
+/// The chosen folders a walk starts from: each one, less one inside another
+/// whose walk reaches it (it would be indexed twice). One that walk doesn't
+/// reach, behind a hidden or excluded folder (a notes folder in AppData), is
+/// walked from itself.
+fn walked_roots(options: &FileSearchIndexOptions) -> Vec<&String> {
+    let entered = |folder: &Path| {
+        fs::metadata(folder).is_ok_and(|meta| !is_os_hidden(&meta)) && should_include_path(folder, options)
+    };
+    let mut walked: Vec<&String> = Vec::new();
+    for root in &options.roots {
+        let path = Path::new(root);
+        let reached = options.roots.iter().any(|outer| {
+            let outer = Path::new(outer);
+            outer != path
+                && path.starts_with(outer)
+                && path.ancestors().take_while(|folder| *folder != outer).all(|folder| entered(folder))
+        });
+        if !reached && !walked.iter().any(|seen| Path::new(seen) == path) {
+            walked.push(root);
+        }
+    }
+    walked
+}
+
+/// The walk of one chosen folder, as every index walk makes it: .gitignore
+/// and .ignore files kept, links not followed, and never into a folder the
+/// index leaves out (so a node_modules or .git isn't read to be skipped
+/// file by file) or an entry Windows hides (NTUSER.DAT, desktop.ini, `~$`
+/// owner files...) below it. Dot-named entries are left to `include_hidden`.
+fn index_walk(root: &str, options: &FileSearchIndexOptions) -> WalkBuilder {
+    let mut builder = WalkBuilder::new(root);
+    builder
+        .git_ignore(true)
+        .git_exclude(true)
+        .ignore(true)
+        .parents(true)
+        // Wave 7.7 (2026-05-28): walker is permanently non-following.
+        // See FileSearchStatus comment for rationale.
+        .follow_links(false)
+        .standard_filters(true)
+        // After standard_filters, which turns it back on: hidden entries are
+        // decided below, the walker would take Windows' and dot-named ones
+        // as one.
+        .hidden(false);
+    let options = options.clone();
+    builder.filter_entry(move |entry| {
+        // The walker's metadata: on Windows it comes with the listing, no stat.
+        let hidden = entry.metadata().is_ok_and(|meta| is_os_hidden(&meta));
+        let is_dir = entry.file_type().is_some_and(|kind| kind.is_dir());
+        entry.depth() == 0 || (!hidden && (!is_dir || should_include_path(entry.path(), &options)))
+    });
+    builder
+}
+
+/// Whether Windows marks it hidden.
+fn is_os_hidden(meta: &fs::Metadata) -> bool {
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        const FILE_ATTRIBUTE_HIDDEN: u32 = 0x2;
+        meta.file_attributes() & FILE_ATTRIBUTE_HIDDEN != 0
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = meta;
+        false
     }
 }
 
@@ -10148,15 +10133,13 @@ fn build_native_tantivy_query(
         clauses.push((Occur::Must, Box::new(BooleanQuery::new(kw))));
     }
 
-    // Extension filter: Tantivy TermQuery on the STRING extension field.
-    if !extension_filters.is_empty() {
-        let mut ext: Vec<(Occur, Box<dyn Query>)> = Vec::new();
-        for e in extension_filters {
-            let term = Term::from_field_text(fields.extension, e.as_str());
-            ext.push((Occur::Should, Box::new(TermQuery::new(term, IndexRecordOption::Basic))));
-        }
-        clauses.push((Occur::Must, Box::new(BooleanQuery::new(ext))));
-    }
+    push_filter_clauses(
+        &mut clauses,
+        fields.extension,
+        fields.entry_type,
+        extension_filters,
+        natural_plan.entry_type_filter.as_deref(),
+    );
 
     // Date range: native RangeQuery on the FAST u64 field.
     // Tantivy can skip entire segments using the column-oriented FAST reader.
@@ -10191,18 +10174,31 @@ fn build_native_tantivy_query(
         clauses.push((Occur::Must, Box::new(range)));
     }
 
-    // Entry type filter: TermQuery on the STRING entry_type field.
-    if let Some(entry_type) = &natural_plan.entry_type_filter {
-        if let Some(et_field) = fields.entry_type {
-            let term = Term::from_field_text(et_field, entry_type.as_str());
-            clauses.push((Occur::Must, Box::new(TermQuery::new(term, IndexRecordOption::Basic))));
-        }
-    }
-
     if clauses.is_empty() {
         None
     } else {
         Some(Box::new(BooleanQuery::new(clauses)))
+    }
+}
+
+/// The extension and entry-type filters as query clauses (TermQuery on the
+/// STRING fields), so a search reads only what it can show.
+fn push_filter_clauses(
+    clauses: &mut Vec<(Occur, Box<dyn Query>)>,
+    extension_field: Field,
+    entry_type_field: Option<Field>,
+    extension_filters: &[String],
+    entry_type: Option<&str>,
+) {
+    let term = |field: Field, value: &str| -> Box<dyn Query> {
+        Box::new(TermQuery::new(Term::from_field_text(field, value), IndexRecordOption::Basic))
+    };
+    if !extension_filters.is_empty() {
+        let any = extension_filters.iter().map(|ext| (Occur::Should, term(extension_field, ext))).collect();
+        clauses.push((Occur::Must, Box::new(BooleanQuery::new(any))));
+    }
+    if let (Some(field), Some(entry_type)) = (entry_type_field, entry_type) {
+        clauses.push((Occur::Must, term(field, entry_type)));
     }
 }
 
@@ -10243,11 +10239,7 @@ fn build_fuzzy_tantivy_query(
 ///
 /// Tantivy's term dictionary is FST-backed, so range queries on string prefixes
 /// are effectively free — they jump directly to the start of the range and stream.
-fn build_prefix_tantivy_query(
-    query_keywords: &[String],
-    file_name_field: Field,
-    path_field: Field,
-) -> Option<Box<dyn Query>> {
+fn build_prefix_tantivy_query(query_keywords: &[String], fields: &[Field]) -> Option<Box<dyn Query>> {
     let mut clauses: Vec<(Occur, Box<dyn Query>)> = Vec::new();
 
     for keyword in query_keywords {
@@ -10263,7 +10255,7 @@ fn build_prefix_tantivy_query(
             None => continue,
         };
 
-        for &field in &[file_name_field, path_field] {
+        for &field in fields {
             let lower_term = Term::from_field_text(field, &lower);
             let upper_term = Term::from_field_text(field, &upper);
             let range = RangeQuery::new(
@@ -10494,6 +10486,7 @@ fn build_result_item(
     let mut lexical_keyword_hits = 0usize;
     let mut fuzzy_keyword_hits = 0usize;
     let mut related_keyword_hits = 0usize;
+    let mut typed_keyword_hits = 0usize;
     let mut matched_keywords = Vec::new();
     for keyword in query_keywords {
         if keyword.is_empty() {
@@ -10527,6 +10520,7 @@ fn build_result_item(
         }
         if has_lexical_signal {
             lexical_keyword_hits += 1;
+            typed_keyword_hits += usize::from(typed);
             push_unique(&mut matched_keywords, keyword.clone());
         } else if use_fuzzy && typed && keyword.len() >= 4 {
             // Fuzzy pass: check edit-distance-1 against each word in the filename and path.
@@ -10563,8 +10557,9 @@ fn build_result_item(
 
     // For queries with 3+ keywords require at least half to match lexically or by fuzzy.
     // Single and two-keyword queries keep the existing pass-any-one behaviour.
-    // Counted in words typed: "invoice" expands to five terms (invoices, bill,
-    // receipt…), and demanding three of those dropped invoice-2024.txt.
+    // Counted in words typed, both ways: "invoice" expands to five terms
+    // (invoices, bill, receipt…), and demanding three of those dropped
+    // invoice-2024.txt; nor do related terms alone make the half.
     let typed_keywords = if natural_plan.typed_words.is_empty() {
         query_keywords.len()
     } else {
@@ -10572,7 +10567,8 @@ fn build_result_item(
     };
     if natural_language && typed_keywords >= 3 {
         let required = (typed_keywords + 1) / 2; // ceil(N/2)
-        if effective_keyword_hits < required && phrase_hits == 0 && phrase_path_hits == 0 {
+        let typed_hits = typed_keyword_hits + fuzzy_keyword_hits;
+        if typed_hits < required && phrase_hits == 0 && phrase_path_hits == 0 {
             return Ok(None);
         }
     }
@@ -12668,9 +12664,75 @@ mod tests {
         assert_eq!(names, ["zebradoc.txt", "zebrasettings.json"]);
     }
 
+    /// With hidden folders on, the walk takes dot-named entries but not what
+    /// Windows hides (anything marked hidden, and by the default exclusions
+    /// NTUSER.DAT, desktop.ini, Thumbs.db and Office's `~$` owner files)
+    /// unless it's a chosen folder; and it never goes into an excluded one.
+    #[cfg(windows)]
+    #[test]
+    fn a_walk_skips_what_windows_hides_and_what_is_excluded() {
+        let folder = TempFolder::new("hidden");
+        let home = folder.0.join("home");
+        let mut files: Vec<String> = [
+            "zebra.txt", ".config/zebradot.txt", "hiddenfile.txt", "hiddendir/inner.txt", "chosen/zebrachosen.txt",
+            "desktop.ini", "Thumbs.db", "NTUSER.DAT", "ntuser.dat.LOG1", "~$zebra.docx",
+        ]
+        .map(str::to_string)
+        .to_vec();
+        files.extend((0..40).map(|n| format!("node_modules/pkg/m{n}.js")));
+        for file in &files {
+            let path = home.join(file);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(&path, b"x").unwrap();
+        }
+        for hidden in ["hiddenfile.txt", "hiddendir", "chosen"] {
+            let marked = std::process::Command::new("attrib").arg("+h").arg(home.join(hidden)).status().unwrap();
+            assert!(marked.success());
+        }
+        // The default exclusions, less those that would skip the test folder
+        // itself (it sits in %TEMP%), as Search narrows them.
+        let excludes: Vec<String> = DEFAULT_EXCLUDE_FOLDERS
+            .iter()
+            .map(|entry| entry.to_string())
+            .filter(|entry| !has_excluded_folder(&home, std::slice::from_ref(entry)))
+            .collect();
+        let options: FileSearchIndexOptions = serde_json::from_value(serde_json::json!({
+            "roots": [home, home.join("chosen")],
+            "includeHidden": true,
+            "indexContent": false,
+            "excludeFolders": excludes,
+        }))
+        .unwrap();
+        let options = normalize_index_options(options).unwrap();
+        let state = folder.0.join("state");
+        let staging = state.join("filename-build-test");
+        fs::create_dir_all(&staging).unwrap();
+        let status = state.join("status.json");
+        build_filename_index_in_worker(&state, &staging, &options, &status, &state.join("cancel"), None).unwrap();
+
+        let handle = try_open_filename_index(&state).expect("filename index");
+        let searcher = handle.reader.searcher();
+        let mut names: Vec<String> = searcher
+            .search(&AllQuery, &TopDocs::with_limit(100).order_by_score())
+            .unwrap()
+            .into_iter()
+            .map(|(_, address)| {
+                let doc = searcher.doc::<TantivyDocument>(address).unwrap();
+                doc_text(&doc, handle.fields.file_name).unwrap_or_default()
+            })
+            .collect();
+        names.sort();
+        let scanned = read_index_worker_status(&status).unwrap().expect("status").scanned_entries;
+        drop(searcher);
+        drop(handle);
+        assert!(scanned < 40, "went into node_modules: {scanned} entries scanned");
+        assert_eq!(names, [".config", "chosen", "home", "zebra.txt", "zebrachosen.txt", "zebradot.txt"]);
+    }
+
     /// The index's state database is shared with the index workers, which are
     /// other processes (another redb handle stands in for one here): the
-    /// engine never keeps it locked, and finding it busy it waits instead of
+    /// engine never keeps it locked, not even after moving a legacy
+    /// `search-config.json` into it, and finding it busy it waits instead of
     /// judging it corrupt and setting it aside as `keepitlocal.corrupt-*`.
     #[test]
     fn index_state_db_is_shared_with_worker_processes() {
@@ -12686,7 +12748,9 @@ mod tests {
             last_indexed_at_ms: Some(1),
             rebuild_schedule: Default::default(),
         };
-        write_search_config_for_state(state_dir, &config).unwrap();
+        fs::write(search_config_path_for_state(state_dir), serde_json::to_vec(&config).unwrap()).unwrap();
+        let migrated = read_search_config_for_state(state_dir).unwrap().expect("legacy config");
+        assert_eq!(migrated.indexed_files, 7);
 
         let db_path = local_db::database_path_for_dir(state_dir);
         let worker = redb::Database::open(&db_path).expect("a worker can open the state db");
@@ -12696,13 +12760,58 @@ mod tests {
         });
         let read = read_search_config_for_state(state_dir).unwrap().expect("config");
         release.join().unwrap();
+        let mut rewritten = read.clone();
+        rewritten.indexed_files = 8;
+        write_search_config_for_state(state_dir, &rewritten).unwrap();
 
         assert_eq!(read.indexed_files, 7);
-        let names: Vec<String> = fs::read_dir(state_dir)
+        assert_eq!(read_search_config_for_state(state_dir).unwrap().map(|c| c.indexed_files), Some(8));
+        let corrupt = fs::read_dir(state_dir)
             .unwrap()
-            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
-            .collect();
-        assert_eq!(names, [local_db::LOCAL_DB_FILE], "nothing set aside as corrupt");
+            .filter(|entry| entry.as_ref().unwrap().file_name().to_string_lossy().contains("corrupt"))
+            .count();
+        assert_eq!(corrupt, 0, "nothing set aside as corrupt");
+    }
+
+    /// A filename index in memory over `entries`, made under `root` in the
+    /// order given (one with an extension is a file, one without a folder),
+    /// so documents keep that order.
+    fn names_index(root: &Path, entries: &[String]) -> FilenameIndexHandle {
+        let index = Index::create_in_ram(build_filename_index_schema());
+        let fields = extract_filename_index_fields(&index.schema()).unwrap();
+        let mut writer: IndexWriter = index.writer_with_num_threads(1, 15_000_000).unwrap();
+        for entry in entries {
+            let path = root.join(entry);
+            if path.extension().is_some() {
+                fs::create_dir_all(path.parent().unwrap()).unwrap();
+                fs::write(&path, b"x").unwrap();
+            } else {
+                fs::create_dir_all(&path).unwrap();
+            }
+            upsert_filename_document(&path, &writer, &fields).unwrap();
+        }
+        writer.commit().unwrap();
+        let reader = index.reader().unwrap();
+        FilenameIndexHandle { index, reader, fields }
+    }
+
+    /// The first `limit` names a file search finds, as `search_local_files`
+    /// runs it on the filename index.
+    fn find_names(handle: &FilenameIndexHandle, query: &str, limit: usize, extensions: Option<&str>) -> Vec<String> {
+        let options = FileSearchQueryOptions {
+            query: query.to_string(),
+            limit: Some(limit),
+            offset: None,
+            extension_filter: extensions.map(str::to_string),
+            path_filter: None,
+            natural_language: None,
+        };
+        let frecency = super::super::frecency::FrecencySnapshot {
+            data: Default::default(),
+            now_ms: unix_now_ms(),
+        };
+        let (_, rows) = query_filename_index(handle, &options, &frecency).unwrap();
+        rows.into_iter().map(|row| row.file_name).collect()
     }
 
     /// Single words find the names they are, or begin, a word of, ranked above
@@ -12710,52 +12819,17 @@ mod tests {
     #[test]
     fn a_single_word_finds_names_with_it_above_related_terms() {
         let folder = TempFolder::new("names");
-        let root = &folder.0;
-        let mut paths = Vec::new();
-        for name in ["notes.txt", "notebook.txt", "sample.pdf", "sample.docx", "sampler.wav"] {
-            paths.push(root.join(name));
-        }
+        let mut entries: Vec<String> =
+            ["notes.txt", "notebook.txt", "sample.pdf", "sample.docx", "sampler.wav", "memos", "examples"]
+                .map(str::to_string)
+                .to_vec();
         // Many names that match only the related terms of "notes" / "sample".
-        for dir in ["memos", "examples"] {
-            fs::create_dir_all(root.join(dir)).unwrap();
-            paths.push(root.join(dir));
-        }
         for n in 1..=12 {
-            paths.push(root.join("memos").join(format!("memo {n}.txt")));
-            paths.push(root.join("examples").join(format!("example {n}.txt")));
+            entries.push(format!("memos/memo {n}.txt"));
+            entries.push(format!("examples/example {n}.txt"));
         }
-        for path in &paths {
-            if path.extension().is_some() {
-                fs::write(path, b"x").unwrap();
-            }
-        }
-
-        let index = Index::create_in_ram(build_filename_index_schema());
-        let fields = extract_filename_index_fields(&index.schema()).unwrap();
-        let mut writer: IndexWriter = index.writer(15_000_000).unwrap();
-        for path in &paths {
-            upsert_filename_document(path, &writer, &fields).unwrap();
-        }
-        writer.commit().unwrap();
-        let reader = index.reader().unwrap();
-        let handle = FilenameIndexHandle { index, reader, fields };
-        let frecency = super::super::frecency::FrecencySnapshot {
-            data: Default::default(),
-            now_ms: unix_now_ms(),
-        };
-
-        let names = |query: &str| -> Vec<String> {
-            let options = FileSearchQueryOptions {
-                query: query.to_string(),
-                limit: Some(5),
-                offset: None,
-                extension_filter: None,
-                path_filter: None,
-                natural_language: None,
-            };
-            let (_, rows) = query_filename_index(&handle, &options, &frecency).unwrap();
-            rows.into_iter().map(|row| row.file_name).collect()
-        };
+        let handle = names_index(&folder.0, &entries);
+        let names = |query: &str| find_names(&handle, query, 5, None);
 
         let mut sample = names("sample");
         sample[..2].sort();
@@ -12765,5 +12839,28 @@ mod tests {
         let note = names("note");
         assert!(note[..2].contains(&"notes.txt".to_string()), "{note:?}");
         assert!(note[..2].contains(&"notebook.txt".to_string()), "{note:?}");
+    }
+
+    /// A typed word finds the one name it begins that fits the filter, even
+    /// among more names it begins that don't than the search reads ahead.
+    #[test]
+    fn a_word_finds_its_filtered_name_among_many_others() {
+        let folder = TempFolder::new("flood");
+        let mut entries: Vec<String> = (1..=60).map(|n| format!("notes/notes-{n}.md")).collect();
+        entries.push("notebook.txt".to_string());
+        let handle = names_index(&folder.0, &entries);
+
+        assert_eq!(find_names(&handle, "note", 5, Some("txt")), ["notebook.txt"]);
+    }
+
+    /// With three or more words typed, a name needs half of them: the terms
+    /// they were widened with ("examples", "memo") don't count toward it.
+    #[test]
+    fn related_terms_alone_do_not_admit_a_name_for_three_words() {
+        let folder = TempFolder::new("three");
+        let entries = ["examples/memo 3.txt", "memos/memo 1.txt", "sample budget.txt"].map(str::to_string);
+        let handle = names_index(&folder.0, &entries);
+
+        assert_eq!(find_names(&handle, "sample notes budget", 5, None), ["sample budget.txt"]);
     }
 }

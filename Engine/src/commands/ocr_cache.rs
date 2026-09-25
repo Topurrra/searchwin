@@ -200,7 +200,7 @@ fn open_db(path: &Path) -> Result<Database, String> {
     // live in local_db. A partially written cache file caused by an OS
     // crash mid-write must not stop the indexer from running. Worst case:
     // one rebuild of duplicate OCR work next time.
-    let (db, _) = super::local_db::open_redb(path)?;
+    let (db, _) = super::local_db::open_redb(path, super::local_db::CACHE_WAIT)?;
 
     let write_txn = db
         .begin_write()

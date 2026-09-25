@@ -48,6 +48,7 @@ import {
     Wrench,
     Zap,
 } from '@lucide/svelte';
+import { offInSearch } from './offInSearch';
 
 export type Category = 'Privacy' | 'Utils' | 'Document' | 'Development' | 'Image' | 'Media' | 'File' | 'Automation' | 'Focus';
 export type AppScreenKind = 'tool' | 'page';
@@ -86,17 +87,8 @@ export interface ToolScreen extends BaseScreen {
     available: boolean;
     icon: typeof LucideIcon;
     docs?: ToolDocs;
-    /** Hide this ONE tool from every user-facing surface, keeping all its code.
-     *
-     *  The per-tool twin of `HIDDEN_PACK_IDS` (which only hides a whole pack —
-     *  too coarse when a single tool needs more polish than the six beside it).
-     *  Set it and the tool disappears from the sidebar, category workspace,
-     *  and Tool Packs browser; nothing is deleted, so un-hiding is a
-     *  one-line change.
-     *
-     *  Consumers MUST filter on this — the list is `Sidebar.svelte`,
-     *  `CategoryWorkspace.svelte`, and `ToolPacks.svelte`. Miss one and the
-     *  tool leaks back into that surface. */
+    /** Left out of Search: set from the one list, offInSearch.ts, never
+     *  here. Everything that lists tools filters on it. */
     hidden?: boolean;
 }
 
@@ -237,17 +229,19 @@ export const packColors: Record<ToolPackId, string> = {
     'time-focus': '#8b5cf6',
 };
 
+/** The packs' names, as Search says them everywhere: the tools index, the
+ *  field, Settings › Packs. */
 export const packLabels: Record<ToolPackId, string> = {
     core: 'Core',
     utils: 'Utilities',
-    development: 'Developer Tools',
+    development: 'Development',
     privacy: 'Privacy',
     document: 'Documents',
     image: 'Images',
     media: 'Media',
-    file: 'File Tools',
+    file: 'Files',
     automation: 'Automations',
-    'time-focus': 'Time & Focus',
+    'time-focus': 'Focus',
 };
 
 export const pageScreens: PageScreen[] = [
@@ -763,13 +757,6 @@ export const toolScreens: ToolScreen[] = [
         category: 'Privacy',
         description: 'Reversible Windows privacy tweaks — no admin needed',
         available: true,
-        // Hidden 2026-07-23. The ship-readiness audit found this is the one tool
-        // that genuinely LOSES to its free competitor rather than tying: ~13
-        // settings vs O&O ShutUp10 / W10Privacy's 50-100+. Shipping it at parity
-        // with the others sets an expectation it can't meet. Un-hide either after
-        // broadening coverage, or with explicit "curated safe subset, not a
-        // ShutUp10 replacement" framing.
-        hidden: true,
         icon: ShieldCheck,
         kind: 'tool',
         loader: () => import('$lib/tools/Privacy/WindowsHardening.svelte'),
@@ -789,10 +776,6 @@ export const toolScreens: ToolScreen[] = [
         category: 'Document',
         description: 'Convert .docx to clean Markdown or plain text',
         available: true,
-        // Hidden 2026-07-23: superseded in the Documents pack by the Markdown
-        // Converter (docx -> Markdown is the same trip in reverse, and the new
-        // tool owns the conversion story). Code + Rust commands stay registered.
-        hidden: true,
         icon: FileText,
         kind: 'tool',
         loader: () => import('$lib/tools/Document/WordConverter.svelte'),
@@ -842,9 +825,6 @@ export const toolScreens: ToolScreen[] = [
         category: 'Document',
         description: 'Remove the "restrict editing" lock from Word .docx files',
         available: true,
-        // Hidden 2026-07-23 (owner call). Narrow single-purpose tool; the PDF
-        // half of this story already moved to KeepItLocal Privacy. Code stays.
-        hidden: true,
         icon: Lock,
         kind: 'tool',
         loader: () => import('./tools/Document/RemovePassword.svelte'),
@@ -989,6 +969,8 @@ export const toolScreens: ToolScreen[] = [
         },
     },
 ];
+
+for (const tool of toolScreens) tool.hidden = tool.id in offInSearch;
 
 export const tools = toolScreens;
 

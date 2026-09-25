@@ -1,135 +1,150 @@
 <script lang="ts">
-    // Search › Tools: every tool, by category, each a link to its own page.
-    // Every tool is listed (Search's own packs come later). Opens as a tab of
-    // its own (search://tools); a tool opens in a tab too,
-    // so tools can be pinned, kept in spaces and bookmarked like any page.
-    import { toolScreens, categoryOrder, categoryIcons, type Category } from '$lib/appScreens';
+    // search://tools: every tool Search has, by pack, each a link to its own
+    // page. A tool opens in a tab like any page, so it can be pinned, kept in
+    // a space and bookmarked. Typing narrows the list; Enter opens the first.
+    import { LayoutGrid } from '@lucide/svelte';
+    import { searchTools, toolsByPack } from '$lib/searchTools';
+    import { packLabels } from '$lib/appScreens';
+    import { wearIcon } from '$lib/toolIcon';
 
     let query = $state('');
 
-    const visible = $derived(
-        toolScreens.filter(
-            (tool) =>
-                tool.available &&
-                !(tool as { hidden?: boolean }).hidden &&
-                (query === '' ||
-                    `${tool.name} ${tool.description ?? ''}`.toLowerCase().includes(query.toLowerCase())),
-        ),
-    );
+    const visible = $derived.by(() => {
+        const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+        return searchTools.filter((tool) => {
+            const text = `${tool.name} ${tool.description} ${packLabels[tool.pack]}`.toLowerCase();
+            return words.every((word) => text.includes(word));
+        });
+    });
 
-    const groups = $derived(
-        categoryOrder
-            .map((category) => ({ category, tools: visible.filter((tool) => tool.category === category) }))
-            .filter((group) => group.tools.length > 0),
-    );
+    const groups = $derived(toolsByPack(visible));
 
     $effect(() => {
         document.title = 'Tools';
+        wearIcon(LayoutGrid);
     });
 
-    const total = toolScreens.length;
+    let list = $state<HTMLElement>();
+
+    // Through the first card's own link, so the router takes it: setting
+    // location.hash reads as an edit to the address and reloads the page.
+    function openFirst(event: KeyboardEvent) {
+        if (event.key !== 'Enter') return;
+        event.preventDefault();
+        list?.querySelector<HTMLAnchorElement>('a.tool')?.click();
+    }
 </script>
 
-<main class="tools-index">
-    <header>
-        <h1>Tools</h1>
-        <p class="lede">Everything here runs on this computer. Nothing you open, convert or check leaves it.</p>
-        <!-- svelte-ignore a11y_autofocus -->
-        <input class="filter" type="search" placeholder="Filter {total} tools" bind:value={query} autofocus />
-    </header>
+<div class="scroller">
+    <main class="tools-index" bind:this={list}>
+        <header>
+            <h1>Tools</h1>
+            <p class="lede">Everything here runs on this computer. Nothing you open, convert or check leaves it.</p>
+            <!-- svelte-ignore a11y_autofocus -->
+            <input
+                class="filter"
+                type="search"
+                placeholder="Find a tool"
+                aria-label="Find a tool"
+                bind:value={query}
+                onkeydown={openFirst}
+                autofocus
+            />
+        </header>
 
-    {#each groups as group (group.category)}
-        {@const Icon = categoryIcons[group.category as Category]}
-        <section>
-            <h2><Icon size={14} /> {group.category}</h2>
-            <div class="grid">
-                {#each group.tools as tool (tool.id)}
-                    {@const ToolIcon = tool.icon}
-                    <a class="tool" href="#/tool/{tool.id}">
-                        <ToolIcon size={18} />
-                        <span class="name">{tool.name}</span>
-                        <span class="what">{tool.description}</span>
-                    </a>
-                {/each}
-            </div>
-        </section>
-    {:else}
-        <p class="lede">No tool matches “{query}”.</p>
-    {/each}
-</main>
+        {#each groups as group (group.pack)}
+            <section aria-label={group.name}>
+                <h2>{group.name}</h2>
+                <div class="grid">
+                    {#each group.tools as tool (tool.id)}
+                        {@const ToolIcon = tool.icon}
+                        <a class="tool" href="#/tool/{tool.id}">
+                            <ToolIcon size={18} strokeWidth={1.75} />
+                            <span class="name">{tool.name}</span>
+                            <span class="what">{tool.description}</span>
+                        </a>
+                    {/each}
+                </div>
+            </section>
+        {:else}
+            <p class="lede">No tool matches “{query}”.</p>
+        {/each}
+    </main>
+</div>
 
 <style>
+    .scroller {
+        height: 100%;
+        overflow-y: auto;
+    }
     .tools-index {
-        max-width: 980px;
+        max-width: 960px;
         margin: 0 auto;
         padding: 40px 24px 64px;
-        color: var(--color-text, #e5e5e5);
     }
     h1 {
-        font-size: 28px;
+        font-size: 24px;
         font-weight: 600;
-        margin: 0 0 6px;
+        margin: 0 0 4px;
     }
     .lede {
-        color: var(--color-text-muted, #a1a1aa);
+        color: var(--search-muted);
         margin: 0 0 20px;
-        font-size: 14px;
+        font-size: 13px;
     }
     .filter {
         width: 100%;
         max-width: 420px;
         padding: 9px 12px;
-        border-radius: 10px;
-        border: 1px solid var(--color-border, #2a2a2e);
-        background: var(--color-panel-1, #18181b);
+        border-radius: var(--search-radius-card);
+        border: 1px solid transparent;
+        background: var(--search-hover);
         color: inherit;
         font: inherit;
         outline: none;
     }
-    .filter:focus {
-        border-color: var(--color-accent, #6d7cff);
+    .filter:focus-visible {
+        border-color: var(--search-faint);
+        box-shadow: none;
     }
     section {
         margin-top: 28px;
     }
     h2 {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        font-size: 12px;
-        font-weight: 600;
-        text-transform: uppercase;
-        letter-spacing: 0.06em;
-        color: var(--color-text-muted, #a1a1aa);
-        margin: 0 0 10px;
+        font-size: 11px;
+        font-weight: 500;
+        color: var(--search-muted);
+        margin: 0 0 8px 2px;
+        letter-spacing: 0;
     }
     .grid {
         display: grid;
         grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
-        gap: 8px;
+        gap: 6px;
     }
     .tool {
         display: grid;
         grid-template-columns: 22px 1fr;
         grid-template-rows: auto auto;
         column-gap: 10px;
+        row-gap: 2px;
         padding: 12px;
-        border-radius: 12px;
-        background: var(--color-panel-1, #18181b);
-        border: 1px solid transparent;
+        border-radius: var(--search-radius-card);
+        background: var(--search-hover);
         color: inherit;
         text-decoration: none;
+        transition: background-color var(--search-quick) var(--search-ease);
     }
     .tool:hover,
     .tool:focus-visible {
-        border-color: var(--color-border, #2a2a2e);
-        background: var(--color-panel-2, #1f1f23);
+        background: var(--search-wash);
         outline: none;
+        box-shadow: none;
     }
     .tool :global(svg) {
         grid-row: span 2;
-        margin-top: 2px;
-        color: var(--color-text-muted, #a1a1aa);
+        margin-top: 1px;
+        color: var(--search-muted);
     }
     .name {
         font-size: 14px;
@@ -137,7 +152,7 @@
     }
     .what {
         font-size: 12px;
-        color: var(--color-text-muted, #a1a1aa);
+        color: var(--search-muted);
         line-height: 1.35;
     }
 </style>

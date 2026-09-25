@@ -13,7 +13,28 @@ public static class Engine
 
     public static string DataDir => Path.Combine(Store.Folder, "Engine");
 
-    public static readonly EngineClient Client = new(Pipe, Start);
+    public static readonly EngineClient Client = Connect();
+
+    private static EngineClient Connect()
+    {
+        var client = new EngineClient(Pipe, Start);
+        client.Connected += () => _ = Check(client);
+        return client;
+    }
+
+    /// An engine older than this browser says so in the log as it joins.
+    private static async Task Check(EngineClient client)
+    {
+        try
+        {
+            var missing = EngineMethods.Missing(await client.CallAsync("engine.methods"));
+            if (missing.Count > 0) Log.Write($"engine: an old build, without {string.Join(", ", missing)}");
+        }
+        catch (Exception error) when (error is EngineException or IOException or OperationCanceledException)
+        {
+            Log.Write($"engine: methods: {error.Message}");
+        }
+    }
 
     private static readonly Lazy<string?> exe = new(Executable);
 

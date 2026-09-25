@@ -57,6 +57,8 @@ if (Get-Command cargo -ErrorAction SilentlyContinue) {
     # NASM is a build tool, not something users need: with it, AVIF encoding
     # uses rav1e's assembly and is several times faster.
     $features = @()
+    $nasm = "$env:LOCALAPPDATA\Programs\nasm"
+    if (-not (Get-Command nasm -ErrorAction SilentlyContinue) -and (Test-Path "$nasm\nasm.exe")) { $env:PATH = "$nasm;$env:PATH" }
     if (Get-Command nasm -ErrorAction SilentlyContinue) { $features = @('--features', 'fast-avif') }
     else { "No NASM here: the engine's AVIF encoder builds without its assembly (slower)." }
     cargo build --release --no-default-features @features

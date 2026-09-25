@@ -165,8 +165,9 @@ export default {
         },
       },
       fontFamily: {
-        sans: ['Inter', 'system-ui', 'sans-serif'],
-        mono: ['JetBrains Mono', 'Consolas', 'monospace'],
+        // Search's type (styles.css).
+        sans: ['var(--search-font)'],
+        mono: ['var(--search-mono)'],
       },
     },
   },

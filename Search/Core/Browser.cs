@@ -182,7 +182,7 @@ public sealed partial class Browser : Model
         Favicons.Shared.Arrived = (host, image) =>
         {
             foreach (var tab in Tabs.Concat(ParkedTabs))
-                if (Address.Host(tab.Address) == host) tab.Icon = image;
+                if (Address.IconKey(tab.Address) == host) tab.Icon = image;
         };
 
         StartFeatures();
@@ -910,6 +910,8 @@ public sealed partial class Browser : Model
         switch (FieldInput.Read(Typed, Commands.Bangs))
         {
             case FieldInput.ToCommand command:
+                // The tool pages are commands too, once they've been read.
+                _ = Commands.Tools;
                 Show([.. Commands.Registry.Find(command.Query, 6).Select(match => new Suggestion(
                     match.Argument.Length > 0 ? $"{match.Command.Title} “{match.Argument}”" : match.Command.Title,
                     match.Command.Keys ?? match.Command.Group ?? "",
@@ -939,14 +941,16 @@ public sealed partial class Browser : Model
             return;
         }
 
-        // Three places and, if it can't be a place, a search. No open pages:
-        // Ctrl+K exists for those.
+        // Three places, the tool whose name this is, and, if it can't be a
+        // place, a search. No open pages: Ctrl+K exists for those.
         var list = History.Suggestions(Typed, 3);
+        var ending = History.Completion(Typed, list.Where(o => o.Kind != SuggestionKind.Open));
+        if (Commands.ToolRow(Typed) is { } tool) list.Add(tool);
         // Last in the list, and only when what was typed cannot be a place.
         if (Address.Url(Typed) == null && Google.Url(Typed) is { } asked)
             list.Add(new Suggestion(Typed, Google.Name, asked, SuggestionKind.Search));
         Show(list);
-        Ending = History.Completion(Typed, list.Where(o => o.Kind != SuggestionKind.Open));
+        Ending = ending;
         Picked = null;
         Tell(nameof(Completed));
     }

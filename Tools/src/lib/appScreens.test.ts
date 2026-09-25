@@ -1,12 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-    aboutQuickStarts,
     allScreens,
     builtInProfileDefinitions,
-    categoryScreenIdForTool,
     documentationScreens,
-    getScreen,
     screensForPacks,
     toolPackIdForScreen,
     toolPacks,
@@ -37,15 +34,8 @@ describe('app screen catalog', () => {
     it('keeps core pack minimal and filters optional packs', () => {
         const coreTools = toolScreensForPacks(['core']);
         expect(coreTools.map((tool) => tool.id)).toEqual(['file-search']);
-        expect(screensForPacks(['core']).some((screen) => screen.id === 'settings')).toBe(true);
+        expect(screensForPacks(['core']).some((screen) => screen.id === 'tool-packs')).toBe(true);
         expect(toolScreensForPacks(['core', 'privacy']).some((tool) => tool.id === 'file-shredder')).toBe(true);
-    });
-
-    it('keeps media workflows together without exposing a disabled pack workspace', () => {
-        expect(categoryScreenIdForTool('screen-recorder')).toBe('category-media');
-        expect(categoryScreenIdForTool('media-utility')).toBe('category-media');
-        expect(screensForPacks(['core']).some((screen) => screen.id === 'category-media')).toBe(false);
-        expect(screensForPacks(['core', 'media']).some((screen) => screen.id === 'category-media')).toBe(true);
     });
 
     it('assigns every tool to a declared pack', () => {
@@ -55,16 +45,12 @@ describe('app screen catalog', () => {
         }
     });
 
-    it('keeps documentation and quick-start links attached to real screens', () => {
+    it('keeps documentation attached to real screens', () => {
         expect(documentationScreens.length).toBeGreaterThan(0);
 
         for (const screen of documentationScreens) {
             expect(screen.docs).toBeDefined();
             expect(toolScreens.some((tool) => tool.id === screen.id)).toBe(true);
-        }
-
-        for (const card of aboutQuickStarts) {
-            expect(getScreen(card.targetId)).toBeDefined();
         }
     });
 

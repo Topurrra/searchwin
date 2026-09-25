@@ -2,28 +2,15 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <link rel="icon" href="%sveltekit.assets%/favicon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>KeepItLocal</title>
-    <!--
-      Wave 7.9.1 (2026-05-28): dark body background applied inline before
-      any stylesheet loads. Without this, every Tauri webview (welcome,
-      main, overlays, palette) flashes a bright white frame in the brief
-      window between Win32 window creation and the first CSS commit —
-      especially visible on the maximized welcome window where the white
-      area is the size of the whole screen. Matches the splash colour
-      (#0c0c0e) so splash → welcome → main looks like a single continuous
-      dark surface revealing new content rather than three separate
-      windows. The actual theme colour is applied via the JS-driven
-      `data-theme` attribute on <html> by the layout, so this static
-      fallback only matters for the first ~50 ms.
-    -->
+    <meta name="color-scheme" content="light dark" />
+    <title>Tools</title>
+    <!-- The ground, before any stylesheet: a tab never flashes the other
+         colour while the page loads. Search's own greys (styles.css). -->
     <style>
-      html,
-      body {
-        background: #0c0c0e;
-        color: #e5e5e5;
-        margin: 0;
+      html, body { background: #ffffff; color: #171717; margin: 0; }
+      @media (prefers-color-scheme: dark) {
+        html, body { background: #1c1c1c; color: #ededed; }
       }
     </style>
     %sveltekit.head%

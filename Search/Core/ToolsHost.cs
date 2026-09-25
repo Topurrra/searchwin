@@ -59,6 +59,19 @@ public static class ToolsHost
         return null;
     }
 
+    /// The tools the pages list (their build's catalog.json), for the field.
+    public static IReadOnlyList<SearchKit.Commands.ToolEntry> Catalog()
+    {
+        try
+        {
+            return Folder is { } folder && Path.Combine(folder, "catalog.json") is var file && File.Exists(file)
+                ? SearchKit.Commands.ToolCatalog.Parse(File.ReadAllText(file))
+                : [];
+        }
+        catch (IOException) { return []; }
+        catch (UnauthorizedAccessException) { return []; }
+    }
+
     /// Every tab: the pages are reachable, and files a tool page asks to show
     /// are served to it.
     public static void Prepare(CoreWebView2 core)

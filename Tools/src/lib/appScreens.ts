@@ -5,14 +5,11 @@ import {
     Bell,
     BookOpen,
     Calculator,
-    Clipboard,
     Code,
     Code2,
-    Clock3,
     Columns2,
     Database,
     EyeOff,
-    FileImage,
     FileLock2,
     FilePenLine,
     FileSearch,
@@ -20,34 +17,28 @@ import {
     ScanLine,
     ScanText,
     FileText,
-    FileX,
     Files,
     GitMerge,
     Hash,
     ImageIcon,
-    Info,
     KeyRound,
     KeySquare,
     Library,
     Mic,
     Lock,
     NotebookPen,
-    Pin,
     Pipette,
     QrCode,
-    Search,
-    Settings,
     ShieldCheck,
     Sparkles,
     Target,
     Timer,
     Trash2,
     type Icon as LucideIcon,
-    Users,
     Video,
     Wrench,
-    Zap,
 } from '@lucide/svelte';
+import { offInSearch } from './offInSearch';
 
 export type Category = 'Privacy' | 'Utils' | 'Document' | 'Development' | 'Image' | 'Media' | 'File' | 'Automation' | 'Focus';
 export type AppScreenKind = 'tool' | 'page';
@@ -86,29 +77,14 @@ export interface ToolScreen extends BaseScreen {
     available: boolean;
     icon: typeof LucideIcon;
     docs?: ToolDocs;
-    /** Hide this ONE tool from every user-facing surface, keeping all its code.
-     *
-     *  The per-tool twin of `HIDDEN_PACK_IDS` (which only hides a whole pack —
-     *  too coarse when a single tool needs more polish than the six beside it).
-     *  Set it and the tool disappears from the sidebar, category workspace,
-     *  and Tool Packs browser; nothing is deleted, so un-hiding is a
-     *  one-line change.
-     *
-     *  Consumers MUST filter on this — the list is `Sidebar.svelte`,
-     *  `CategoryWorkspace.svelte`, and `ToolPacks.svelte`. Miss one and the
-     *  tool leaks back into that surface. */
+    /** Left out of Search: set from the one list, offInSearch.ts, never
+     *  here. Everything that lists tools filters on it. */
     hidden?: boolean;
 }
 
 export interface PageScreen extends BaseScreen {
     kind: 'page';
     icon?: typeof LucideIcon;
-}
-
-export interface QuickStartCard {
-    label: string;
-    targetId: string;
-    hint: string;
 }
 
 export interface BuiltInProfileDefinition {
@@ -237,63 +213,22 @@ export const packColors: Record<ToolPackId, string> = {
     'time-focus': '#8b5cf6',
 };
 
+/** The packs' names, as Search says them everywhere: the tools index, the
+ *  field, Settings › Packs. */
 export const packLabels: Record<ToolPackId, string> = {
     core: 'Core',
     utils: 'Utilities',
-    development: 'Developer Tools',
+    development: 'Development',
     privacy: 'Privacy',
     document: 'Documents',
     image: 'Images',
     media: 'Media',
-    file: 'File Tools',
+    file: 'Files',
     automation: 'Automations',
-    'time-focus': 'Time & Focus',
+    'time-focus': 'Focus',
 };
 
 export const pageScreens: PageScreen[] = [
-    {
-        // Keep the stable `home` id for the default route and deep links;
-        // the desktop now presents it as a continuity-focused Recent view.
-        id: 'home',
-        name: 'Recent',
-        description: 'Pick up your recently used apps, files, folders, and local tools.',
-        kind: 'page',
-        icon: Clock3,
-        loader: () => import('$lib/tools/TopBar/Home.svelte'),
-        acceptsSelected: true,
-    },
-    {
-        id: 'pinned',
-        name: 'Pinned',
-        description: 'Keep pinned notes and clipboard items within easy reach.',
-        kind: 'page',
-        icon: Pin,
-        loader: () => import('$lib/tools/TopBar/Home.svelte'),
-        acceptsSelected: true,
-    },
-    {
-        id: 'about',
-        name: 'About',
-        description: 'Overview and guided starting points for KeepItLocal.',
-        kind: 'page',
-        icon: Info,
-        loader: () => import('$lib/tools/TopBar/About.svelte'),
-        acceptsSelected: true,
-    },
-    {
-        // Command — the merged Search / Clipboard / Voice page (tabs). The
-        // legacy ids (file-search, clipboard-history, voice-to-text, snippets)
-        // still exist as screens but the router redirects them HERE onto the
-        // right tab (see commandTabForId). acceptsSelected so the embedded
-        // FileSearch / VoiceToText can route to Settings when needed.
-        id: 'command',
-        name: 'Command',
-        description: 'Search, clipboard, and voice — your core local workflows in one place.',
-        kind: 'page',
-        icon: Search,
-        loader: () => import('$lib/CommandWorkspace.svelte'),
-        acceptsSelected: true,
-    },
     {
         // Notes — local note-taking. `.ki` files (Markdown + YAML frontmatter)
         // in Documents/KeepItLocal Notes; indexed by the content-search pillar.
@@ -318,19 +253,6 @@ export const pageScreens: PageScreen[] = [
         loader: () => import('$lib/tools/Focus/TimeTracker.svelte'),
     },
     {
-        // Clipboard History was originally registered as a Utils tool but it
-        // belongs in the top bar — it's a first-class workflow surface, not
-        // a side tool. Lives next to Search / File Search Index in the top
-        // chrome and shares their page-screen lifecycle (always installed,
-        // no pack toggle, no Utils sidebar listing).
-        id: 'clipboard-history',
-        name: 'Clipboard History',
-        description: 'Searchable history of everything you copy.',
-        kind: 'page',
-        icon: Clipboard,
-        loader: () => import('$lib/tools/Utils/ClipboardHistory.svelte'),
-    },
-    {
         // Snippets — the headline pro-tier feature. Page screen rather than
         // a Utils tool because users summon it via the clipboard overlay
         // by typing triggers, so it's a peer-level workflow surface to
@@ -341,19 +263,6 @@ export const pageScreens: PageScreen[] = [
         kind: 'page',
         icon: Code2,
         loader: () => import('$lib/tools/Utils/Snippets.svelte'),
-    },
-    {
-        // My Commands — user-defined palette commands (URL quicklinks, custom
-        // bangs, file/folder/app launchers, trusted shell commands). Promoted
-        // out of Settings into its own first-class sidebar surface (2026-06-21).
-        // The myCommands store owns persistence + cross-window sync; this page
-        // is purely a management view, so no `selected` prop is needed.
-        id: 'my-commands',
-        name: 'My Commands',
-        description: 'Keyword shortcuts you run from the command palette — quicklinks, bangs, files, folders, apps, and trusted shell commands.',
-        kind: 'page',
-        icon: Zap,
-        loader: () => import('$lib/tools/Utils/MyCommands.svelte'),
     },
     {
         // Voice to Text — promoted from Utils tool to first-class top-bar
@@ -387,19 +296,6 @@ export const pageScreens: PageScreen[] = [
         loader: () => import('$lib/tools/Privacy/PrivacyAudit.svelte'),
     },
     {
-        id: 'settings',
-        name: 'Settings',
-        description: 'Local preferences and system integrations.',
-        kind: 'page',
-        icon: Settings,
-        loader: () => import('$lib/tools/TopBar/Settings.svelte'),
-        // Settings binds `selected` to FileSearchIndex (Search Index section)
-        // and uses it for in-app navigation, so it MUST be bound to the router —
-        // otherwise those writes go to a dead local prop and "Manage index" /
-        // back-links throw or no-op.
-        acceptsSelected: true,
-    },
-    {
         id: 'file-search-index',
         name: 'File Search Index',
         description: 'Manage indexed sources, rebuilds, exclusions, and live watcher behavior.',
@@ -407,14 +303,6 @@ export const pageScreens: PageScreen[] = [
         icon: Database,
         loader: () => import('$lib/tools/TopBar/FileSearchIndex.svelte'),
         acceptsSelected: true,
-    },
-    {
-        id: 'profiles',
-        name: 'Profiles',
-        description: 'Manage visible tool collections for different workflows.',
-        kind: 'page',
-        icon: Users,
-        loader: () => import('$lib/tools/TopBar/ProfileManager.svelte'),
     },
     {
         // Tool Packs discovery — what the sidebar's "Tool Packs" item
@@ -439,18 +327,6 @@ export const pageScreens: PageScreen[] = [
         icon: BookOpen,
         loader: () => import('$lib/tools/TopBar/Documentation.svelte'),
         acceptsSelected: true,
-    },
-    // Search Guide page was retired — its content moved INTO the search
-    // overlay as an inline `?` cheatsheet button so users get the help
-    // without leaving the overlay. The Documentation page now covers
-    // task-oriented examples for everything else.
-    {
-        id: 'privacy-guide',
-        name: 'Privacy Guide',
-        description: 'Offline privacy and safety guidance.',
-        kind: 'page',
-        icon: ShieldCheck,
-        loader: () => import('$lib/tools/TopBar/PrivacyGuide.svelte'),
     },
 ];
 
@@ -763,13 +639,6 @@ export const toolScreens: ToolScreen[] = [
         category: 'Privacy',
         description: 'Reversible Windows privacy tweaks — no admin needed',
         available: true,
-        // Hidden 2026-07-23. The ship-readiness audit found this is the one tool
-        // that genuinely LOSES to its free competitor rather than tying: ~13
-        // settings vs O&O ShutUp10 / W10Privacy's 50-100+. Shipping it at parity
-        // with the others sets an expectation it can't meet. Un-hide either after
-        // broadening coverage, or with explicit "curated safe subset, not a
-        // ShutUp10 replacement" framing.
-        hidden: true,
         icon: ShieldCheck,
         kind: 'tool',
         loader: () => import('$lib/tools/Privacy/WindowsHardening.svelte'),
@@ -789,10 +658,6 @@ export const toolScreens: ToolScreen[] = [
         category: 'Document',
         description: 'Convert .docx to clean Markdown or plain text',
         available: true,
-        // Hidden 2026-07-23: superseded in the Documents pack by the Markdown
-        // Converter (docx -> Markdown is the same trip in reverse, and the new
-        // tool owns the conversion story). Code + Rust commands stay registered.
-        hidden: true,
         icon: FileText,
         kind: 'tool',
         loader: () => import('$lib/tools/Document/WordConverter.svelte'),
@@ -842,9 +707,6 @@ export const toolScreens: ToolScreen[] = [
         category: 'Document',
         description: 'Remove the "restrict editing" lock from Word .docx files',
         available: true,
-        // Hidden 2026-07-23 (owner call). Narrow single-purpose tool; the PDF
-        // half of this story already moved to KeepItLocal Privacy. Code stays.
-        hidden: true,
         icon: Lock,
         kind: 'tool',
         loader: () => import('./tools/Document/RemovePassword.svelte'),
@@ -990,61 +852,13 @@ export const toolScreens: ToolScreen[] = [
     },
 ];
 
+for (const tool of toolScreens) tool.hidden = tool.id in offInSearch;
+
 export const tools = toolScreens;
 
-/* ─── Category Workspace screens ───────────────────────────────────
-   Each pack (excluding core) that ships ≥2 tools gets ONE page screen
-   `category-<packId>` that renders CategoryWorkspace — compact pack context
-   plus the active tool. Single-tool packs (e.g.
-   Automation) keep their tool as a direct screen. These are page
-   screens in the full catalog; `screensForPacks` installs only the
-   workspaces whose packs are enabled. */
-const WORKSPACE_MIN_TOOLS = 2;
-
-function toolsForPackId(packId: ToolPackId): ToolScreen[] {
-    return toolScreens.filter((screen) => toolPackIdForScreen(screen) === packId);
-}
-
-export const categoryWorkspacePackIds: ToolPackId[] = toolPacks
-    .filter((pack) => pack.id !== 'core' && toolsForPackId(pack.id).length >= WORKSPACE_MIN_TOOLS)
-    .map((pack) => pack.id);
-
-export const categoryScreens: PageScreen[] = categoryWorkspacePackIds.map((packId) => ({
-    id: `category-${packId}`,
-    name: packLabels[packId],
-    description: toolPacks.find((pack) => pack.id === packId)?.description ?? '',
-    kind: 'page',
-    loader: () => import('$lib/CategoryWorkspace.svelte'),
-    acceptsSelected: true,
-}));
-
-/** Map a tool id → its Category Workspace screen id, or null when the
- *  tool has no workspace (core tools, or a single-tool pack). The
- *  router uses this to redirect tool navigations into the workspace. */
-export function categoryScreenIdForTool(toolId: string): string | null {
-    if (typeof toolId !== 'string') return null;
-    const screen = toolScreens.find((tool) => tool.id === toolId);
-    if (!screen) return null;
-    const packId = toolPackIdForScreen(screen);
-    return categoryWorkspacePackIds.includes(packId) ? `category-${packId}` : null;
-}
-
-/** packId for a `category-<packId>` screen id (or null). */
-export function packIdForCategoryScreen(screenId: string): ToolPackId | null {
-    if (typeof screenId !== 'string' || !screenId.startsWith('category-')) return null;
-    const packId = screenId.slice('category-'.length) as ToolPackId;
-    return categoryWorkspacePackIds.includes(packId) ? packId : null;
-}
-
-export const allScreens = [...pageScreens, ...categoryScreens, ...toolScreens];
+export const allScreens = [...pageScreens, ...toolScreens];
 
 export const documentationScreens = toolScreens.filter((screen) => Boolean(screen.docs));
-
-export const aboutQuickStarts: QuickStartCard[] = [
-    { label: 'Protect a file before sharing', targetId: 'privacy-guide', hint: 'Learn what metadata and account risks to check first.' },
-    { label: 'Learn how tools work', targetId: 'documentation', hint: 'Open the KeepItLocal documentation and usage guide.' },
-    { label: 'Resize, convert, or compress images', targetId: 'image-studio', hint: 'Resize, convert, and compress photos locally — no uploads.' },
-];
 
 export const builtInProfileDefinitions: BuiltInProfileDefinition[] = [
     {
@@ -1111,16 +925,7 @@ export function toolScreensForPacks(enabledPackIds: string[]) {
 }
 
 export function screensForPacks(enabledPackIds: string[]) {
-    const enabled = new Set(enabledPackIds);
-    enabled.add('core');
-    return [
-        ...pageScreens,
-        ...categoryScreens.filter((screen) => {
-            const packId = packIdForCategoryScreen(screen.id);
-            return packId === null || enabled.has(packId);
-        }),
-        ...toolScreensForPacks(enabledPackIds),
-    ];
+    return [...pageScreens, ...toolScreensForPacks(enabledPackIds)];
 }
 
 export function getScreen(id: string) {

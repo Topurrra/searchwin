@@ -122,6 +122,10 @@ pub struct LexicalHits {
     pub phrase_name_hits: usize,
     /// Quoted exact phrases found in the path.
     pub phrase_path_hits: usize,
+    /// How much of the name the typed words account for, 0..1: 1 for a name
+    /// that is the word ("notes.txt" for "notes"), less for one that holds
+    /// more ("notes-17.md"), 0 for a match in the path alone.
+    pub name_coverage: f32,
     /// Total query keywords — the denominator for keyword-coverage fractions.
     pub total_keywords: usize,
 }
@@ -161,6 +165,11 @@ pub fn lexical_quality(hits: &LexicalHits) -> f32 {
     if hits.related_keyword_hits > 0 {
         quality += 0.05;
     }
+
+    // The name is what was typed, rather than holding it among other words:
+    // worth more than the step from a prefix to an exact word, so
+    // "notebook.txt" shows for "note" ahead of a page of "notes-N.md".
+    quality += hits.name_coverage.clamp(0.0, 1.0) * 0.25;
 
     quality.clamp(0.0, 1.0)
 }
@@ -255,6 +264,7 @@ mod tests {
             related_keyword_hits: 0,
             phrase_name_hits: 0,
             phrase_path_hits: 0,
+            name_coverage: 0.0,
             total_keywords: 1,
         }
     }

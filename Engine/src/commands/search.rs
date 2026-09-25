@@ -748,6 +748,58 @@ impl NaturalQueryPlan {
     fn is_typed(&self, keyword: &str) -> bool {
         self.typed_words.is_empty() || self.typed_words.iter().any(|word| word == keyword)
     }
+
+    /// Which typed word `keyword` is, or is the singular or plural of
+    /// ("invoice" for "invoices"): a hit on it is a hit on that word.
+    fn typed_word_of(&self, keyword: &str) -> Option<usize> {
+        self.typed_words.iter().position(|word| same_word(word, keyword))
+    }
+
+    /// How many typed words a result must hold when three or more were
+    /// typed: half, rounded up. None below three.
+    fn typed_words_required(&self) -> Option<usize> {
+        (self.typed_words.len() >= 3).then(|| self.typed_words.len().div_ceil(2))
+    }
+}
+
+/// The same word, or its plural (`s`, `es`, `y` → `ies`).
+fn same_word(a: &str, b: &str) -> bool {
+    if a == b {
+        return true;
+    }
+    let (short, long) = if a.len() < b.len() { (a, b) } else { (b, a) };
+    if short.len() < 3 {
+        return false;
+    }
+    matches!(long.strip_prefix(short), Some("s" | "es"))
+        || matches!((long.strip_suffix("ies"), short.strip_suffix('y')), (Some(l), Some(s)) if l == s)
+}
+
+/// How much of a name the typed words account for, 0..1: the share of its
+/// words (a file's without the extension) that are a typed word, its plural,
+/// or begin with one of three letters or more. "notes.txt" is all "notes";
+/// "notes-17.md" half; a name only a related term matches, nothing.
+fn name_coverage(file_name_lower: &str, is_folder: bool, words: &[String]) -> f32 {
+    let stem = if is_folder {
+        file_name_lower
+    } else {
+        file_name_lower.rsplit_once('.').map_or(file_name_lower, |(stem, _)| if stem.is_empty() { file_name_lower } else { stem })
+    };
+    let split = |text: &str| -> Vec<String> {
+        text.split(|c: char| !c.is_alphanumeric()).filter(|w| !w.is_empty()).map(str::to_string).collect()
+    };
+    let typed: Vec<String> = words.iter().flat_map(|word| split(word)).collect();
+    let name = split(stem);
+    if name.is_empty() {
+        return 0.0;
+    }
+    let covered = name
+        .iter()
+        .filter(|part| {
+            typed.iter().any(|word| same_word(word, part) || (word.chars().count() >= 3 && part.starts_with(word.as_str())))
+        })
+        .count();
+    covered as f32 / name.len() as f32
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -3042,22 +3094,37 @@ fn search_filename_index(
 
     let mut matched = run(main_query.as_ref(), false, fetch_limit)?;
 
-    // A typed word also finds the names it begins a word of ("note" →
-    // notebook.txt), even when exact terms (its own or a related term's)
-    // already matched: typing on must not drop what the shorter word found.
-    // Names only (everything below a `notes` folder begins "note" in its
-    // path), words of three letters or more, the filters in the query so
-    // what's read ahead can be shown, and not at all when a page of names
-    // holding the typed text is already there.
-    let typed_words: Vec<String> =
-        natural_plan.typed_words.iter().filter(|word| word.len() >= 3).cloned().collect();
-    let named = matched
-        .iter()
-        .filter(|item| item.file_name.to_lowercase().contains(&natural_plan.typed_text))
-        .count();
-    if natural_language && natural_plan.date_filter.is_none() && !typed_words.is_empty() && named < page {
-        if let Some(prefix_query) = build_prefix_tantivy_query(&typed_words, &[handle.fields.file_name]) {
-            let mut clauses: Vec<(Occur, Box<dyn Query>)> = vec![(Occur::Must, prefix_query)];
+    // Names read on their own, by the words typed, in two reads:
+    // - the names holding a typed word (or its singular or plural): a page of
+    //   paths holding it as well (all of a `notes` folder, where "notes" is
+    //   in the path twice) outscores them in the read above;
+    // - the names a typed word of three letters or more begins a longer word
+    //   of ("note" → notebook.txt), even when exact terms already matched:
+    //   typing on must not drop what the shorter word found. Its words come
+    //   from the name terms, each scored as a term, so rarer and shorter
+    //   names are read first.
+    // Names only, the filters in the query so what's read can be shown; a
+    // path filter can't be put in it, so with one the reads go further.
+    if natural_language && natural_plan.date_filter.is_none() && !natural_plan.typed_words.is_empty() {
+        let read = if path_filter.is_some() { 8_000 } else { fetch_limit };
+        let typed: Vec<String> =
+            query_keywords.iter().filter(|word| natural_plan.typed_word_of(word).is_some()).cloned().collect();
+        let begun: Vec<String> =
+            natural_plan.typed_words.iter().filter(|word| word.len() >= 3).cloned().collect();
+        let begun = expand_prefixes(&searcher, handle.fields.file_name, &begun, query_keywords, 256);
+        let mut seen: HashSet<String> = matched.iter().map(|item| item.path.to_lowercase()).collect();
+        for words in [typed, begun] {
+            if words.is_empty() {
+                continue;
+            }
+            let any = words
+                .iter()
+                .map(|word| -> (Occur, Box<dyn Query>) {
+                    let term = Term::from_field_text(handle.fields.file_name, word);
+                    (Occur::Should, Box::new(TermQuery::new(term, IndexRecordOption::WithFreqs)))
+                })
+                .collect();
+            let mut clauses: Vec<(Occur, Box<dyn Query>)> = vec![(Occur::Must, Box::new(BooleanQuery::new(any)))];
             push_filter_clauses(
                 &mut clauses,
                 handle.fields.extension,
@@ -3065,9 +3132,8 @@ fn search_filename_index(
                 effective_extension_filters,
                 natural_plan.entry_type_filter.as_deref(),
             );
-            let seen: HashSet<String> = matched.iter().map(|item| item.path.to_lowercase()).collect();
-            for item in run(&BooleanQuery::new(clauses), false, page.saturating_mul(2))? {
-                if !seen.contains(&item.path.to_lowercase()) {
+            for item in run(&BooleanQuery::new(clauses), false, read)? {
+                if seen.insert(item.path.to_lowercase()) {
                     matched.push(item);
                 }
             }
@@ -3296,12 +3362,6 @@ fn search_file_contents_inner(
     let started_at = SystemTime::now();
     let limit = options.limit.unwrap_or(30).clamp(1, 100);
     let offset = options.offset.unwrap_or(0).min(20_000);
-    let extension_filters = parse_extension_filters(options.extension_filter.as_deref());
-    let path_filter = options
-        .path_filter
-        .as_ref()
-        .map(|value| value.trim().to_lowercase())
-        .filter(|value| !value.is_empty());
 
     let guard = SEARCH_ENGINE
         .lock()
@@ -3317,43 +3377,17 @@ fn search_file_contents_inner(
         );
     }
 
-    let max_content_bytes = (engine
-        .options
-        .max_content_kb
-        .unwrap_or(DEFAULT_MAX_CONTENT_KB) as usize)
-        .saturating_mul(1024)
-        .clamp(8 * 1024, 2 * 1024 * 1024);
-
-    // Reader auto-reloads via OnCommitWithDelay; no explicit reload needed.
-    let searcher = engine.reader.searcher();
-
     let natural_language = options.natural_language.unwrap_or(true);
-
-    // Build a natural-language plan: extracts date/size/extension filters from
-    // queries like "tax docs from 2023" or "invoices > 1mb" so content search
-    // gets the same structured intent layer as file search.
-    let natural_plan = if natural_language {
-        build_natural_query_plan(&query_text)
+    let natural_extension_filters = if natural_language {
+        build_natural_query_plan(&query_text).extension_filters
     } else {
-        NaturalQueryPlan::default()
+        Vec::new()
     };
-
-    // Combine manual and NL-derived extension filters.
-    let natural_extension_filters = natural_plan.extension_filters.clone();
-    let effective_extension_filters = if extension_filters.is_empty() {
-        natural_extension_filters.clone()
-    } else if natural_extension_filters.is_empty() {
-        extension_filters.clone()
-    } else {
-        extension_filters
-            .iter()
-            .filter(|v| natural_extension_filters.iter().any(|a| a == *v))
-            .cloned()
-            .collect::<Vec<_>>()
-    };
-    if !extension_filters.is_empty()
-        && !natural_extension_filters.is_empty()
-        && effective_extension_filters.is_empty()
+    if resolve_extension_filters(
+        &parse_extension_filters(options.extension_filter.as_deref()),
+        &natural_extension_filters,
+    )
+    .is_none()
     {
         let took_ms = started_at.elapsed().map(|d| d.as_millis()).unwrap_or(0);
         return Ok(ContentSearchQueryResult {
@@ -3367,33 +3401,6 @@ fn search_file_contents_inner(
             semantic_active: false,
         });
     }
-
-    // Keywords drive snippet generation and match counting; cleaned for highlighting.
-    let query_keywords = if natural_language {
-        natural_plan.query_keywords.clone()
-    } else {
-        extract_query_keywords(&query_text)
-    };
-
-    // Build the base content query. parse_query_lenient already supports phrases
-    // ("quarterly earnings") and boolean operators (AND/OR/NOT, +/-).
-    let content_query_text = if natural_language {
-        natural_plan.query_text.clone()
-    } else {
-        query_text.clone()
-    };
-    let mut parser = QueryParser::for_index(&engine.index, vec![engine.fields.content]);
-    if !natural_language {
-        parser.set_conjunction_by_default();
-    }
-    let base_query: Box<dyn Query> = if natural_language {
-        let (parsed, _warnings) = parser.parse_query_lenient(&content_query_text);
-        parsed
-    } else {
-        parser
-            .parse_query(&content_query_text)
-            .map_err(|error| format!("Invalid content query: {error}"))?
-    };
 
     // Frecency snapshot — loaded once so `build_content_result_item` can fuse
     // open-history into each result's score (Search #13).
@@ -3438,6 +3445,95 @@ fn search_file_contents_inner(
         Vec::new()
     };
 
+    let (total_hits, results) =
+        query_content_index(engine, &options, &frecency, &semantic_scores, &semantic_candidates)?;
+    let took_ms = started_at.elapsed().map(|d| d.as_millis()).unwrap_or(0);
+
+    Ok(ContentSearchQueryResult {
+        query: query_text,
+        total_hits,
+        returned: results.len(),
+        took_ms,
+        results,
+        semantic_active,
+    })
+}
+
+/// A content search against the content index: the query read, run through
+/// its passes, merged with the semantic candidates, ranked and paged.
+/// Returns (total hits, the requested page).
+fn query_content_index(
+    engine: &SearchEngine,
+    options: &FileSearchQueryOptions,
+    frecency: &super::frecency::FrecencySnapshot,
+    semantic_scores: &HashMap<String, f32>,
+    semantic_candidates: &[(String, f32)],
+) -> Result<(usize, Vec<ContentSearchResultItem>), String> {
+    let query_text = options.query.trim().to_string();
+    let limit = options.limit.unwrap_or(30).clamp(1, 100);
+    let offset = options.offset.unwrap_or(0).min(20_000);
+    let extension_filters = parse_extension_filters(options.extension_filter.as_deref());
+    let path_filter = options
+        .path_filter
+        .as_ref()
+        .map(|value| value.trim().to_lowercase())
+        .filter(|value| !value.is_empty());
+
+    let max_content_bytes = (engine
+        .options
+        .max_content_kb
+        .unwrap_or(DEFAULT_MAX_CONTENT_KB) as usize)
+        .saturating_mul(1024)
+        .clamp(8 * 1024, 2 * 1024 * 1024);
+
+    // Reader auto-reloads via OnCommitWithDelay; no explicit reload needed.
+    let searcher = engine.reader.searcher();
+
+    let natural_language = options.natural_language.unwrap_or(true);
+
+    // Build a natural-language plan: extracts date/size/extension filters from
+    // queries like "tax docs from 2023" or "invoices > 1mb" so content search
+    // gets the same structured intent layer as file search.
+    let natural_plan = if natural_language {
+        build_natural_query_plan(&query_text)
+    } else {
+        NaturalQueryPlan::default()
+    };
+
+    // Combine manual and NL-derived extension filters.
+    let Some(effective_extension_filters) =
+        resolve_extension_filters(&extension_filters, &natural_plan.extension_filters)
+    else {
+        return Ok((0, Vec::new()));
+    };
+
+    // Keywords drive snippet generation and match counting; cleaned for highlighting.
+    let query_keywords = if natural_language {
+        natural_plan.query_keywords.clone()
+    } else {
+        extract_query_keywords(&query_text)
+    };
+
+    // Build the base content query. parse_query_lenient already supports phrases
+    // ("quarterly earnings") and boolean operators (AND/OR/NOT, +/-).
+    let content_query_text = if natural_language {
+        natural_plan.query_text.clone()
+    } else {
+        query_text.clone()
+    };
+    let mut parser = QueryParser::for_index(&engine.index, vec![engine.fields.content]);
+    if !natural_language {
+        parser.set_conjunction_by_default();
+    }
+    let base_query: Box<dyn Query> = if natural_language {
+        let (parsed, _warnings) = parser.parse_query_lenient(&content_query_text);
+        parsed
+    } else {
+        parser
+            .parse_query(&content_query_text)
+            .map_err(|error| format!("Invalid content query: {error}"))?
+    };
+
     // fetch_results: runs a query, walks results with post-filtering, hydrates
     // each into a ContentSearchResultItem. Returns (effective_total, items).
     let fetch_results = |query: &dyn Query|
@@ -3475,11 +3571,12 @@ fn search_file_contents_inner(
                     address,
                     score,
                     &query_keywords,
+                    &natural_plan,
                     path_filter.as_deref(),
                     &effective_extension_filters,
                     max_content_bytes,
-                    &frecency,
-                    &semantic_scores,
+                    frecency,
+                    semantic_scores,
                     false, // keyword pass — not a pure-semantic hit
                 )? {
                     matched.push(item);
@@ -3547,7 +3644,7 @@ fn search_file_contents_inner(
     if !semantic_candidates.is_empty() {
         let existing: std::collections::HashSet<String> =
             matched.iter().map(|item| item.path.to_lowercase()).collect();
-        for (path, _score) in &semantic_candidates {
+        for (path, _score) in semantic_candidates {
             let path_lower = path.to_lowercase();
             if existing.contains(&path_lower) {
                 continue;
@@ -3566,11 +3663,12 @@ fn search_file_contents_inner(
                 address,
                 0.0, // pure semantic hit — no BM25 relevance
                 &query_keywords,
+                &natural_plan,
                 path_filter.as_deref(),
                 &effective_extension_filters,
                 max_content_bytes,
-                &frecency,
-                &semantic_scores,
+                frecency,
+                semantic_scores,
                 true, // pure-semantic candidate — surfaced by meaning only
             ) {
                 matched.push(item);
@@ -3592,16 +3690,7 @@ fn search_file_contents_inner(
         .skip(offset)
         .take(limit)
         .collect::<Vec<_>>();
-    let took_ms = started_at.elapsed().map(|d| d.as_millis()).unwrap_or(0);
-
-    Ok(ContentSearchQueryResult {
-        query: query_text,
-        total_hits,
-        returned: results.len(),
-        took_ms,
-        results,
-        semantic_active,
-    })
+    Ok((total_hits, results))
 }
 
 /// Open the active file-search index and build its reader. Returns an `Err`
@@ -10276,6 +10365,37 @@ fn build_prefix_tantivy_query(query_keywords: &[String], fields: &[Field]) -> Op
     }
 }
 
+/// The indexed terms of `field` that begin with one of `prefixes`, less
+/// `except`, at most `max` of them (in term order).
+fn expand_prefixes(searcher: &Searcher, field: Field, prefixes: &[String], except: &[String], max: usize) -> Vec<String> {
+    let mut terms = Vec::new();
+    for segment in searcher.segment_readers() {
+        let Ok(inverted) = segment.inverted_index(field) else {
+            continue;
+        };
+        for prefix in prefixes {
+            let Some(upper) = next_lex_prefix(prefix) else {
+                continue;
+            };
+            let Ok(mut stream) = inverted.terms().range().ge(prefix.as_bytes()).lt(upper.as_bytes()).into_stream()
+            else {
+                continue;
+            };
+            while stream.advance() {
+                if terms.len() >= max {
+                    return terms;
+                }
+                if let Ok(term) = std::str::from_utf8(stream.key()) {
+                    if !except.iter().any(|word| word == term) {
+                        push_unique(&mut terms, term.to_string());
+                    }
+                }
+            }
+        }
+    }
+    terms
+}
+
 /// Return the next lexicographic string after `s`, used as the exclusive upper
 /// bound of a prefix range. For "spi" returns "spj". Returns None if every byte
 /// is already at maximum value (extremely unlikely for indexed text).
@@ -10489,7 +10609,8 @@ fn build_result_item(
     let mut lexical_keyword_hits = 0usize;
     let mut fuzzy_keyword_hits = 0usize;
     let mut related_keyword_hits = 0usize;
-    let mut typed_keyword_hits = 0usize;
+    // Per typed word: found (itself, its singular or plural, or by typo).
+    let mut typed_words_found = vec![false; natural_plan.typed_words.len()];
     let mut matched_keywords = Vec::new();
     for keyword in query_keywords {
         if keyword.is_empty() {
@@ -10521,9 +10642,12 @@ fn build_result_item(
         } else if prefix_token_match {
             prefix_keyword_hits += 1;
         }
+        let typed_word = natural_plan.typed_word_of(keyword);
         if has_lexical_signal {
             lexical_keyword_hits += 1;
-            typed_keyword_hits += usize::from(typed);
+            if let Some(word) = typed_word {
+                typed_words_found[word] = true;
+            }
             push_unique(&mut matched_keywords, keyword.clone());
         } else if use_fuzzy && typed && keyword.len() >= 4 {
             // Fuzzy pass: check edit-distance-1 against each word in the filename and path.
@@ -10539,6 +10663,9 @@ fn build_result_item(
             }
             if fuzzy_hit {
                 fuzzy_keyword_hits += 1;
+                if let Some(word) = typed_word {
+                    typed_words_found[word] = true;
+                }
                 push_unique(&mut matched_keywords, keyword.clone());
             }
         }
@@ -10558,19 +10685,14 @@ fn build_result_item(
         return Ok(None);
     }
 
-    // For queries with 3+ keywords require at least half to match lexically or by fuzzy.
-    // Single and two-keyword queries keep the existing pass-any-one behaviour.
-    // Counted in words typed, both ways: "invoice" expands to five terms
-    // (invoices, bill, receipt…), and demanding three of those dropped
-    // invoice-2024.txt; nor do related terms alone make the half.
-    let typed_keywords = if natural_plan.typed_words.is_empty() {
-        query_keywords.len()
-    } else {
-        natural_plan.typed_words.len().min(query_keywords.len())
-    };
-    if natural_language && typed_keywords >= 3 {
-        let required = (typed_keywords + 1) / 2; // ceil(N/2)
-        let typed_hits = typed_keyword_hits + fuzzy_keyword_hits;
+    // For queries with 3+ words typed require at least half of them to match
+    // lexically or by fuzzy. Single and two-word queries keep the existing
+    // pass-any-one behaviour. Counted in words typed, both ways: "invoice"
+    // expands to five terms (invoices, bill, receipt…), and demanding three
+    // of those dropped invoice-2024.txt; nor do related terms alone make the
+    // half — but a typed word's own singular or plural does.
+    if let (true, Some(required)) = (natural_language, natural_plan.typed_words_required()) {
+        let typed_hits = typed_words_found.iter().filter(|found| **found).count();
         if typed_hits < required && phrase_hits == 0 && phrase_path_hits == 0 {
             return Ok(None);
         }
@@ -10660,6 +10782,11 @@ fn build_result_item(
         related_keyword_hits,
         phrase_name_hits: phrase_hits,
         phrase_path_hits,
+        name_coverage: name_coverage(
+            &file_name_lower,
+            is_folder,
+            if natural_plan.typed_words.is_empty() { query_keywords } else { &natural_plan.typed_words },
+        ),
         total_keywords: query_keywords
             .iter()
             .filter(|word| !word.is_empty() && natural_plan.is_typed(word))
@@ -10845,6 +10972,7 @@ fn build_content_result_item(
     address: tantivy::DocAddress,
     score: f32,
     query_keywords: &[String],
+    natural_plan: &NaturalQueryPlan,
     path_filter: Option<&str>,
     extension_filters: &[String],
     max_content_bytes: usize,
@@ -10935,6 +11063,27 @@ fn build_content_result_item(
     let matched_keywords = matched_content_keywords(scan_text, query_keywords);
     let sensitive_kinds = collect_doc_text_values(&retrieved, fields.sensitive_kinds);
 
+    // The words typed, found in the text or the name (a word's singular or
+    // plural counts, a related term doesn't): with three or more typed, a
+    // file needs half of them, as in file search. Only a match by meaning
+    // (semantic) is let in without.
+    let file_name_lower = file_name.to_lowercase();
+    let typed_found = natural_plan
+        .typed_words
+        .iter()
+        .filter(|word| {
+            query_keywords.iter().any(|keyword| {
+                same_word(word, keyword)
+                    && (matched_keywords.contains(keyword) || file_name_lower.contains(keyword.as_str()))
+            })
+        })
+        .count();
+    if let Some(required) = natural_plan.typed_words_required() {
+        if typed_found < required && !semantic_only {
+            return Ok(None);
+        }
+    }
+
     // Unified scoring (Search #13). Content relevance is BM25 over the indexed
     // text; `lexical` here is keyword *coverage* — the fraction of query
     // keywords present in the file — lifted by in-document frequency so a file
@@ -10942,8 +11091,17 @@ fn build_content_result_item(
     // Frecency + file recency fuse in via the same `rank` weights file search
     // uses; content results have no entry-type filter, so `filter_bonus` is 0.
     let modified_ms = doc_u64(&retrieved, fields.modified_ms).unwrap_or(0);
+    // Coverage of the words typed; a related term alone ("memo" for "notes")
+    // counts for less than any one of them.
     let total_keywords = query_keywords.iter().filter(|word| !word.is_empty()).count();
-    let coverage = if total_keywords > 0 {
+    let coverage = if !natural_plan.typed_words.is_empty() {
+        let typed = typed_found as f32 / natural_plan.typed_words.len() as f32;
+        if typed == 0.0 && !matched_keywords.is_empty() {
+            0.1
+        } else {
+            typed
+        }
+    } else if total_keywords > 0 {
         matched_keywords.len() as f32 / total_keywords as f32
     } else {
         0.0
@@ -12810,12 +12968,22 @@ mod tests {
     /// The first `limit` names a file search finds, as `search_local_files`
     /// runs it on the filename index.
     fn find_names(handle: &FilenameIndexHandle, query: &str, limit: usize, extensions: Option<&str>) -> Vec<String> {
+        find_names_in(handle, query, limit, extensions, None)
+    }
+
+    fn find_names_in(
+        handle: &FilenameIndexHandle,
+        query: &str,
+        limit: usize,
+        extensions: Option<&str>,
+        path: Option<&str>,
+    ) -> Vec<String> {
         let options = FileSearchQueryOptions {
             query: query.to_string(),
             limit: Some(limit),
             offset: None,
             extension_filter: extensions.map(str::to_string),
-            path_filter: None,
+            path_filter: path.map(str::to_string),
             natural_language: None,
         };
         let frecency = super::super::frecency::FrecencySnapshot {
@@ -12853,26 +13021,100 @@ mod tests {
         assert!(note[..2].contains(&"notebook.txt".to_string()), "{note:?}");
     }
 
-    /// A typed word finds the one name it begins that fits the filter, even
-    /// among more names it begins that don't than the search reads ahead.
+    /// Among more names holding a word than a page (and than the search reads
+    /// ahead), the one that is the word comes first among files, and one a
+    /// typed word begins still makes the page, filtered or not.
     #[test]
-    fn a_word_finds_its_filtered_name_among_many_others() {
+    fn a_word_finds_the_names_it_is_or_begins_among_many_others() {
         let folder = TempFolder::new("flood");
-        let mut entries: Vec<String> = (1..=60).map(|n| format!("notes/notes-{n}.md")).collect();
-        entries.push("notebook.txt".to_string());
+        let mut entries = vec!["notes".to_string()];
+        entries.extend((1..=60).map(|n| format!("notes/notes-{n}.md")));
+        entries.extend(["notes.txt", "notebook.txt", "pads"].map(str::to_string));
+        entries.extend((1..=60).map(|n| format!("pads/notepad-{n}.txt")));
+        entries.extend(["keep", "keep/noteworthy.txt"].map(str::to_string));
         let handle = names_index(&folder.0, &entries);
+        let keep = folder.0.join("keep").to_string_lossy().to_lowercase();
 
-        assert_eq!(find_names(&handle, "note", 5, Some("txt")), ["notebook.txt"]);
+        let notes = find_names(&handle, "notes", 4, None);
+        let first_file = notes.iter().find(|name| name.contains('.'));
+        assert_eq!(first_file.map(String::as_str), Some("notes.txt"), "{notes:?}");
+        let note = find_names(&handle, "note", 4, None);
+        assert!(note.contains(&"notebook.txt".to_string()), "{note:?}");
+        let mut txt = find_names(&handle, "note", 5, Some("txt"));
+        txt.truncate(2);
+        txt.sort();
+        assert_eq!(txt, ["notebook.txt", "notes.txt"]);
+        assert_eq!(find_names_in(&handle, "note", 5, Some("txt"), Some(&keep)), ["noteworthy.txt"]);
     }
 
     /// With three or more words typed, a name needs half of them: the terms
-    /// they were widened with ("examples", "memo") don't count toward it.
+    /// they were widened with ("examples", "memo") don't count toward it, but
+    /// a word's own singular or plural does ("invoice" for "invoices").
     #[test]
     fn related_terms_alone_do_not_admit_a_name_for_three_words() {
         let folder = TempFolder::new("three");
-        let entries = ["examples/memo 3.txt", "memos/memo 1.txt", "sample budget.txt"].map(str::to_string);
+        let entries =
+            ["examples/memo 3.txt", "memos/memo 1.txt", "sample budget.txt", "invoice budget.xlsx", "tax budget.txt"]
+                .map(str::to_string);
         let handle = names_index(&folder.0, &entries);
 
         assert_eq!(find_names(&handle, "sample notes budget", 5, None), ["sample budget.txt"]);
+        let mut invoices = find_names(&handle, "invoices budget tax", 5, None);
+        invoices.sort();
+        assert_eq!(invoices, ["invoice budget.xlsx", "tax budget.txt"]);
+    }
+
+    /// The names of the files a content search finds, best first, in a
+    /// content index holding `files` ((path, text)).
+    fn find_contents(files: &[(&str, &str)], query: &str) -> Vec<String> {
+        let index = Index::create_in_ram(build_search_schema());
+        let fields = extract_fields(&index.schema()).unwrap();
+        let writer: IndexWriter = index.writer_with_num_threads(1, 15_000_000).unwrap();
+        for (path, text) in files {
+            let path = format!("C:\\t\\root\\{path}");
+            let name = Path::new(&path).file_name().unwrap().to_string_lossy().to_string();
+            let meta = ContentDocMeta {
+                file_path: &path,
+                file_name: &name,
+                extension: "txt",
+                entry_type: ENTRY_TYPE_FILE,
+                size: text.len() as u64,
+                modified_ms: 1,
+                created_ms: 1,
+            };
+            add_content_document(&writer, fields, &meta, text).unwrap();
+        }
+        let mut writer = writer;
+        writer.commit().unwrap();
+        let options: FileSearchIndexOptions =
+            serde_json::from_value(serde_json::json!({"roots": ["C:\\t\\root"], "includeHidden": false, "indexContent": true}))
+                .unwrap();
+        let engine = SearchEngine { reader: index.reader().unwrap(), index, writer: None, watcher: None, fields, options };
+        let query = FileSearchQueryOptions {
+            query: query.to_string(),
+            limit: Some(10),
+            offset: None,
+            extension_filter: None,
+            path_filter: None,
+            natural_language: None,
+        };
+        let frecency = super::super::frecency::FrecencySnapshot { data: Default::default(), now_ms: unix_now_ms() };
+        let (_, rows) = query_content_index(&engine, &query, &frecency, &HashMap::new(), &[]).unwrap();
+        rows.into_iter().map(|row| row.file_name).collect()
+    }
+
+    /// Inside files as in names, the words typed decide: with three or more a
+    /// file needs half of them (in its text or its name), and a related term
+    /// alone ("memo" for "notes") ranks below a typed word or its singular.
+    #[test]
+    fn content_search_counts_the_words_typed_not_their_related_terms() {
+        let files = [
+            ("examples\\memo 3.txt", "memo three"),
+            ("notes.txt", "a plain note file"),
+            ("plan.txt", "the sample budget"),
+        ];
+
+        assert_eq!(find_contents(&files, "sample notes budget"), ["plan.txt"]);
+        assert_eq!(find_contents(&files, "notes"), ["notes.txt", "memo 3.txt"]);
     }
 }

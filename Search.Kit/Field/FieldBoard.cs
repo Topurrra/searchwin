@@ -250,9 +250,16 @@ public sealed class FieldBoard
             var floor = LockLine() + 1;
             foreach (var row in late)
             {
-                if (slot < 0 && (have >= cap || shown >= total)) break;
+                // A program or a script is never what Enter takes unasked:
+                // it goes below, and the slot waits for a row that may lead.
+                var fills = slot >= 0 && row.Action != RowAction.Reveal;
+                if (!fills && (have >= cap || shown >= total))
+                {
+                    if (slot < 0) break;
+                    continue;
+                }
                 if (!keys.Add(row.Key)) continue;
-                if (slot >= 0)
+                if (fills)
                 {
                     // The reserved top hit: filled where it stands.
                     rows[slot] = row with { Group = Group.TopHit, Origin = origin };

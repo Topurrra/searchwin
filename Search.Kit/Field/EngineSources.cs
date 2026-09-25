@@ -62,7 +62,8 @@ internal static class Nodes
 /// Files by name, from the engine's filename index
 /// (`search_local_files {options: {query, limit}}`). Enter opens a PDF,
 /// image or text file in a tab, audio and video in the player, anything else
-/// in its own app.
+/// in its own app, except a program or a script, which it shows in its
+/// folder.
 public sealed class FileNameSource(IEngineCalls engine) : IEngineSource
 {
     public Group Group => Group.Files;
@@ -88,10 +89,12 @@ public sealed class FileNameSource(IEngineCalls engine) : IEngineSource
         if (path.Length == 0) return null;
         var name = Nodes.Str(item, "fileName");
         var folder = Nodes.Str(item, "entryType") == "folder";
-        var extension = Nodes.Str(item, "extension");
-        if (extension.Length == 0) extension = Path.GetExtension(Nodes.Name(path));
+        // By the path itself: what's opened is the path, whatever the index
+        // says its extension is.
+        var action = FileKinds.ActionForPath(path, folder);
+        if (action != RowAction.Reveal && FileKinds.Runs(Nodes.Str(item, "extension"))) action = RowAction.Reveal;
         return new FieldRow(Group.Files, RowKey.File(path), name.Length > 0 ? name : Nodes.Name(path), Nodes.Folder(path),
-            FileKinds.ActionFor(extension, folder), path)
+            action, path)
         {
             Score = Nodes.Long(item, "score"),
             Sensitive = Nodes.Strings(item, "sensitiveKinds").Count > 0,

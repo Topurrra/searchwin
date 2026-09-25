@@ -431,6 +431,8 @@ public sealed partial class Omnibox : Grid
                     ? Icons.Music : Icons.Video,
                 RowAction.CopyClip => Icons.Clipboard,
                 RowAction.OpenWithApp when !Path.HasExtension(row.Target) => Icons.Folder,
+                // A program or a script: Enter shows it in its folder.
+                RowAction.Reveal => Icons.Folder,
                 RowAction.OpenInTab when Path.GetExtension(row.Target).ToLowerInvariant() is ".png" or ".jpg" or ".jpeg" or ".gif" or ".webp" or ".svg" or ".bmp" or ".avif" or ".ico"
                     => Icons.Picture,
                 _ => Icons.Document,

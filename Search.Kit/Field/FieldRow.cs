@@ -34,6 +34,9 @@ public enum RowAction
     /// Open the file or folder at `Target` in its own app (engine:
     /// `open_search_result_path {path}`).
     OpenWithApp,
+    /// Show the file at `Target` in its folder, selected, and nothing more:
+    /// a program or a script, which opening would run (see FileKinds.Runs).
+    Reveal,
     /// Start the app at `Target` (engine: `launch_cached_target {path}`).
     Launch,
     /// Put the text in `Target` on the clipboard.
@@ -121,13 +124,49 @@ public static class FileKinds
         "mp4", "m4v", "webm", "ogv", "mov", "mp3", "m4a", "aac", "wav", "ogg", "oga", "opus", "flac",
     };
 
-    /// `extension` with or without its dot. A folder always opens in Explorer.
+    /// What opening runs rather than shows: programs, scripts, installers,
+    /// shortcuts (whose target may be any of those), registry files, plus
+    /// whatever PATHEXT adds on this machine.
+    private static readonly HashSet<string> Running = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "exe", "com", "bat", "cmd", "pif", "scr", "cpl", "msc", "msi", "msp", "mst", "hta", "reg", "inf",
+        "lnk", "url", "appref-ms", "application", "settingcontent-ms", "scf", "jar", "ps1", "psm1",
+        "vbs", "vbe", "js", "jse", "wsf", "wsh", "gadget",
+    };
+
+    private static readonly Lazy<HashSet<string>> Everything = new(() =>
+    {
+        var all = new HashSet<string>(Running, StringComparer.OrdinalIgnoreCase);
+        foreach (var ext in (Environment.GetEnvironmentVariable("PATHEXT") ?? "").Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            all.Add(ext.TrimStart('.'));
+        return all;
+    });
+
+    /// Whether opening a file with this extension (with or without its dot)
+    /// would run it.
+    public static bool Runs(string extension) => Everything.Value.Contains(Bare(extension));
+
+    /// `extension` with or without its dot. A folder always opens in
+    /// Explorer; a program or a script is only ever shown there.
     public static RowAction ActionFor(string extension, bool folder = false)
     {
         if (folder) return RowAction.OpenWithApp;
-        var bare = extension.StartsWith('.') ? extension[1..] : extension;
+        var bare = Bare(extension);
+        if (Runs(bare)) return RowAction.Reveal;
         if (Playable.Contains(bare)) return RowAction.Play;
         if (InTab.Contains(bare)) return RowAction.OpenInTab;
         return RowAction.OpenWithApp;
     }
+
+    /// A file's action by its path: what Windows would open, which ignores
+    /// trailing dots and spaces (`setup.exe.` runs setup.exe).
+    public static RowAction ActionForPath(string path, bool folder = false)
+    {
+        if (folder) return RowAction.OpenWithApp;
+        var name = path[(path.LastIndexOfAny(['\\', '/']) + 1)..].TrimEnd('.', ' ');
+        var dot = name.LastIndexOf('.');
+        return ActionFor(dot < 0 ? "" : name[(dot + 1)..]);
+    }
+
+    private static string Bare(string extension) => extension.Trim().TrimStart('.').TrimEnd('.', ' ');
 }

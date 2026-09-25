@@ -194,6 +194,9 @@ public sealed partial class Browser
             case RowAction.OpenWithApp:
                 Send("open_search_result_path", new JsonObject { ["path"] = row.Target }, "Couldn't open that");
                 break;
+            case RowAction.Reveal:
+                Reveal(row.Target);
+                break;
             case RowAction.Launch:
                 Send("launch_cached_target", new JsonObject { ["path"] = row.Target }, "Couldn't start that");
                 Announce($"Opening {row.Title}");
@@ -227,6 +230,34 @@ public sealed partial class Browser
         var url = new Uri(path);
         if (Active is { IsBlank: true } blank && Floating != blank.Id) Go(blank, url);
         else Open(url, foreground: true);
+    }
+
+    /// A program or a script: shown in its folder, selected, never run. What
+    /// to do with it is Explorer's question, asked by the person.
+    private void Reveal(string path)
+    {
+        if (!File.Exists(path))
+        {
+            Announce("That file isn't there any more");
+            return;
+        }
+        Announce("Shown in its folder");
+        _ = Task.Run(() =>
+        {
+            try
+            {
+                var explorer = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "explorer.exe");
+                using var _ = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(explorer)
+                {
+                    Arguments = $"/select,\"{path}\"",
+                    UseShellExecute = false,
+                });
+            }
+            catch (Exception error) when (error is System.ComponentModel.Win32Exception or InvalidOperationException)
+            {
+                Log.Write($"field: reveal: {error.Message}");
+            }
+        });
     }
 
     /// An engine call nothing waits on; if it fails, the line says `trouble`.

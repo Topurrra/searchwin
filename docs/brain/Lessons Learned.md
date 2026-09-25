@@ -1,6 +1,6 @@
 ---
 tags: [searchwin, lessons]
-updated: 2026-09-24
+updated: 2026-09-25
 ---
 
 # Lessons Learned
@@ -369,3 +369,31 @@ the fix lives. *(uncertain)* marks things that weren't proven.
   quarantined it (`settings.unreadable-*.json`).
 - Stopping `Get-Process Search` would also stop a real Search; stop test
   runs by PID.
+
+## Phase 1: Security fixes (2026-09-25)
+
+### ABP pattern matching
+- **Exponential wildcard backtracking:** a pattern like `/ad*a*a*a*a*zz` on a long URL took over 5 seconds (timeout). The old recursive Search would explore all possible split points of the URL. Fix: place each piece between '*' at its earliest match, left to right. Each piece has a fixed length ('^' is one char, or none only at the very end), and a '*' always follows, so an earlier end can only help later. This is exact, not a heuristic. No memo or backtracking needed; the new matcher is O(n).
+- **Token index missed whole-word matches:** a word 'banner' was indexed if it appeared anywhere in the pattern, but matched only as a substring in URLs. When the pattern was `-ad-*banner`, the index filed it under 'banner' even though that word only appears in compound words like '-ad-bigbanner' in the URLs it should match. Similarly, 'adserver' missed 'myadserver.com' and exceptions were never tried. Fix: a token is only usable for indexing if it is bounded on both sides in the pattern — by a non-alphanumeric literal, by '^', or by a '|' anchor. A run at an unanchored end or next to '*' is not indexable; it goes to genericPlain. Lower MinToken from 3 to 2 so rules like `-ad-` or `/ad/` get their own bucket. On the real lists, 127 of 4,732 non-domain rules had been mis-filed.
+
+### Signature verification
+- **A blocklist rode along unsigned:** FeedBundle.cs accepted a blocklist in the remote feed even though the signature only covered the other fields (version, generated, sources, count, bloom). The unsigned blocklist then replaced the bundled one, deleting protection. Fix: only accept a blocklist when it is inside the signed v2 payload (v1 fields + blocklist, all signed together). A v1-only signature gives the Bloom filter and BlockList=null. `WithFeed` merges instead of replaces, so even a signed but empty blocklist can't empty the bundled one. Until the registry signs v2, only the Bloom is used from the feed.
+- **Rollback was missing:** a malicious feed sent an older 'generated' date to roll back the protection. Fix: store the signed 'generated' date in the state file and refuse any feed whose date is earlier than the saved one. Forget clears both files, so rollback is reset.
+
+### Cookie banner rejections
+- **Consent container match too broad:** bare 'cmp' and 'privacy' substrings inside many non-CMP elements (AEM's cmp-button class, pages with a "privacy policy" link) were treated as consent banners. A button with text "Deny" anywhere on the page (like in a "Senate to deny the bill" headline) would be clicked. Fix: CONSENT_NAME now matches only known CMP names word-bounded, and the container must be a `dialog` tag or role, or have `position: fixed/sticky`. Dropped 'deny'/'deny all'/'no thanks' entirely from the fallback phrases.
+- **Password pages broke the logic:** when a page has a visible password field anywhere, `cookie-reject.js` was settling the whole script (no CMP handlers, no leftover-banner CSS). Fix: apply the password guard only to the fallback text-button finder; keep the CMP APIs and CSS running.
+
+### FishCatcher: Forge protection
+- **Page-supplied facts reached Search's UI:** the page's own `chrome.webview.postMessage` with `fish.facts` could include forged gsbThreat, domain age, form-action text or other keys. These strings appeared in the warning page and could instruct users to call a fake number. Fix: `PageFacts.FromProbe()` reads only aitm and scam, never the fields that come from Safe Browsing or RDAP. Analyzer only accepts a GsbThreat when `Messages.IsSafeBrowsing` is true. FormAction.Run re-checks every destination with `IsHost`. All strings are capped to probe limits; resourceHosts at 40, formActions at 10, and counts are clamped to 1..100000.
+- **Message budget starvation:** the rate limit of 6 fish.facts per document could be used up by the page before the probe even spoke, silencing the real warnings. Fix: `ProbeBudget` is reset in `ContentLoading`, which fires before any page scripts run. (Also: the probe now reads innerText once per look, not twice; the DOMContentLoaded look is structural only; the settled look runs at idle or 1.2 s after load or 5 s final; the overlay check uses `elementsFromPoint` at the window centre instead of measuring every div.)
+
+### Parallel worktree merges
+- **Clean separation by file set** allowed three parallel fixes to merge with zero textual conflicts: FishCatcher (Fish.cs, FeedBundle.cs, PageFacts.cs), Shields matcher (AbpPattern.cs, NetworkRule.cs, RegistrableDomain.cs), and browser wiring (Shield.cs, page scripts, lists defaults). Each agent worked in distinct files despite touching the same namespace.
+- **Cross-branch integration gaps still need a grep:** the matcher branch added `LiveRegistrableDomain` and wired it into `SearchKit.Shields.FilterList`, but `Search.Core.Shield.cs` (owned by the browser branch) still called `SimpleRegistrableDomain` directly. The merge didn't detect this because `Shield.cs`'s line never conflicted. After merging, a `grep -rn SimpleRegistrableDomain` found the gap, and a follow-up commit fixed it.
+- **Check commit identity:** one worktree had a typo'd committer email. Verify `git log --format=%an` after agents run.
+
+### Testing in parallel
+- **Unit tests caught the forgery immediately:** a test feeding `FromProbe` a page with 20 forged fields (gsbThreat 'Your PC is infected. Call 1-888...', youngDomainDays, form actions like 'call support now') showed every forged value was dropped. The resulting `Reasons` contained only fixed sentences from `Messages.cs`.
+- **Fuzz testing for the index:** 60,000 random requests against a brute-force pass over every parsed rule (with mixed separators, `*`, `^`, `|`, options like `$third-party/$1p`, exceptions, trailing-dot hosts) gave 0 mismatches. The real lists showed 0 mismatches too.
+- **End-to-end verification without hand-testing:** test worlds with `SEARCH_HOST_RULES` (--host-resolver-rules pointing lookalike domains at a local server) and `SEARCH_PROBE=worldname` let us verify the full path: a page posting forged facts got the expected low verdict; a real phishing-like form got Critical or High; the probe's budget worked; etc.

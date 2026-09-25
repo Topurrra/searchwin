@@ -1,6 +1,6 @@
 ---
 tags: [searchwin, decisions, adr]
-updated: 2026-09-24
+updated: 2026-09-25
 ---
 
 # Decisions
@@ -197,3 +197,26 @@ Newest at the bottom.
 - **Cosmetics:** one shared stylesheet per list (the same for every page,
   handed over once per tab and adopted by the page) plus a small per-site one
   swapped in at each navigation. Pausing a site turns all of it off there.
+
+### D29 · Protection updates on by default (2026-09-25)
+- **Decision:** after phase 1's security hardening, the two protection updates
+  now ship **on by default** instead of opt-in:
+  - **"Full ad and tracker lists"** (`Prefs.shieldLists`): default `true`. Downloads EasyList + EasyPrivacy daily from easylist.to, compiled and cached.
+  - **"Daily list of reported scam sites"** (FishCatcher feed, `Prefs.scamFeed`): default `true`. Downloads the signed blocklist/Bloom filter daily from FishCatcher's registry.
+- **Why:** both go only to their publishers (no browsing data sent), send no
+  requests if the user is offline or has disabled Shields, and have been
+  hardened against tampering (signed v2 payload, rollback protection, rate
+  limits). User-side blocking (EasyList) and on-device detection (FishCatcher)
+  are the baseline. A fresh install now protects against ads and known scams
+  from day one.
+- **Settings text:** "Full ad and tracker lists: Updated in the background from
+  the EasyList publishers — nothing about your browsing is sent, and only the
+  signed parts of what comes back are ever used." "Daily list of reported scam
+  sites: Updated in the background from FishCatcher's registry — nothing about
+  your browsing is sent, and only the signed parts of what comes back are ever
+  used."
+- **Revisit:** if a user's bandwidth is severely constrained or if a download
+  ever fails to verify, make an offline-first build available for distribution
+  with the lists pre-built (`lists.bin` 3.6 MB) and the feed pre-signed
+  (fishcatcher-feed.json 791 KB). That would reduce fresh-install network use
+  from ~4 MB to ~500 KB while keeping updates automatic.

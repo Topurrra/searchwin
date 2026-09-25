@@ -134,6 +134,37 @@ public static class FileKinds
         "vbs", "vbe", "js", "jse", "wsf", "wsh", "gadget",
     };
 
+    /// What may open in its own app: documents whose app shows them — office
+    /// files, PDFs and e-books, pictures, text and source code whose app is
+    /// an editor, archives, audio and video, fonts. Anything not named here
+    /// (an installer package, a disk image, a remote-desktop file, a help
+    /// file, a script for an interpreter, a Windows shell file, a file with
+    /// no extension) is only shown in its folder: opening it could run,
+    /// mount or install something.
+    private static readonly HashSet<string> Documents = new(StringComparer.OrdinalIgnoreCase)
+    {
+        // Office and friends (not the macro-enabled kinds).
+        "doc", "docx", "dotx", "rtf", "odt", "ott", "xls", "xlsx", "xltx", "ods", "csv", "tsv",
+        "ppt", "pptx", "potx", "ppsx", "odp", "vsdx", "wpd", "pages", "numbers", "key",
+        // Documents and books.
+        "pdf", "xps", "oxps", "epub", "mobi", "azw3", "djvu", "fb2", "cbz", "cbr",
+        // Pictures.
+        "png", "jpg", "jpeg", "jfif", "gif", "webp", "bmp", "tif", "tiff", "heic", "heif", "avif", "jxl", "ico",
+        "svg", "psd", "xcf", "kra", "raw", "dng", "cr2", "cr3", "nef", "arw", "orf", "rw2", "raf",
+        // Text, data and source code (their apps are editors).
+        "txt", "text", "md", "markdown", "rst", "log", "json", "jsonc", "xml", "yaml", "yml", "toml", "ini", "cfg",
+        "conf", "env", "html", "htm", "css", "scss", "less", "sql", "tex", "bib", "diff", "patch", "srt", "vtt",
+        "c", "h", "cc", "cpp", "hpp", "cxx", "cs", "fs", "java", "kt", "go", "rs", "swift", "ts", "tsx",
+        "vue", "svelte", "dart", "scala", "zig", "ml", "proto", "graphql",
+        // Archives (opened to look inside, not to install).
+        "zip", "7z", "rar", "tar", "gz", "tgz", "bz2", "xz", "zst",
+        // Audio and video the player doesn't take.
+        "mkv", "avi", "wmv", "flv", "mpg", "mpeg", "m2ts", "mts", "3gp", "wma", "aiff", "aif", "mid", "midi",
+        "mka", "ape", "wv",
+        // Fonts (the font viewer).
+        "ttf", "otf", "woff", "woff2",
+    };
+
     private static readonly Lazy<HashSet<string>> Everything = new(() =>
     {
         var all = new HashSet<string>(Running, StringComparer.OrdinalIgnoreCase);
@@ -147,7 +178,8 @@ public static class FileKinds
     public static bool Runs(string extension) => Everything.Value.Contains(Bare(extension));
 
     /// `extension` with or without its dot. A folder always opens in
-    /// Explorer; a program or a script is only ever shown there.
+    /// Explorer; a program or a script is only ever shown there, and so is
+    /// anything that isn't a known document.
     public static RowAction ActionFor(string extension, bool folder = false)
     {
         if (folder) return RowAction.OpenWithApp;
@@ -155,7 +187,7 @@ public static class FileKinds
         if (Runs(bare)) return RowAction.Reveal;
         if (Playable.Contains(bare)) return RowAction.Play;
         if (InTab.Contains(bare)) return RowAction.OpenInTab;
-        return RowAction.OpenWithApp;
+        return Documents.Contains(bare) ? RowAction.OpenWithApp : RowAction.Reveal;
     }
 
     /// A file's action by its path: what Windows would open, which ignores

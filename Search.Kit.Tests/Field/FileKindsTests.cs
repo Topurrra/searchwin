@@ -35,12 +35,57 @@ public class FileKindsTests
     [InlineData("json", RowAction.OpenInTab)]
     [InlineData("mp3", RowAction.Play)]
     [InlineData("docx", RowAction.OpenWithApp)]
-    [InlineData("", RowAction.OpenWithApp)]
+    [InlineData("xlsx", RowAction.OpenWithApp)]
+    [InlineData("zip", RowAction.OpenWithApp)]
+    [InlineData("heic", RowAction.OpenWithApp)]
+    [InlineData("rs", RowAction.OpenWithApp)]
+    [InlineData("ttf", RowAction.OpenWithApp)]
     public void Documents_open_as_before(string extension, RowAction action)
     {
         Assert.False(FileKinds.Runs(extension));
         Assert.Equal(action, FileKinds.ActionFor(extension));
     }
+
+    // Only known documents open in their app. These don't run as programs
+    // do, but opening them installs, mounts, connects, runs an interpreter
+    // or a shell handler — shown in their folder instead.
+    [Theory]
+    [InlineData("msix")]
+    [InlineData("msixbundle")]
+    [InlineData("appx")]
+    [InlineData("appxbundle")]
+    [InlineData("appinstaller")]
+    [InlineData("rdp")]
+    [InlineData("iso")]
+    [InlineData("img")]
+    [InlineData("vhd")]
+    [InlineData("vhdx")]
+    [InlineData("chm")]
+    [InlineData("py")]
+    [InlineData("pyw")]
+    [InlineData("library-ms")]
+    [InlineData("search-ms")]
+    [InlineData("searchConnector-ms")]
+    [InlineData("theme")]
+    [InlineData("themepack")]
+    [InlineData("settingcontent-ms")]
+    [InlineData("docm")]
+    [InlineData("xlsm")]
+    [InlineData("one")]
+    [InlineData("sh")]
+    [InlineData("sln")]
+    [InlineData("made-up-kind")]
+    [InlineData("")]
+    public void Anything_not_a_known_document_is_only_shown_in_its_folder(string extension) =>
+        Assert.Equal(RowAction.Reveal, FileKinds.ActionFor(extension));
+
+    [Theory]
+    [InlineData(@"C:\t\setup.msix")]
+    [InlineData(@"C:\t\disk.ISO")]
+    [InlineData(@"C:\t\work.rdp.")]
+    [InlineData(@"C:\t\Makefile")]
+    public void A_path_of_an_unknown_kind_is_revealed(string path) =>
+        Assert.Equal(RowAction.Reveal, FileKinds.ActionForPath(path));
 
     [Fact]
     public void Whatever_PATHEXT_adds_runs_too()
@@ -149,11 +194,11 @@ public class FileKindsTests
     [InlineData("pdf", RowAction.OpenInTab)]
     [InlineData("txt", RowAction.OpenInTab)]
     [InlineData("png", RowAction.OpenInTab)]
-    // Everything else opens in its own app — except a program, which is
-    // shown in its folder and never run (see Programs_and_scripts_are_only_shown_in_their_folder).
+    // A known document opens in its own app; a program, and anything not
+    // known, is shown in its folder and never run.
     [InlineData("exe", RowAction.Reveal)]
     [InlineData("docx", RowAction.OpenWithApp)]
-    [InlineData("", RowAction.OpenWithApp)]
+    [InlineData("", RowAction.Reveal)]
     public void ActionFor_bare_extension(string extension, RowAction expected) =>
         Assert.Equal(expected, FileKinds.ActionFor(extension));
 

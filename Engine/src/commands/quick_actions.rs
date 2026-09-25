@@ -1906,7 +1906,12 @@ fn try_math(query: &str) -> Option<QuickAction> {
         return None;
     }
 
-    let cleaned = rewritten.replace('×', "*").replace('÷', "/");
+    let mut cleaned = rewritten.replace('×', "*").replace('÷', "/");
+    // evalexpr divides whole numbers as integers ("24 / 7" → 3): a sum with
+    // a division is worked out in decimals.
+    if cleaned.contains('/') {
+        cleaned = decimal_literals(&cleaned);
+    }
     let value = evalexpr::eval(&cleaned).ok()?;
     let display = match value {
         evalexpr::Value::Int(i) => i.to_string(),
@@ -2015,6 +2020,33 @@ fn parse_trailing_percent(s: &str) -> Option<(f64, bool)> {
     let s = s.trim();
     let stripped = s.strip_suffix('%')?.trim();
     parse_simple_number(stripped).map(|v| (v, true))
+}
+
+/// Every whole-number literal as a decimal one ("24/7" → "24.0/7.0"), so
+/// evalexpr's division is a real one. Digits already part of a decimal or a
+/// name are left alone.
+fn decimal_literals(expression: &str) -> String {
+    let chars: Vec<char> = expression.chars().collect();
+    let joined = |c: Option<&char>| c.is_some_and(|c| *c == '.' || *c == '_' || c.is_alphanumeric());
+    let mut out = String::with_capacity(expression.len() + 8);
+    let mut i = 0;
+    while i < chars.len() {
+        if !chars[i].is_ascii_digit() {
+            out.push(chars[i]);
+            i += 1;
+            continue;
+        }
+        let start = i;
+        while i < chars.len() && chars[i].is_ascii_digit() {
+            i += 1;
+        }
+        out.extend(&chars[start..i]);
+        let before = if start > 0 { chars.get(start - 1) } else { None };
+        if !joined(before) && !joined(chars.get(i)) {
+            out.push_str(".0");
+        }
+    }
+    out
 }
 
 /// Render a float compactly: drops trailing zeros, no scientific notation for
@@ -2172,5 +2204,43 @@ fn convert(value: f64, from: &Unit, to: &Unit) -> Option<f64> {
             Some(value * from.to_base / to.to_base)
         }
         _ => None, // categories don't match
+    }
+}
+
+#[cfg(test)]
+mod math_tests {
+    use super::*;
+
+    fn answer(query: &str) -> Option<String> {
+        match try_math(query) {
+            Some(QuickAction::Calculator { result, .. }) => Some(result),
+            _ => None,
+        }
+    }
+
+    #[test]
+    fn division_is_decimal() {
+        assert_eq!(answer("24/7").as_deref(), Some("3.428571"));
+        assert_eq!(answer("24 / 7").as_deref(), Some("3.428571"));
+        assert_eq!(answer("1/2").as_deref(), Some("0.5"));
+        assert_eq!(answer("10/4").as_deref(), Some("2.5"));
+        assert_eq!(answer("1.5/2").as_deref(), Some("0.75"));
+        assert_eq!(answer("(10-2)/4").as_deref(), Some("2"));
+        assert_eq!(answer("15% of 240").as_deref(), Some("36"));
+    }
+
+    #[test]
+    fn whole_sums_stay_whole() {
+        assert_eq!(answer("23*47").as_deref(), Some("1081"));
+        assert_eq!(answer("7-11").as_deref(), Some("-4"));
+        assert_eq!(answer("2^10").as_deref(), Some("1024"));
+    }
+
+    #[test]
+    fn decimal_literals_leave_decimals_and_names() {
+        assert_eq!(decimal_literals("24/7"), "24.0/7.0");
+        assert_eq!(decimal_literals("1.5/2"), "1.5/2.0");
+        assert_eq!(decimal_literals("(10-2)/4"), "(10.0-2.0)/4.0");
+        assert_eq!(decimal_literals("x2/4"), "x2/4.0");
     }
 }

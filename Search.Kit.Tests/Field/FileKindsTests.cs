@@ -149,8 +149,9 @@ public class FileKindsTests
     [InlineData("pdf", RowAction.OpenInTab)]
     [InlineData("txt", RowAction.OpenInTab)]
     [InlineData("png", RowAction.OpenInTab)]
-    // Everything else opens in its own app.
-    [InlineData("exe", RowAction.OpenWithApp)]
+    // Everything else opens in its own app — except a program, which is
+    // shown in its folder and never run (see Programs_and_scripts_are_only_shown_in_their_folder).
+    [InlineData("exe", RowAction.Reveal)]
     [InlineData("docx", RowAction.OpenWithApp)]
     [InlineData("", RowAction.OpenWithApp)]
     public void ActionFor_bare_extension(string extension, RowAction expected) =>

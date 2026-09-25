@@ -160,9 +160,9 @@ own pdfium-based converter otherwise. Revisit MuPDF only if we choose AGPL on pu
 - **Phase 3 (tools as pages, packs):**
   - the packs framework (download, verify, update);
   - the FFmpeg pack plus the player page;
-  - Word ⇄ PDF;
   - the media tools.
-- **Phase 3b:** the yt-dlp pack (direct-download edition only).
+- **Phase 4:** Word ⇄ PDF (moved from phase 3 by the user, 2026-09-26).
+- yt-dlp: removed entirely (D25).
 - **Phase 7:** two editions (Store without yt-dlp; direct with it); `Search-Setup-Full`.
 
 ## Decisions for the user

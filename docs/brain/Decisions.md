@@ -265,3 +265,9 @@ Newest at the bottom.
   could print them. Tests must never read the real clipboard.
 - **How:** `ClipGuard.OnByDefault(testing)`; bench clip/field output also drops
   entries captured before the run started (`RunStartedMs`).
+
+### D33 · Word ⇄ PDF moves to phase 4 (2026-09-26)
+- **Decision:** phase 3 is tool pages plus the packs framework and the FFmpeg
+  pack. Word ⇄ PDF (D24: Word silently, else LibreOffice) moves to phase 4.
+- **Why:** the user's call, to keep phase 3 focused.
+- **Until then:** the Word converter tool page stays out of the tools index.

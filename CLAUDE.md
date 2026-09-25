@@ -24,4 +24,9 @@ limits of a Linux environment.
 - Nothing may load before the first window. Field logic stays under 5 ms per keystroke.
 - No network calls except: downloads the user starts, and the background updates of public protection data — Shields filter lists (easylist.to) and FishCatcher's signed feed — which are ON by default, go only to their documented publishers, and never send anything about the user's browsing.
 - Test the release (AOT) build for UI changes, in a test world (`SEARCH_PROBE=<name>`), never the real profile.
+- Tests obey `SKILL.md` (test-audit): every new or changed test passes its authoring gate (the four
+  questions, no junk patterns), and a bug's regression test must fail on the pre-fix code. Its
+  OpenClaw commands map here to: `dotnet test Search.Kit.Tests`, `node --test Search/Assets/js/tests/`,
+  `pnpm vitest run` in `Tools/`, `cargo test` in `Engine/`, then `git diff --check`; `$autoreview`
+  means a review pass over the diff.
 - After a work session, update `docs/brain/` (Log, Lessons Learned, Decisions).

@@ -22,6 +22,6 @@ limits of a Linux environment.
 - Commit messages as short as possible, one line. **Never** add `Co-Authored-By` or AI attribution.
 - Native AOT safe: no reflection, source-generated JSON (`JsonNode` for open-ended data), WinRT casts via `.As<T>()`.
 - Nothing may load before the first window. Field logic stays under 5 ms per keystroke.
-- No network calls except downloads the user starts, from documented publisher URLs.
+- No network calls except: downloads the user starts, and the background updates of public protection data — Shields filter lists (easylist.to) and FishCatcher's signed feed — which are ON by default, go only to their documented publishers, and never send anything about the user's browsing.
 - Test the release (AOT) build for UI changes, in a test world (`SEARCH_PROBE=<name>`), never the real profile.
 - After a work session, update `docs/brain/` (Log, Lessons Learned, Decisions).

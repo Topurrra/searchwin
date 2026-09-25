@@ -71,7 +71,7 @@ public class PatternSpeedTests
     // opens a bucket, and each rule in it is tested against the whole
     // address. Six thousand words of a 64 KB address was 20+ ms a request
     // on the thread that draws every window; a page can ask for hundreds.
-    private static string AllWords(IEnumerable<string> words, int length)
+    internal static string AllWords(IEnumerable<string> words, int length)
     {
         var text = new System.Text.StringBuilder("https://cdn.example.com/", length + 64);
         var list = words.ToArray();
@@ -81,7 +81,7 @@ public class PatternSpeedTests
 
     // The best of a few rounds: other tests run alongside and take the CPU
     // now and then; what's measured is the request's own cost.
-    private static double Each(FilterList list, Uri url, int runs)
+    internal static double Each(FilterList list, Uri url, int runs)
     {
         list.ShouldBlock(url, "page.com", ResourceKind.Image);
         var best = double.MaxValue;
@@ -114,26 +114,6 @@ public class PatternSpeedTests
         output.WriteLine($"6,000 words: {bounded:N3} ms a request at {shorter.AbsoluteUri.Length:N0} characters, {each:N3} ms at {url.AbsoluteUri.Length:N0}");
         Assert.True(each < 2 * bounded + 0.25, $"took {each:N3} ms a request at 64 KB against {bounded:N3} ms at 4 KB.");
         Assert.True(each < 5.0, $"took {each:N3} ms a request; budget is 5 ms for this list, even unoptimised.");
-    }
-
-    [Fact]
-    public void An_address_of_every_real_indexed_word_takes_under_a_millisecond_at_64_KB()
-    {
-        var folder = Environment.GetEnvironmentVariable("SEARCH_REAL_LISTS");
-        var paths = new[] { "easylist.txt", "easyprivacy.txt" }.Select(n => Path.Combine(folder ?? "", n)).ToArray();
-        if (folder is null || !paths.All(File.Exists))
-        {
-            output.WriteLine("SEARCH_REAL_LISTS isn't set to a folder with easylist.txt and easyprivacy.txt; nothing measured.");
-            return;
-        }
-        var list = FilterList.Compile(paths.Select(p => File.ReadAllLines(p)).ToArray());
-        foreach (var length in (int[])[16 * 1024, 65_000])
-        {
-            var url = new Uri(AllWords(list.IndexWords, length));
-            var each = Each(list, url, 20);
-            output.WriteLine($"{list.IndexShape.Words:N0} real words, {url.AbsoluteUri.Length:N0} characters: {each:N3} ms a request");
-            Assert.True(each < 1.0, $"took {each:N3} ms a request at {length / 1024} KB; budget is 1 ms.");
-        }
     }
 
     // Past the part of an address the list reads, what it holds still

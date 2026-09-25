@@ -92,20 +92,33 @@ public sealed partial class Browser
     private static Suggestion Found(FieldRow row) =>
         new(row.Title, row.Detail, Suggestion.Nowhere, SuggestionKind.Found) { Row = row };
 
-    /// The board keeps a picked engine row where it is.
+    /// The board keeps a picked row where it is: its own, or one of ours
+    /// below its top hit.
     private void HoldPick()
     {
         if (field == null) return;
-        field.Board.Pick(Picked is { } p && p < slots.Count && !slots[p].IsLocal ? slots[p].Board : null);
+        field.Board.Pick(OnBoard(Picked));
     }
 
-    /// The pointer over a row (null: off the list). An engine row under it
-    /// stays put while late rows land.
+    /// The pointer over a row (null: off it). The row under it stays put
+    /// while late rows land, the browser's own rows included.
     public void Hover(int? index)
     {
         if (field == null) return;
-        field.Board.Hold(index is { } i && i < slots.Count && !slots[i].IsLocal ? slots[i].Board : null);
+        field.Board.Hold(OnBoard(index));
     }
+
+    /// The pointer over the list or off it: while it's over, a reserved top
+    /// hit that never comes stays as an empty row rather than pulling every
+    /// row below it up under the pointer.
+    public void OverList(bool over)
+    {
+        if (field == null) return;
+        field.Board.PointerOver = over;
+    }
+
+    private int? OnBoard(int? index) =>
+        index is { } i && i >= 0 && i < slots.Count ? slots[i].IsLocal ? FieldBoard.Beside : slots[i].Board : null;
 
     /// Enter with nothing picked belongs to the engine for an answer
     /// (`23*47`) and for a scope (`files: invoice`), whose first row is what

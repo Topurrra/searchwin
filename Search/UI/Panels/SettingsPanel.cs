@@ -401,16 +401,15 @@ public sealed partial class SettingsPanel : Grid
         catch { }
     }
 
-    /// A folder, unless it's one already searched or inside one.
+    /// A folder, unless one already chosen searches it.
     private void AddSearchFolder(string path)
     {
-        if (SearchKit.Field.IndexPlan.Covers(prefs.SearchFolders, path))
+        if (SearchKit.Field.IndexPlan.Add(prefs.SearchFolders, path) is not { } folders)
         {
             browser.Announce("Already searched");
             return;
         }
-        // One that holds folders already chosen takes their place.
-        prefs.SearchFolders = [.. prefs.SearchFolders.Where(f => !SearchKit.Field.IndexPlan.Covers([path], f)), path];
+        prefs.SearchFolders = folders;
         browser.Announce("Indexing " + Path.GetFileName(path.TrimEnd('\\', '/')));
         if (page == Page.Search) Show();
     }

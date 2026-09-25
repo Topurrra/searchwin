@@ -33,6 +33,9 @@ Paused on the usage limit before the fix round started. `main` is at `c7001c7`,
    (`\Search\<world>\Reminders\`), a pure-fn test that a Cron task isn't
    selected. **Until fixed, don't open Reminders.**
 
+3a. **YouTube ads play again** (user screenshot 2026-09-27: pre-roll "Ad 2 of 2").
+    Phase 1's shield misses a path; details in [[Optimization]] #3.
+
 ## Medium
 3. Cleaner/Analyzer "Open location" (`CleanerAnalyzer.svelte:685`) and
    Duplicate Preview (`DuplicatePreview.svelte:137`) call

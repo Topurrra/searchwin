@@ -41,6 +41,27 @@ feature or phase gets its own optimization note (for example
      settings and descriptions, and bring over what's better.
    - During a pack download Settings rebuilds 4×/s (see [[Fixes]] #10).
 
+3. **YouTube ads get through (user screenshot, 2026-09-27).** A video
+   started with a pre-roll ad pair: "Ad 2 of 2", an advertiser card
+   (pc.stateofsurvival.game, "Play now") and the yellow ad progress bar.
+   Phase 1 checked that the player data had no ads, so YouTube has found
+   another way, or the shield misses a path. Suspects:
+   - `Search/Assets/js/youtube-shield.js` only cleans some responses:
+     `ytInitialPlayerResponse` and the `/youtubei/v1/player` fetch/XHR. Check
+     `/youtubei/v1/next`, `get_watch`, the service-worker path, and in-page
+     navigation (yt-navigate) after the first video.
+   - Server-side ad insertion (ads stitched into the stream, SABR). Then
+     cleaning the JSON isn't enough: skip ad segments by time (the
+     `adSlots`/`adPlacements` offsets), or speed through and mute them as
+     uBlock Origin's scriptlets do.
+   - The script injected too late on some loads (`AddScriptToExecuteOnDocumentCreatedAsync`
+     timing in new tabs, or a tab restored from the session).
+   - What to do: reproduce in a test world with the same video, log which
+     response carried the ads, add a node test with that response's shape
+     (must fail today), and compare with uBlock Origin's current YouTube
+     filters and scriptlets. Treat as a protection regression, not polish
+     (listed in [[Fixes]] too).
+
 ## Known from the phase 2–3 reviews
 - **Engine walk and watcher:** hidden and excluded folders skipped at the
   walker (done); watchers don't read `.gitignore`.

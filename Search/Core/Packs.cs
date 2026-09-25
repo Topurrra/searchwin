@@ -55,7 +55,8 @@ public static class Packs
         jobs[id] = job;
         troubles.Remove(id);
         Tell(id);
-        var ticking = UI.Every(0.25, () => Tell(id));
+        // Progress is Settings' to draw; tool pages hear only the outcome.
+        var ticking = UI.Every(0.25, () => Changed?.Invoke(id));
         try
         {
             await Task.Run(() => Fetch(pack, job));

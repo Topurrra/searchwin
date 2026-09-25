@@ -301,6 +301,8 @@ public sealed partial class WelcomePanel : UserControl
         worth.Children.Add(Key("Ctrl+K", "Every open tab, by name."));
         worth.Children.Add(Key("Ctrl+,", "Settings, including passwords."));
         worth.Children.Add(Key("Alt+1", "Spaces: separate tabs and sign-ins. Turn them on in Settings › Tabs."));
+        if (prefs.ClipboardHistory)
+            worth.Children.Add(Key("Ctrl+Shift+V", "What you copied: Search keeps it, encrypted on this PC. Turn it off in Settings › Clipboard."));
         stack.Children.Add(worth);
         return stack;
     }

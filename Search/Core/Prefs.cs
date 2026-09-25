@@ -59,7 +59,10 @@ public sealed partial class Preferences : Model
         searchFolders = store.Strings("files.folders");
         fileContents = store.OptionalBool("files.contents") ?? true;
         appsInField = store.OptionalBool("field.apps") ?? true;
-        clipboardHistory = store.OptionalBool("clip.history") ?? true;
+        // A test world keeps nothing of the real clipboard unless its
+        // settings say `"clip.history": true`.
+        clipboardHistory = store.OptionalBool("clip.history") ?? SearchKit.Field.ClipGuard.OnByDefault(Store.Testing);
+        clipboardTold = store.Bool("clip.told");
     }
 
     private bool bench;
@@ -189,8 +192,14 @@ public sealed partial class Preferences : Model
     private bool clipboardHistory;
     /// What you copy, kept by the engine for Ctrl+Shift+V and `clip:` in the
     /// field — encrypted on this PC, secrets for minutes only, password
-    /// managers never. On unless turned off (the user's decision, 2026-09-25).
+    /// managers never. On unless turned off (the user's decision, 2026-09-25);
+    /// off in a test world unless asked for.
     public bool ClipboardHistory { get => clipboardHistory; set { if (Set(ref clipboardHistory, value)) store.Set("clip.history", value); } }
+
+    private bool clipboardTold;
+    /// The one-time line that says Search keeps what you copy, Ctrl+Shift+V,
+    /// and where to turn it off, has been shown.
+    public bool ClipboardTold { get => clipboardTold; set { if (Set(ref clipboardTold, value)) store.Set("clip.told", value); } }
 }
 
 public static class KnownFolders

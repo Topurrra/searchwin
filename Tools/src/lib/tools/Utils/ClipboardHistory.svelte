@@ -461,7 +461,8 @@
 
     async function copyToClipboard(entry: ClipboardEntry) {
         try {
-            await invoke('copy_clipboard_entry_to_clipboard', { id: entry.id });
+            // A secret goes back marked, so no clipboard history keeps it.
+            await invoke('copy_clipboard_entry_to_clipboard', { id: entry.id, quiet: entry.sensitiveKinds.length > 0 });
             toast(t('overlay.clipboardTool.copiedToast'), 'success');
         } catch (error) {
             toast(t('overlay.clipboardTool.couldNotCopy', { error: String(error) }), 'error');

@@ -42,8 +42,10 @@ Drive the Search you already have open, from the shell.
                                            Ctrl+Shift+V's list: open it (Enter pastes where the caret is now),
                                            narrow it, walk it, paste (enter) or go there (go), put it away;
                                            secret copies as a password is copied, which no history keeps.
-                                           Answers the rows as drawn (secrets as their kind), picked, aim, last
-                                           — --test runs only
+                                           Answers the rows as drawn (secrets as their kind), picked, aim, last;
+                                           rows copied before this run began show only as a placeholder.
+                                           A test world keeps no history unless its settings.json has
+                                           "clip.history": true — --test runs only
     ./bench.ps1 ui KEY VALUE               settings/passwords/welcome/history/downloads/bookmarks/hidden on|off,
                                            look light|dark|system, sidebar on|off, spaces on|off, hides on|off,
                                            folded on|off, peek on|off; test runs: folders PATH;PATH|none,

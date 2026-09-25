@@ -31,6 +31,7 @@
     - Privacy Audit Unencrypted Secrets (Wave 6.5-4)
 -->
 <script lang="ts">
+    import { copySecret } from '$lib/utils/secretCopy';
     import { onMount, onDestroy } from 'svelte';
     import { SvelteSet } from 'svelte/reactivity';
     import { Eye, EyeOff, Copy } from '@lucide/svelte';
@@ -164,7 +165,7 @@
 
     async function copyAll() {
         try {
-            await navigator.clipboard.writeText(text);
+            await copySecret(text);
             oncopy?.(text);
         } catch {
             // Clipboard API can fail (e.g. document not focused) — silent

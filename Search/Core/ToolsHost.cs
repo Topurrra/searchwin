@@ -182,6 +182,8 @@ public static class ToolsHost
         JsonObject reply;
         try
         {
+            // Some engine commands are the browser's alone (the clipboard listener, its pause).
+            if (SearchKit.Web.ToolCalls.Refused(cmd) is { } why) throw new InvalidOperationException(why);
             var value = cmd.StartsWith("host:")
                 ? await Local(cmd[5..], args)
                 : await Engine.Client.CallAsync(cmd, args);
@@ -239,6 +241,19 @@ public static class ToolsHost
                 UI.Do(() => Broadcast(Text(args, "event"), args["payload"]));
                 return null;
             case "notify":
+                return null;
+            case "clipboard.secret":
+                // A password, a key, a decrypted text: onto the clipboard
+                // marked so no clipboard history keeps it — Windows', the
+                // cloud's, or Search's own.
+                var secret = Text(args, "text");
+                var copied = false;
+                await OnUi(() =>
+                {
+                    copied = QuietCopy.Copy(secret);
+                    return Task.FromResult<JsonNode?>(null);
+                });
+                if (!copied) throw new InvalidOperationException("the clipboard was busy");
                 return null;
             case "fs.readText":
                 return await File.ReadAllTextAsync(Text(args, "path"));

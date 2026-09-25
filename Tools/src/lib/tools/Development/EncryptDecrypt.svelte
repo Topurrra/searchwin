@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { copySecret } from '$lib/utils/secretCopy';
     import { onMount } from 'svelte';
     import { open } from '@tauri-apps/plugin-dialog';
     import { fromStore } from 'svelte/store';
@@ -138,7 +139,7 @@
 
     async function copyOutput() {
         try {
-            await navigator.clipboard.writeText(textOutput);
+            await copySecret(textOutput);
             flash('ok', 'Copied');
         } catch {
             flash('err', 'Could not copy');

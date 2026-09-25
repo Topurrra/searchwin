@@ -30,6 +30,16 @@ public sealed partial class ClipPopup : Grid
     /// Whether the arrows have moved: until they have, the newest entry is
     /// the one Enter takes, whatever arrives while the list is up.
     private bool walked;
+    /// The pointer is over the list, and when a key was last pressed in it:
+    /// what arrives then waits, so rows don't move under the pointer or
+    /// under a finger about to press Enter.
+    private bool pointerOver;
+    private long keyedAt;
+    private bool stale;
+    private bool waiting;
+
+    /// Pictures' thumbnails, by entry: decoded once, not on every redraw.
+    private static readonly Dictionary<long, BitmapImage> thumbnails = [];
 
     public ClipPopup(Browser browser)
     {
@@ -47,6 +57,7 @@ public sealed partial class ClipPopup : Grid
         var stack = new StackPanel();
         hunt.Margin = new Thickness(8, 8, 8, 6);
         stack.Children.Add(hunt);
+        if (!browser.Prefs.ClipboardTold) stack.Children.Add(Told());
         scroller = Parts.Scroller(list, 400, bar: true);
         scroller.Padding = new Thickness(6, 0, 6, 6);
         stack.Children.Add(scroller);
@@ -58,11 +69,18 @@ public sealed partial class ClipPopup : Grid
 
         hunt.Changed += _ =>
         {
+            keyedAt = Environment.TickCount64;
             picked = 0;
             walked = false;
             Draw();
         };
         hunt.Field.PreviewKeyDown += OnKey;
+        PointerEntered += (_, _) => pointerOver = true;
+        PointerExited += (_, _) =>
+        {
+            pointerOver = false;
+            WhenStill();
+        };
         void changed() => _ = Reload();
         Loaded += (_, _) =>
         {
@@ -75,12 +93,57 @@ public sealed partial class ClipPopup : Grid
         _ = Reload();
     }
 
-    /// The rows as the engine has them now.
+    /// The rows as the engine has them now — drawn once the list is still.
     private async Task Reload()
     {
         await ClipHistory.List();
         if (!IsLoaded && Parent == null) return;
-        Draw();
+        stale = true;
+        WhenStill();
+    }
+
+    /// Redrawn for what arrived, unless the pointer rests on the list or a
+    /// key was just pressed; then a moment later, or when the pointer leaves.
+    private void WhenStill()
+    {
+        if (!stale || waiting) return;
+        if (ClipGuard.MayRedraw(pointerOver, Environment.TickCount64 - keyedAt))
+        {
+            stale = false;
+            Draw();
+            return;
+        }
+        if (pointerOver) return;
+        waiting = true;
+        UI.After(ClipGuard.StillMs / 1000.0, () =>
+        {
+            waiting = false;
+            if (Parent != null) WhenStill();
+        });
+    }
+
+    /// The one-time line: what Search keeps, where it's listed, and where to
+    /// turn it off.
+    private FrameworkElement Told()
+    {
+        browser.Prefs.ClipboardTold = true;
+        var line = new Grid { ColumnSpacing = 10, Margin = new Thickness(14, 0, 10, 8) };
+        line.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        line.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        var words = Kit.Text("Search keeps what you copy, encrypted on this PC: here with Ctrl+Shift+V, and clip: in the field. Turn it off in Settings › Clipboard.", 11.5, Palette.Muted);
+        words.TextWrapping = TextWrapping.Wrap;
+        words.TextTrimming = TextTrimming.None;
+        line.Children.Add(words);
+        var settings = new Quick("Settings", () =>
+        {
+            browser.HideClipboard(handBack: false);
+            Store.Settings.Set("settings.page", "clipboard");
+            browser.Tuning = true;
+        });
+        settings.VerticalAlignment = VerticalAlignment.Center;
+        Grid.SetColumn(settings, 1);
+        line.Children.Add(settings);
+        return line;
     }
 
     /// Each drawn row's way of showing it's the one picked, or not.
@@ -180,10 +243,10 @@ public sealed partial class ClipPopup : Grid
     /// A picture's own thumbnail; a glyph for everything else.
     private static FrameworkElement Mark(ClipEntry entry)
     {
-        if (entry.Image && entry.Thumbnail.Length > 0 && File.Exists(entry.Thumbnail))
+        if (entry.Image && Thumbnail(entry) is { } thumbnail)
             return new Image
             {
-                Source = new BitmapImage(new Uri(entry.Thumbnail)) { DecodePixelHeight = 64 },
+                Source = thumbnail,
                 Height = 28,
                 Width = 28,
                 Stretch = Microsoft.UI.Xaml.Media.Stretch.UniformToFill,
@@ -195,6 +258,20 @@ public sealed partial class ClipPopup : Grid
         glyph.HorizontalAlignment = HorizontalAlignment.Center;
         glyph.VerticalAlignment = VerticalAlignment.Center;
         return glyph;
+    }
+
+    /// Decoded once per entry and kept while the entry is; looked for on
+    /// disk only the first time.
+    private static BitmapImage? Thumbnail(ClipEntry entry)
+    {
+        if (thumbnails.TryGetValue(entry.Id, out var known)) return known;
+        if (entry.Thumbnail.Length == 0 || !File.Exists(entry.Thumbnail)) return null;
+        if (thumbnails.Count >= 64)
+        {
+            var kept = ClipHistory.Last.Select(e => e.Id).ToHashSet();
+            foreach (var gone in thumbnails.Keys.Where(id => !kept.Contains(id)).ToList()) thumbnails.Remove(gone);
+        }
+        return thumbnails[entry.Id] = new BitmapImage(new Uri(entry.Thumbnail)) { DecodePixelHeight = 64 };
     }
 
     /// The label a pinned entry was given; otherwise the app it came from
@@ -212,6 +289,7 @@ public sealed partial class ClipPopup : Grid
     {
         var shift = Keys.Down(Keys.Shift);
         var ctrl = Keys.Down(Keys.Control);
+        keyedAt = Environment.TickCount64;
         switch (e.Key)
         {
             case VirtualKey.Down:
@@ -251,8 +329,8 @@ public sealed partial class ClipPopup : Grid
 
     /// What the bench sees: the rows as drawn — a secret as its kind unless
     /// shown — the one picked, and where Enter puts it.
-    public (IReadOnlyList<string> Rows, int Picked) Seen =>
-        ([.. rows.Select(e => e.Sensitive && !shown.Contains(e.Id) ? e.Face : e.Shown)], picked);
+    public (IReadOnlyList<(string Row, long CapturedMs)> Rows, int Picked) Seen =>
+        ([.. rows.Select(e => (e.Sensitive && !shown.Contains(e.Id) ? e.Face : e.Shown, e.CapturedMs))], picked);
 
     public void Type(string text) => hunt.Field.Text = text;
 

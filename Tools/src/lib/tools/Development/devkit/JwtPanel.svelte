@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { copySecret } from '$lib/utils/secretCopy';
     import { AlertTriangle, CheckCircle, Copy, FileText, RefreshCw, ShieldCheck, XCircle } from '@lucide/svelte';
     import { toast } from '$lib/stores/toasts';
     import { errorToast } from '$lib/stores/errorToast';
@@ -302,7 +303,7 @@
     }
 
     async function copy(text: string, label: string) {
-        await navigator.clipboard.writeText(text);
+        await copySecret(text);
         toast(`Copied ${label}`, 'success');
     }
 

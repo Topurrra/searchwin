@@ -16,19 +16,23 @@ public sealed partial class Browser
 /// does `clip:` in the field.
 ///
 /// Nothing of it happens before the first window: the engine is started
-/// three seconds after it, behind the page, and asked to listen. The browser
-/// keeps its line to the engine open all session, so the engine stays; if
-/// the engine goes away anyway, it is started and asked again, with longer
-/// pauses between tries if it keeps going.
+/// three seconds after the window is first activated, behind the page, and
+/// asked to listen. The browser keeps its line to the engine open all
+/// session, so the engine stays; if the engine goes away anyway, it is
+/// started and asked again, with longer pauses between tries if it keeps
+/// going.
 public static class ClipHistory
 {
     public const string Updated = ClipboardSource.ChangedEvent;
 
     private static Browser? browser;
     private static Preferences? prefs;
-    private static bool paused;
+    /// The pause as last known: chosen in Settings, or read from the engine
+    /// (`get_clipboard_paused`), which is what decides.
+    private static volatile bool paused;
     private static double retry = 5;
     private static long armedAt;
+    private static bool woken;
 
     /// The history changed: a copy kept, an entry pinned or gone. On the UI thread.
     public static event Action? Changed;
@@ -37,19 +41,30 @@ public static class ClipHistory
     public static bool On => prefs?.ClipboardHistory == true && Engine.Available;
 
     /// Settings' "Pause": nothing new is kept until it's turned off again, or
-    /// Search starts again — the engine keeps it for this session only.
+    /// Search starts again — the engine keeps it for this session only. As
+    /// the engine last said it.
     public static bool Paused => paused;
 
+    /// With the browser: nothing but the setting watched. The engine waits
+    /// for the window (Wake).
     public static void Start(Browser owner)
     {
         browser = owner;
         prefs = owner.Prefs;
         prefs.On(nameof(Preferences.ClipboardHistory), Apply);
-        // Not even a look for the engine before the window is up.
+    }
+
+    /// The main window's first activation: three seconds later, behind the
+    /// page, the engine is started and asked to listen. Not even a look for
+    /// it before the window is up and has been shown.
+    public static void Wake()
+    {
+        if (woken || prefs is not { } settings) return;
+        woken = true;
         UI.After(3, () =>
         {
             Hook();
-            if (prefs.ClipboardHistory) Arm();
+            if (settings.ClipboardHistory) Arm(turnedOn: false);
         });
     }
 
@@ -59,15 +74,18 @@ public static class ClipHistory
     {
         if (hooked) return;
         hooked = true;
-        Engine.Client.EventReceived += (name, _) =>
+        Engine.Client.EventReceived += (name, payload) =>
         {
-            if (name == Updated) UI.Do(() => Changed?.Invoke());
+            if (name != Updated) return;
+            // A pause (or its end) is said with the same event.
+            _ = Task.Run(ReadPause);
+            UI.Do(() => Changed?.Invoke());
         };
         // A new engine (the first, or one started again) knows nothing of
         // what the last was asked.
         Engine.Client.Connected += () =>
         {
-            if (On) Arm();
+            if (On) Arm(turnedOn: false);
         };
         Engine.Client.Disconnected += () => UI.Do(Lost);
     }
@@ -77,7 +95,7 @@ public static class ClipHistory
         Hook();
         if (On)
         {
-            Arm();
+            Arm(turnedOn: true);
             return;
         }
         // Off: the listener stops keeping anything straight away, and isn't
@@ -89,14 +107,26 @@ public static class ClipHistory
     }
 
     /// The listener, started (the engine does that once however often it's
-    /// asked), and told whether it's paused.
-    private static void Arm() => _ = Task.Run(async () =>
+    /// asked). Turned on in Settings, the pause that turning it off put on is
+    /// lifted; on an engine newly joined, the pause is read from it and never
+    /// lifted — only put back when the user chose it and the engine started
+    /// afresh without it.
+    private static void Arm(bool turnedOn) => _ = Task.Run(async () =>
     {
         if (!On) return;
         try
         {
             await Engine.Client.CallAsync("start_clipboard_listener");
-            await Engine.Client.CallAsync("set_clipboard_paused", new JsonObject { ["paused"] = paused });
+            if (turnedOn)
+            {
+                await Engine.Client.CallAsync("set_clipboard_paused", new JsonObject { ["paused"] = paused });
+            }
+            else
+            {
+                var (now, tell) = ClipGuard.Rejoin(paused, IsTrue(await Engine.Client.CallAsync("get_clipboard_paused")));
+                paused = now;
+                if (tell is { } pause) await Engine.Client.CallAsync("set_clipboard_paused", new JsonObject { ["paused"] = pause });
+            }
             Interlocked.Exchange(ref armedAt, Environment.TickCount64);
             // A history file that couldn't be read was put aside and started
             // afresh; that's said once.
@@ -121,9 +151,19 @@ public static class ClipHistory
         Log.Write($"clipboard: the engine went away; asking again in {wait} s");
         UI.After(wait, () =>
         {
-            if (On && !Engine.Client.IsConnected) Arm();
+            if (On && !Engine.Client.IsConnected) Arm(turnedOn: false);
         });
     }
+
+    /// The pause, as the engine has it now.
+    private static async Task ReadPause()
+    {
+        if (!On) return;
+        try { paused = IsTrue(await Engine.Client.CallAsync("get_clipboard_paused")); }
+        catch (EngineException error) { Log.Write($"clipboard: {error.Message}"); }
+    }
+
+    private static bool IsTrue(JsonNode? node) => node is JsonValue v && v.TryGetValue<bool>(out var on) && on;
 
     // MARK: - the history
 
@@ -138,7 +178,8 @@ public static class ClipHistory
         if (!On) return [];
         try
         {
-            return Last = ClipList.Read(await Engine.Client.CallAsync("get_clipboard_history"));
+            // Up to 200 entries of a quarter megabyte each: read off the UI thread.
+            return Last = await Task.Run(async () => ClipList.Read(await Engine.Client.CallAsync("get_clipboard_history")));
         }
         catch (EngineException error)
         {
@@ -152,12 +193,29 @@ public static class ClipHistory
 
     public static void Delete(long id) => Send("delete_clipboard_entry", new JsonObject { ["id"] = id });
 
-    /// Everything but what's pinned.
-    public static void Clear() => Send("clear_clipboard_history", null);
+    /// Everything but what's pinned. Works with history off too: turning it
+    /// off offers to clear what's kept.
+    public static async Task<bool> Clear()
+    {
+        Last = [.. Last.Where(e => e.Pinned)];
+        if (!On)
+        {
+            // Off, the engine may not have read the history this session:
+            // it reads it now to clear it — paused first, so nothing new is kept.
+            if (!await Call("set_clipboard_paused", new JsonObject { ["paused"] = true })) return false;
+            if (!await Call("start_clipboard_listener", null)) return false;
+        }
+        return await Call("clear_clipboard_history", null);
+    }
 
     /// An entry back on the clipboard itself, as it was copied (a picture as
-    /// a picture). The engine doesn't keep its own write as a new entry.
-    public static Task<bool> CopyBack(long id) => Call("copy_clipboard_entry_to_clipboard", new JsonObject { ["id"] = id });
+    /// a picture). The engine doesn't keep its own write as a new entry, and a
+    /// secret goes back marked so that no clipboard history keeps it.
+    public static Task<bool> CopyBack(ClipEntry entry) => CopyBack(entry.Id, ClipGuard.Quiet(entry));
+
+    /// The field's rows carry an id and whether it's a secret, not the entry.
+    public static Task<bool> CopyBack(long id, bool quiet) =>
+        Call("copy_clipboard_entry_to_clipboard", new JsonObject { ["id"] = id, ["quiet"] = quiet });
 
     // MARK: - settings
 
@@ -170,11 +228,14 @@ public static class ClipHistory
         try
         {
             var days = Number(await Engine.Client.CallAsync("get_clipboard_retention_days"), 14);
-            var images = await Engine.Client.CallAsync("get_clipboard_images_enabled") is JsonValue i && i.TryGetValue<bool>(out var on) && on;
+            var images = IsTrue(await Engine.Client.CallAsync("get_clipboard_images_enabled"));
             var imageDays = Number(await Engine.Client.CallAsync("get_clipboard_image_retention_days"), 2);
             var apps = (await Engine.Client.CallAsync("get_clipboard_exclusions")) is JsonArray list
                 ? list.OfType<JsonValue>().Select(v => v.TryGetValue<string>(out var s) ? s : "").Where(s => s.Length > 0).ToList()
                 : [];
+            // Paused as the engine has it, which is what decides. History off
+            // pauses the engine too, so that's only asked while it's on.
+            if (On) paused = IsTrue(await Engine.Client.CallAsync("get_clipboard_paused"));
             return new Choices(days, images, imageDays, paused, apps);
         }
         catch (EngineException error)

@@ -119,6 +119,16 @@ public sealed partial class MainWindow : Window
         ShowField();
         ShowPanels();
         Closed += (_, _) => Leave();
+        Activated += FirstActivated;
+    }
+
+    /// The window has been shown: what waits for it (the engine behind
+    /// clipboard history) may be started now.
+    private void FirstActivated(object sender, WindowActivatedEventArgs e)
+    {
+        if (e.WindowActivationState == WindowActivationState.Deactivated) return;
+        Activated -= FirstActivated;
+        ClipHistory.Wake();
     }
 
     // MARK: - the window

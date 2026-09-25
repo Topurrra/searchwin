@@ -91,9 +91,12 @@ public static class Commands
         }
     }
 
-    /// A row for the tool whose name is being typed, if one is.
+    /// A row for the tool whose name is being typed, if one is; `tools`
+    /// itself is the list of them.
     public static Suggestion? ToolRow(string typed) =>
-        ToolCatalog.Offer(Tools, typed) is { } tool && Registry.Get($"tools.{tool.Id}") is { } command
+        typed.Trim().Equals("tools", StringComparison.OrdinalIgnoreCase) && Registry.Get("open.tools") is { } index
+            ? new Suggestion("Tools", "All tools", Address(index, ""), SuggestionKind.Command)
+        : ToolCatalog.Offer(Tools, typed) is { } tool && Registry.Get($"tools.{tool.Id}") is { } command
             ? new Suggestion(tool.Name, "Tool", Address(command, ""), SuggestionKind.Command)
             : null;
 

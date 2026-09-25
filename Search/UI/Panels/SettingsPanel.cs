@@ -5,6 +5,7 @@ using Microsoft.UI.Text;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
+using SearchKit.Packs;
 
 namespace Search;
 
@@ -15,7 +16,7 @@ namespace Search;
 /// as for the tab you are on.
 public sealed partial class SettingsPanel : Grid
 {
-    private enum Page { General, Tabs, Search, Clipboard, Extensions, Passwords, Downloads, Privacy, About }
+    private enum Page { General, Tabs, Search, Clipboard, Extensions, Passwords, Downloads, Packs, Privacy, About }
 
     private static readonly (Page page, string raw, string title, string icon)[] Pages =
     [
@@ -26,6 +27,7 @@ public sealed partial class SettingsPanel : Grid
         (Page.Extensions, "extensions", "Extensions", Icons.Puzzle),
         (Page.Passwords, "passwords", "Passwords", Icons.Key),
         (Page.Downloads, "downloads", "Downloads", Icons.Download),
+        (Page.Packs, "packs", "Packs", Icons.Package),
         (Page.Privacy, "privacy", "Privacy", Icons.Shield),
         (Page.About, "about", "About", Icons.Info),
     ];
@@ -205,6 +207,7 @@ public sealed partial class SettingsPanel : Grid
             case Page.Extensions: body.Children.Add(new ExtensionsPage(browser)); break;
             case Page.Passwords: Passwords(body); break;
             case Page.Downloads: body.Children.Add(Downloads()); break;
+            case Page.Packs: Packing(body); break;
             case Page.Privacy: Privacy(body); break;
             case Page.About: About(body); break;
         }
@@ -223,13 +226,20 @@ public sealed partial class SettingsPanel : Grid
             prefs.PropertyChanged += Prefs;
             shield.PropertyChanged += Shielding;
             browser.PropertyChanged += Browsing;
+            Packs.Changed += Packed;
         }
         else
         {
             prefs.PropertyChanged -= Prefs;
             shield.PropertyChanged -= Shielding;
             browser.PropertyChanged -= Browsing;
+            Packs.Changed -= Packed;
         }
+    }
+
+    private void Packed(string id)
+    {
+        if (page == Page.Packs) Show();
     }
 
     private void Prefs(object? sender, PropertyChangedEventArgs e)
@@ -636,6 +646,69 @@ public sealed partial class SettingsPanel : Grid
             if (page == Page.Downloads) Show();
         }
         catch (Exception e) { Log.Write("folder picker: " + e.Message); }
+    }
+
+    // MARK: - packs
+
+    /// What Search adds only when asked: each pack, what it does, its
+    /// size, its licence and exact source, and Install, Update or Remove.
+    private void Packing(StackPanel body)
+    {
+        foreach (var pack in Packs.All)
+        {
+            var state = Packs.State(pack);
+            var installed = Packs.Shelf.Installed(pack.Id);
+            string detail;
+            UIElement control;
+            if (Packs.Received(pack.Id) is { } got)
+            {
+                detail = $"Downloading… {got * 100 / pack.Size}% of {Megabytes(pack.Size)}";
+                control = new Pill("Cancel", () => Packs.Cancel(pack.Id));
+            }
+            else
+            {
+                detail = state switch
+                {
+                    PackState.Ready => $"Version {pack.Version} · {pack.Enables}",
+                    PackState.Outdated => $"Version {installed} — this Search brings {pack.Version}, a {Megabytes(pack.Size)} download",
+                    _ => $"{pack.Enables}. A {Megabytes(pack.Size)} download.",
+                };
+                control = state switch
+                {
+                    PackState.Ready => new Pill("Remove", () => Packs.Remove(pack.Id)),
+                    PackState.Outdated => Pills(new Pill("Remove", () => Packs.Remove(pack.Id)), new Pill("Update", () => Packs.Install(pack.Id), filled: true)),
+                    _ => new Pill("Install", () => Packs.Install(pack.Id), filled: true),
+                };
+            }
+            if (Packs.Trouble(pack.Id) is { } trouble) detail = trouble;
+
+            var links = new List<UIElement> { new Pill("Build", () => OpenLink(pack.BuildPage)), new Pill("Source", () => OpenLink(pack.Source)) };
+            if (Packs.Shelf.Folder(pack.Id) is { } folder && File.Exists(Path.Combine(folder, "LICENSE.txt")))
+                links.Insert(0, new Pill("Licence", () => OpenLink(new Uri(Path.Combine(folder, "LICENSE.txt")))));
+            body.Children.Add(Parts.Card(
+                new Line(pack.Name, detail, control),
+                new Line(pack.Licence, pack.Build, Pills([.. links]))));
+        }
+        var note = Parts.Note(
+            "A pack comes from the publisher named, only when you click, and is used only if it's exactly the file this version of Search expects (its SHA-256). New versions come with Search's own updates.");
+        note.TextWrapping = TextWrapping.Wrap;
+        note.Margin = new Thickness(2, 0, 2, 0);
+        body.Children.Add(note);
+    }
+
+    private static StackPanel Pills(params UIElement[] pills)
+    {
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+        foreach (var pill in pills) row.Children.Add(pill);
+        return row;
+    }
+
+    private static string Megabytes(long bytes) => $"{bytes / 1e6:0} MB";
+
+    private void OpenLink(Uri url)
+    {
+        browser.Tuning = false;
+        browser.Visit(url, apart: true);
     }
 
     // MARK: - privacy

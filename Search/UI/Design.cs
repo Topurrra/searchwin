@@ -233,6 +233,7 @@ public static class Icons
     public const string Download = "";
     public const string Shield = "";
     public const string Warning = "\xE7BA";
+    public const string Package = "\xE7B8";
     public const string Info = "";
     public const string Window = "";
     public const string Tabs = "";

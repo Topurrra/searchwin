@@ -16,3 +16,6 @@ pub mod safe_path;
 // How hard the engine may work right now: live cores, free RAM and free
 // disk, and a worker count sized to them, leaving room for the browser.
 pub mod throttle;
+
+// Programs installed as packs by the browser (FFmpeg…): where they are.
+pub mod packs;

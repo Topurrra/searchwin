@@ -1,0 +1,30 @@
+{
+  "packs": [
+    {
+      "id": "ffmpeg",
+      "name": "FFmpeg",
+      "version": "8.1.2-50-g1a748fe2cd",
+      "size": 70835150,
+      "sha256": "e9712ffbdb03ef71bbab660c75b835bfe698ef6fad0247c76d8d394a39a3db63",
+      "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-08-31-13-27/ffmpeg-n8.1.2-50-g1a748fe2cd-win64-lgpl-shared-8.1.zip",
+      "licence": "LGPL-3.0-or-later",
+      "build": "BtbN/FFmpeg-Builds, win64 LGPL shared build of 2026-08-31: no x264, x265 or other GPL parts",
+      "buildPage": "https://github.com/BtbN/FFmpeg-Builds/releases/tag/autobuild-2026-08-31-13-27",
+      "source": "https://github.com/FFmpeg/FFmpeg/commit/1a748fe2cd43e3ead22fafb1b5b7d77f153898a8",
+      "enables": "Plays MKV, AVI, WMV and more in the player, with their subtitles, and runs Media Utility",
+      "folder": "ffmpeg-n8.1.2-50-g1a748fe2cd-win64-lgpl-shared-8.1",
+      "files": [
+        "bin/ffmpeg.exe",
+        "bin/ffprobe.exe",
+        "bin/avcodec-62.dll",
+        "bin/avdevice-62.dll",
+        "bin/avfilter-11.dll",
+        "bin/avformat-62.dll",
+        "bin/avutil-60.dll",
+        "bin/swresample-6.dll",
+        "bin/swscale-9.dll",
+        "LICENSE.txt"
+      ]
+    }
+  ]
+}

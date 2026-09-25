@@ -11,12 +11,14 @@ Every tree copied into this repo from another project. The source repos are neve
 | `Search.Kit/FishCatcher/Data/` | `Extensions/fishcatcher/src/data/`, via `parity/convert-data.mjs` | same | MIT. `psl.json` is the Public Suffix List (publicsuffix.org), MPL-2.0, unmodified |
 | `Search/Assets/js/fish-probe.js` | Adapted from `Extensions/fishcatcher/src/probe/probe.js` and the text matchers in `src/engine/aitm.js`, `devicecode.js`, `scampacks.js` | same | MIT. Only the page-fact collectors and matchers; the extension's banners, QR and link scan are left out |
 
-## Third-party binaries (not in the repo yet)
-When the packs ship, add a NOTICE for each:
+## Packs: third-party programs Search downloads when asked
+Never in the repo or the installer. Each is an exact build pinned in
+`Search.Kit/Packs/packs.json` (URL, size, SHA-256) and has a NOTICE here:
+- **FFmpeg** 8.1.2 (LGPL-3.0-or-later, BtbN win64 LGPL build, no x264/x265): [FFmpeg-NOTICE.md](FFmpeg-NOTICE.md)
+
+When these packs ship, add a NOTICE for each:
 - Vosk (`libvosk.dll`), Apache-2.0
 - Tesseract + Leptonica, Apache-2.0 / BSD
 - pdfium, BSD-3 / Apache-2.0
 - all-MiniLM-L6-v2, Apache-2.0
 - u2netp, Apache-2.0 (confirm)
-
-FFmpeg is never bundled.

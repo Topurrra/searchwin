@@ -23,6 +23,8 @@
       Read on first use, on a worker thread (FishCatcher.Warm), never at startup.
     -->
     <EmbeddedResource Include="FishCatcher\Data\*.json;FishCatcher\Data\*.bin" LogicalName="FishCatcher/%(Filename)%(Extension)" />
+    <!-- The packs Settings › Packs offers: exact builds, their addresses and SHA-256s. -->
+    <EmbeddedResource Include="Packs\packs.json" LogicalName="Packs/packs.json" />
     <!-- FilterParser is internal on purpose (it's a parsing detail, not part
          of the surface FilterList exposes); the tests still exercise it
          directly, per line, to check what gets skipped-and-counted. -->

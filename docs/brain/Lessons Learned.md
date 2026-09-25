@@ -433,6 +433,14 @@ the fix lives. *(uncertain)* marks things that weren't proven.
   vault only.
 - **Allowlists for "open with its app".** A blocklist of runnable types always
   misses some (msix, rdp, iso, vhdx, py…). Open known documents, reveal the rest.
+- **The old WinRT pickers fail in an unpackaged app.** `Windows.Storage.Pickers`
+  show the dialog (hosted by `PickerHost.exe`), then the result is E_FAIL. Use
+  the App SDK's `Microsoft.Windows.Storage.Pickers` with `AppWindow.Id`
+  (`Search/UI/Pick.cs`). A bare `catch { }` hid this for months: log what
+  you swallow.
+- **Test the path the user takes.** Unit tests passed and bench verbs set
+  folders directly, so neither the picker bug nor the content-search leak
+  showed until the field and Settings were driven for real.
 
 ## Phase 1: Security fixes (2026-09-25)
 

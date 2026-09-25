@@ -29,40 +29,18 @@ public static class ToolsHost
     private static bool IsTools(string? url) => Uri.TryCreate(url, UriKind.Absolute, out var u) && IsTools(u);
 
     /// `search://tools` and `search://tools/<id>` → the page.
-    /// `search://play?path=<encoded>` → the media player, for one file.
-    public static Uri? Resolve(string typed)
-    {
-        if (!Uri.TryCreate(typed.Trim(), UriKind.Absolute, out var url)) return null;
-        if (url.Host == "play")
-        {
-            var path = QueryValue(url, "path");
-            return path == null ? null : new Uri($"https://{Host}/index.html#/play?path={Uri.EscapeDataString(path)}");
-        }
-        if (url.Host != "tools") return null;
-        // A folder mapping serves files, never a folder's index: the page is
-        // always named.
-        var id = url.AbsolutePath.Trim('/');
-        return new Uri(id.Length == 0 ? $"https://{Host}/index.html" : $"https://{Host}/index.html#/tool/{Uri.EscapeDataString(id)}");
-    }
-
-    private static string? QueryValue(Uri url, string key)
-    {
-        var pair = url.Query.TrimStart('?').Split('&')
-            .Select(p => p.Split('=', 2))
-            .FirstOrDefault(p => p[0] == key);
-        return pair is { Length: 2 } ? Uri.UnescapeDataString(pair[1]) : null;
-    }
+    /// `search://play?path=<encoded>` → the media player, for one file —
+    /// never a network share or a device path outside the chosen folders.
+    public static Uri? Resolve(string typed) => SearchKit.Web.ToolAddress.Resolve(typed, path => Refused(path) != null);
 
     /// What the field shows for a tool page, or the player.
-    public static string Pretty(Uri url)
-    {
-        const string tool = "#/tool/";
-        const string play = "#/play?path=";
-        var fragment = url.Fragment;
-        if (fragment.StartsWith(tool)) return "search://tools/" + Uri.UnescapeDataString(fragment[tool.Length..]);
-        if (fragment.StartsWith(play)) return "search://play?path=" + Uri.UnescapeDataString(fragment[play.Length..]);
-        return "search://tools";
-    }
+    public static string Pretty(Uri url) => SearchKit.Web.ToolAddress.Pretty(url);
+
+    /// The folders chosen in Settings › Search: the only place a tool page
+    /// may reach a network share.
+    private static IReadOnlyList<string> Chosen => App.Window?.Browser.Prefs.SearchFolders ?? [];
+
+    private static string? Refused(string path) => SearchKit.Web.ToolGate.PathRefused(path, Chosen);
 
     /// The built pages: beside Search.exe, or (a test run out of the repo)
     /// Tools/dist.
@@ -97,13 +75,15 @@ public static class ToolsHost
 
     /// May this navigation happen? Anything but tools.search, yes. Into
     /// tools.search: when Search itself asked, from a tool page, or going
-    /// back, forward or reloading.
-    public static bool MayOpen(Uri? current, CoreWebView2NavigationStartingEventArgs e, bool ours)
-    {
-        if (!IsTools(e.Uri)) return true;
-        if (ours || IsTools(current)) return true;
-        return e.NavigationKind != CoreWebView2NavigationKind.NewDocument;
-    }
+    /// back, forward or reloading. `document` is the page the tab really
+    /// has (see Tab.Document), not the address it shows.
+    public static bool MayOpen(Uri? document, CoreWebView2NavigationStartingEventArgs e, bool ours) =>
+        SearchKit.Web.ToolGate.MayNavigate(IsTools(e.Uri), IsTools(document), ours,
+            e.NavigationKind == CoreWebView2NavigationKind.NewDocument);
+
+    /// May a page's new window (window.open, a target=_blank link) open
+    /// this? Never a tool page.
+    public static bool MayOpenWindow(string? url) => SearchKit.Web.ToolGate.MayOpenWindow(IsTools(url));
 
     // MARK: - files a tool page shows
 
@@ -126,9 +106,11 @@ public static class ToolsHost
             .Select(pair => pair.Split('=', 2))
             .FirstOrDefault(pair => pair[0] == "path");
         var path = query is { Length: 2 } ? Uri.UnescapeDataString(query[1]) : null;
-        if (path == null || !File.Exists(path))
+        // Whether it's there is the file system's to say, off this thread:
+        // a missing file is the 404 below, when opening it fails.
+        if (string.IsNullOrEmpty(path) || Refused(path) != null)
         {
-            e.Response = core.Environment.CreateWebResourceResponse(null, 404, "Not Found", "");
+            e.Response = core.Environment.CreateWebResourceResponse(null, path == null ? 404 : 403, path == null ? "Not Found" : "Forbidden", ToolsOnly);
             return;
         }
         var range = e.Request.Headers.Contains("Range") ? e.Request.Headers.GetHeader("Range") : null;
@@ -158,9 +140,13 @@ public static class ToolsHost
             e.Response = core.Environment.CreateWebResourceResponse(stream, 200, "OK",
                 $"Content-Type: {type}\r\nContent-Length: {size}\r\nAccept-Ranges: bytes\r\nCache-Control: no-store\r\n{ToolsOnly}");
         }
+        catch (Exception error) when (error is FileNotFoundException or DirectoryNotFoundException or ArgumentException)
+        {
+            e.Response = core.Environment.CreateWebResourceResponse(null, 404, "Not Found", ToolsOnly);
+        }
         catch
         {
-            e.Response = core.Environment.CreateWebResourceResponse(null, 500, "Unreadable", "");
+            e.Response = core.Environment.CreateWebResourceResponse(null, 500, "Unreadable", ToolsOnly);
         }
     }
 
@@ -191,17 +177,21 @@ public static class ToolsHost
         var id = message["id"]?.DeepClone();
         var cmd = message["cmd"]?.GetValue<string>() ?? "";
         var args = message["args"] as JsonObject ?? [];
-        _ = Answer(core, id, cmd, args);
+        // A network share or a device path, anywhere a path goes: refused
+        // unless it's inside a folder chosen in Settings › Search.
+        var refused = SearchKit.Web.ToolGate.ArgsRefused(args, Chosen);
+        _ = Answer(core, id, cmd, args, refused);
         return true;
     }
 
-    private static async Task Answer(CoreWebView2 core, JsonNode? id, string cmd, JsonObject args)
+    private static async Task Answer(CoreWebView2 core, JsonNode? id, string cmd, JsonObject args, string? refused)
     {
         JsonObject reply;
         try
         {
             // Some engine commands are the browser's alone (the clipboard listener, its pause).
             if (SearchKit.Web.ToolCalls.Refused(cmd) is { } why) throw new InvalidOperationException(why);
+            if (refused != null) throw new InvalidOperationException(refused);
             var value = cmd.StartsWith("host:")
                 ? await Local(cmd[5..], args)
                 : await Engine.Client.CallAsync(cmd, args);
@@ -229,7 +219,8 @@ public static class ToolsHost
         var json = new JsonObject { ["kind"] = "event", ["event"] = name, ["payload"] = payload?.DeepClone() }.ToJsonString();
         foreach (var tab in browser.Tabs)
         {
-            if (!IsTools(tab.Address) || tab.Core is not { } core) continue;
+            // The page the tab really has, not the address it shows.
+            if (tab.Core is not { } core || !IsTools(core.Source)) continue;
             try { core.PostWebMessageAsJson(json); } catch { }
         }
     }

@@ -165,13 +165,15 @@ public sealed partial class Tab : Model
         {
             var ours = ourNavigation;
             ourNavigation = false;
-            if (!ToolsHost.MayOpen(Address, e, ours)) { e.Cancel = true; return; }
+            if (!ToolsHost.MayOpen(Document, e, ours)) { e.Cancel = true; return; }
             Documents++;
             Loading = true;
             Progress = 0.1;
         };
         core.ContentLoading += (_, e) =>
         {
+            // The new document is in: from here on it is what the tab has.
+            Document = Uri.TryCreate(core.Source, UriKind.Absolute, out var committed) ? committed : null;
             Progress = 0.5;
             // Search's trouble page stays up until real content arrives, and
             // covers the engine's error page from the moment it does — so
@@ -543,6 +545,12 @@ public sealed partial class Tab : Model
     /// Fire and forget.
     public void Run(string script) => WhenReady(core => _ = core.ExecuteScriptAsync(script));
 
+    /// The document the tab really has, as the engine committed it. Unlike
+    /// Address, never set ahead of the engine (a link's new tab, a
+    /// restored tab), so a page can't borrow a tool page's standing from an
+    /// address it only asked for (see ToolsHost.MayOpen).
+    public Uri? Document { get; private set; }
+
     /// Search's own navigation: the only kind allowed into the tool pages
     /// from a page that isn't one (see ToolsHost.MayOpen).
     private bool ourNavigation;
@@ -699,6 +707,7 @@ public sealed partial class Tab : Model
         scriptIds.Clear();
         armed = false;
         Dozing = false;
+        Document = null;
         if (view == null) return;
         Search.Web.Stage.Children.Remove(view);
         try { view.Close(); } catch { }

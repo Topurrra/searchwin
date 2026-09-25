@@ -66,6 +66,9 @@ public sealed partial class Browser : IPageHost
             // take?
             SettleSignIn(tab);
             if (tab.Shy || tab.Bench || tab.Address is not { } url) return;
+            // Search's own pages (the tools, the player and the file it
+            // plays) are not places you went.
+            if (ToolsHost.IsTools(url)) return;
             History.Record(url, tab.Title);
         };
 
@@ -127,6 +130,15 @@ public sealed partial class Browser : IPageHost
     /// can't talk to each other — which is what every sign-in popup needs.
     private void OpenWindow(Tab from, CoreWebView2NewWindowRequestedEventArgs e)
     {
+        // Never a tool page: a web page could otherwise open the player (or
+        // any tool) on a path of its choosing. Handled with no window given
+        // is the popup refused.
+        if (!ToolsHost.MayOpenWindow(e.Uri))
+        {
+            e.Handled = true;
+            Log.Write("page: a new window onto a tool page refused");
+            return;
+        }
         var deferral = e.GetDeferral();
         // Ctrl-click opens beside this tab and leaves you where you are;
         // Ctrl+Shift-click takes you with it. Middle-click does what

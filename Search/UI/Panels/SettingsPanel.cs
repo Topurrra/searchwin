@@ -401,10 +401,16 @@ public sealed partial class SettingsPanel : Grid
         catch { }
     }
 
-    /// A folder, unless one already chosen searches it.
+    /// A folder, unless one already chosen searches it, or it's one where
+    /// keys and sign-ins are kept, which is never searched.
     private void AddSearchFolder(string path)
     {
-        if (SearchKit.Field.IndexPlan.Add(prefs.SearchFolders, path) is not { } folders)
+        if (SearchKit.Field.IndexPlan.Secret(path))
+        {
+            browser.Announce("Not searched: it holds keys or sign-ins");
+            return;
+        }
+        if (SearchKit.Field.IndexPlan.Add(prefs.SearchFolders, path, WalkSkips) is not { } folders)
         {
             browser.Announce("Already searched");
             return;
@@ -412,6 +418,29 @@ public sealed partial class SettingsPanel : Grid
         prefs.SearchFolders = folders;
         browser.Announce("Indexing " + Path.GetFileName(path.TrimEnd('\\', '/')));
         if (page == Page.Search) Show();
+    }
+
+    /// A folder the index's walk passes by, so one chosen inside it isn't
+    /// searched already: Windows hides it, or its parent's `.gitignore` or
+    /// `.ignore` names it (a plain name line; the engine reads them fully,
+    /// and walks a folder chosen twice only once).
+    private static bool WalkSkips(string folder)
+    {
+        try
+        {
+            if ((File.GetAttributes(folder) & FileAttributes.Hidden) != 0) return true;
+            var name = Path.GetFileName(folder);
+            if (Path.GetDirectoryName(folder) is not { } parent) return false;
+            foreach (var list in new[] { ".gitignore", ".ignore" })
+            {
+                var file = Path.Combine(parent, list);
+                if (!File.Exists(file)) continue;
+                foreach (var line in File.ReadLines(file))
+                    if (string.Equals(line.Trim().Trim('/'), name, StringComparison.OrdinalIgnoreCase)) return true;
+            }
+        }
+        catch { }
+        return false;
     }
 
     // MARK: - clipboard

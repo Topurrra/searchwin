@@ -164,19 +164,38 @@ public static class IndexPlan
 
     /// The chosen folders with `path` added, or null when a chosen folder
     /// already indexes it. One inside a chosen folder that that folder's
-    /// rules skip (its `build\docs`, `.vscode` or AppData) is its own choice;
-    /// one around chosen folders replaces those it would index itself.
-    public static List<string>? Add(IReadOnlyList<string> folders, string path) =>
-        folders.Any(f => Covers([f], path) && !SkippedUnder(f, path))
+    /// walk doesn't go into — its rules skip it (its `build\docs`, `.vscode`
+    /// or AppData), or `walkSkips` says a folder on the way is one the walk
+    /// passes by (Windows hides it, a `.gitignore` leaves it out) — is its
+    /// own choice; one around chosen folders replaces those it would index
+    /// itself.
+    public static List<string>? Add(IReadOnlyList<string> folders, string path, Func<string, bool>? walkSkips = null) =>
+        folders.Any(f => Covers([f], path) && !SkippedUnder(f, path, walkSkips))
             ? null
-            : [.. folders.Where(f => !Covers([path], f) || SkippedUnder(path, f)), path];
+            : [.. folders.Where(f => !Covers([path], f) || SkippedUnder(path, f, walkSkips)), path];
 
-    /// Whether `outer`'s rules, with hidden folders on as a folder chosen
-    /// inside its dot-folders or AppData turns them on, skip `inner`.
-    private static bool SkippedUnder(string outer, string inner)
+    /// Whether `path` is, or is inside, a place never indexed (`Secrets`):
+    /// choosing it would index nothing.
+    public static bool Secret(string path) => Secrets.Any(secret => Within(Normal(path), secret));
+
+    /// Whether the walk of `outer` doesn't reach `inner`: `outer`'s rules,
+    /// with hidden folders on as a folder chosen inside its dot-folders or
+    /// AppData turns them on, skip it, or `walkSkips` a folder on the way
+    /// (below `outer`, down to `inner` itself).
+    private static bool SkippedUnder(string outer, string inner, Func<string, bool>? walkSkips)
     {
         var (o, i) = (Normal(outer), Normal(inner));
-        return i.StartsWith(o + "/", StringComparison.Ordinal) && Skips(Rules([o], hidden: true), i);
+        if (!i.StartsWith(o + "/", StringComparison.Ordinal)) return false;
+        if (Skips(Rules([o], hidden: true), i)) return true;
+        if (walkSkips == null) return false;
+        for (var folder = inner.Trim().TrimEnd('\\', '/'); Normal(folder).Length > o.Length;)
+        {
+            if (walkSkips(folder)) return true;
+            var cut = folder.LastIndexOfAny(['\\', '/']);
+            if (cut <= 0) break;
+            folder = folder[..cut];
+        }
+        return false;
     }
 
     /// Whether `path` is inside one of `folders`, so a result left in the

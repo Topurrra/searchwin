@@ -8968,11 +8968,18 @@ fn hydrate_status_from_filename_worker_files(app: &AppHandle) {
 
 /// The chosen folders a walk starts from: each one, less one inside another
 /// whose walk reaches it (it would be indexed twice). One that walk doesn't
-/// reach, behind a hidden or excluded folder (a notes folder in AppData), is
-/// walked from itself.
+/// reach, behind a hidden, excluded or ignored folder (a notes folder in
+/// AppData, a `.gitignore`d build folder), is walked from itself. Reached
+/// means each folder on the way is one the walk of its parent takes, asked
+/// of that walk itself, so nothing it leaves out is missed here.
 fn walked_roots(options: &FileSearchIndexOptions) -> Vec<&String> {
     let entered = |folder: &Path| {
-        fs::metadata(folder).is_ok_and(|meta| !is_os_hidden(&meta)) && should_include_path(folder, options)
+        let Some(parent) = folder.parent() else {
+            return false;
+        };
+        let mut walk = index_walk(&parent.to_string_lossy(), options);
+        walk.max_depth(Some(1));
+        walk.build().flatten().any(|entry| entry.depth() == 1 && entry.path() == folder)
     };
     let mut walked: Vec<&String> = Vec::new();
     for root in &options.roots {
@@ -12846,6 +12853,8 @@ mod tests {
     /// profile and its `.config`), with the exclusions Search sends for that
     /// (IndexPlan): the walk reaches it (hidden folders on), its `!` keep
     /// undoes the outer folder's dot-folder rule, and nothing else comes in.
+    /// One chosen inside a folder an `.ignore` file leaves out, which the
+    /// outer walk doesn't go into, is walked from itself.
     #[test]
     fn a_folder_chosen_in_another_ones_dot_folder_is_indexed_and_only_it() {
         let folder = TempFolder::new("walk");
@@ -12856,13 +12865,16 @@ mod tests {
             (".cargo", "zebracargo.toml"),
             ("docs", "zebradoc.txt"),
             ("docs/node_modules", "zebramodule.js"),
+            ("ignored", "zebraignored.txt"),
+            ("ignored/kept", "zebrakept.txt"),
         ] {
             fs::create_dir_all(home.join(dir)).unwrap();
             fs::write(home.join(dir).join(file), b"x").unwrap();
         }
+        fs::write(home.join(".ignore"), b"ignored/\n").unwrap();
         let root = normalize_path_for_exclusion(&home);
         let options: FileSearchIndexOptions = serde_json::from_value(serde_json::json!({
-            "roots": [home, home.join(".config")],
+            "roots": [home, home.join(".config"), home.join("ignored").join("kept")],
             "includeHidden": true,
             "indexContent": false,
             "excludeFolders": [
@@ -12895,7 +12907,7 @@ mod tests {
         let mut names: Vec<String> = rows.into_iter().map(|row| row.file_name).collect();
         names.sort();
         drop(handle);
-        assert_eq!(names, ["zebradoc.txt", "zebrasettings.json"]);
+        assert_eq!(names, ["zebradoc.txt", "zebrakept.txt", "zebrasettings.json"]);
     }
 
     /// With hidden folders on, the walk takes dot-named entries but not what

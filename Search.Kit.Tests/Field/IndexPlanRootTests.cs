@@ -220,7 +220,28 @@ public class IndexPlanRootTests
         Assert.Null(IndexPlan.Add([@"D:\Work", @"D:\Work\.vscode"], @"D:\Work\.vscode\notes"));
         // A folder around chosen ones replaces those it indexes, not those it skips.
         Assert.Equal([@"D:\Work\build\docs", @"E:\Music", @"D:\Work"], IndexPlan.Add([@"D:\Work\build\docs", @"D:\Work\src", @"E:\Music"], @"D:\Work"));
+
+        // One the walk passes by (Windows hides it, a .gitignore leaves it
+        // out), or one inside it, is its own choice too; a chosen folder
+        // that is itself hidden is walked all the same.
+        Func<string, bool> walkSkips = folder => folder.EndsWith("Hidden", StringComparison.Ordinal);
+        Assert.Equal([@"D:\Work", @"D:\Work\Hidden"], IndexPlan.Add([@"D:\Work"], @"D:\Work\Hidden", walkSkips));
+        Assert.Equal([@"D:\Work", @"D:\Work\Hidden\notes"], IndexPlan.Add([@"D:\Work"], @"D:\Work\Hidden\notes", walkSkips));
+        Assert.Equal([@"D:\Work\Hidden\notes", @"D:\Work"], IndexPlan.Add([@"D:\Work\Hidden\notes"], @"D:\Work", walkSkips));
+        Assert.Null(IndexPlan.Add([@"D:\Work"], @"D:\Work\docs", walkSkips));
+        Assert.Null(IndexPlan.Add([@"D:\Hidden"], @"D:\Hidden\docs", walkSkips));
     }
+
+    [Theory]
+    [InlineData(@"C:\Users\me\.ssh", true)]
+    [InlineData(@"C:\Users\me\.ssh\keys", true)]
+    [InlineData(@"C:\Users\me\AppData\Roaming\discord", true)]
+    [InlineData(@"C:\Users\me\AppData\Local\Search (test)", true)]
+    [InlineData(@"C:\Users\me", false)]
+    [InlineData(@"C:\Users\me\AppData\Roaming", false)]
+    [InlineData(@"D:\Work\ssh-notes", false)]
+    public void A_place_keys_and_sign_ins_are_kept_is_no_folder_to_search(string path, bool secret) =>
+        Assert.Equal(secret, IndexPlan.Secret(path));
 
     [Fact]
     public void A_folder_chosen_inside_another_ones_skipped_folder_is_indexed_and_only_it()

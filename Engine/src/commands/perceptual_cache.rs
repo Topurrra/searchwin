@@ -26,7 +26,6 @@
 //! sites — a cache miss / write failure must never fail the scan.
 
 use redb::{Database, ReadableTable, TableDefinition};
-use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{LazyLock, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -117,25 +116,7 @@ fn now_secs() -> u64 {
 }
 
 fn open_db(path: &Path) -> Result<Database, String> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)
-            .map_err(|e| format!("Cannot create perceptual cache directory: {e}"))?;
-    }
-    let db = if path.exists() {
-        match Database::open(path) {
-            Ok(db) => db,
-            Err(error) => {
-                eprintln!(
-                    "perceptual_cache: cannot open existing cache ({error}); quarantining and starting fresh."
-                );
-                quarantine(path);
-                Database::create(path)
-                    .map_err(|e| format!("Cannot create perceptual cache: {e}"))?
-            }
-        }
-    } else {
-        Database::create(path).map_err(|e| format!("Cannot create perceptual cache: {e}"))?
-    };
+    let (db, _) = super::local_db::open_redb(path)?;
     let write_txn = db
         .begin_write()
         .map_err(|e| format!("Cannot initialize perceptual cache: {e}"))?;
@@ -148,15 +129,6 @@ fn open_db(path: &Path) -> Result<Database, String> {
         .commit()
         .map_err(|e| format!("Cannot commit perceptual cache init: {e}"))?;
     Ok(db)
-}
-
-fn quarantine(path: &Path) {
-    let ts = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_millis())
-        .unwrap_or(0);
-    let quarantined = path.with_extension(format!("corrupt-{ts}.redb"));
-    let _ = fs::rename(path, quarantined);
 }
 
 /// Cache lookup. `Some(phash)` on hit (mtime + algo match), `None`

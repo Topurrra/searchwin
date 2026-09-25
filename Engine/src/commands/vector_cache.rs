@@ -117,25 +117,7 @@ fn unpack(bytes: &[u8]) -> Option<Vec<Vec<i8>>> {
 }
 
 fn open_db(path: &Path) -> Result<Database, String> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)
-            .map_err(|e| format!("Cannot create vector cache directory: {e}"))?;
-    }
-    let db = if path.exists() {
-        match Database::open(path) {
-            Ok(db) => db,
-            Err(error) => {
-                eprintln!(
-                    "vector_cache: cannot open existing store ({error}); quarantining and starting fresh."
-                );
-                let quarantined = path.with_extension("corrupt.redb");
-                let _ = fs::rename(path, quarantined);
-                Database::create(path).map_err(|e| format!("Cannot create vector cache: {e}"))?
-            }
-        }
-    } else {
-        Database::create(path).map_err(|e| format!("Cannot create vector cache: {e}"))?
-    };
+    let (db, _) = super::local_db::open_redb(path)?;
     let write_txn = db
         .begin_write()
         .map_err(|e| format!("Cannot initialize vector cache: {e}"))?;

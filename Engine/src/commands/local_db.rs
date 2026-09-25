@@ -1,11 +1,12 @@
-use redb::{Database, TableDefinition};
+use redb::{Database, DatabaseError, StorageError, TableDefinition, TableError};
 use serde::{de::DeserializeOwned, Serialize};
 use std::fs;
+use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, LazyLock, Mutex};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 #[cfg(windows)]
 use crate::core::dpapi;
@@ -85,36 +86,66 @@ pub fn database_path_for_dir(dir: &Path) -> PathBuf {
     dir.join(LOCAL_DB_FILE)
 }
 
-fn open_db(path: &Path) -> Result<Database, String> {
+/// How long an open waits for another process to let go of a database.
+const BUSY_WAIT: Duration = Duration::from_secs(5);
+
+/// Open a redb file, creating it when it's missing (or empty: a process that
+/// stopped right after creating it). redb locks the whole file while a
+/// `Database` is open, and the engine's index workers are other processes
+/// using the same files, so a file another process holds is waited for — it
+/// is busy, not damaged. Only a file redb can't read is corrupt: graceful
+/// recovery moves it aside as `<name>.corrupt-<timestamp>.redb` and starts a
+/// fresh one (its data is lost, the app keeps working: "service degraded"
+/// over "service down"). Returns the database and whether it was recovered.
+pub fn open_redb(path: &Path) -> Result<(Database, bool), String> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)
             .map_err(|error| format!("Cannot create database directory: {error}"))?;
     }
-
-    // Graceful corruption recovery: if `Database::open` fails on an
-    // existing file (truncated by a system crash, partially overwritten
-    // by AV/backup software, intentionally corrupted, etc.), we move the
-    // bad file aside as `keepitlocal.corrupt-<timestamp>.redb` and start a
-    // fresh DB. The user loses any data that lived in the corrupt file,
-    // but they don't lose the app — without this, the daemon refuses to
-    // launch and there's no obvious recovery path for a non-technical
-    // user. We always prefer "service degraded" over "service down".
-    let db = if path.exists() {
-        match Database::open(path) {
-            Ok(db) => db,
-            Err(error) => {
-                eprintln!(
-                    "local_db: cannot open existing database ({error}); quarantining and starting fresh."
-                );
-                quarantine_corrupt_db(path)?;
-                Database::create(path).map_err(|e| {
-                    format!("Cannot create fresh database after quarantine: {e}")
-                })?
+    let deadline = Instant::now() + BUSY_WAIT;
+    loop {
+        let has_data = fs::metadata(path).map(|meta| meta.len() > 0).unwrap_or(false);
+        let opened = if has_data { Database::open(path) } else { Database::create(path) };
+        match opened {
+            Ok(db) => return Ok((db, false)),
+            Err(DatabaseError::DatabaseAlreadyOpen) if Instant::now() < deadline => {
+                std::thread::sleep(Duration::from_millis(20));
             }
+            Err(DatabaseError::DatabaseAlreadyOpen) => {
+                return Err(format!("{} is in use by another process", path.display()));
+            }
+            Err(error) if has_data && is_corruption(&error) => {
+                eprintln!("local_db: {} is unreadable ({error}); quarantining and starting fresh.", path.display());
+                quarantine_corrupt_db(path)?;
+                let db = Database::create(path)
+                    .map_err(|e| format!("Cannot create fresh database after quarantine: {e}"))?;
+                return Ok((db, true));
+            }
+            Err(error) => return Err(format!("Cannot open {}: {error}", path.display())),
         }
-    } else {
-        Database::create(path).map_err(|error| format!("Cannot create local database: {error}"))?
-    };
+    }
+}
+
+/// Whether an open failed because of what's in the file, rather than who
+/// else has it (`DatabaseAlreadyOpen`) or a passing I/O error.
+fn is_corruption(error: &DatabaseError) -> bool {
+    match error {
+        DatabaseError::Storage(StorageError::Corrupted(_)) | DatabaseError::UpgradeRequired(_) => true,
+        DatabaseError::Storage(StorageError::Io(io)) => {
+            matches!(io.kind(), ErrorKind::InvalidData | ErrorKind::UnexpectedEof)
+        }
+        _ => false,
+    }
+}
+
+fn open_db(path: &Path) -> Result<Database, String> {
+    let (db, recovered) = open_redb(path)?;
+    if recovered {
+        // Signal the frontend that a corruption recovery happened. The flag
+        // is consumed by `take_db_corruption_notice` (lib.rs) once the main
+        // window's layout polls it on mount — the banner then shows once.
+        DB_CORRUPTION_RECOVERED.store(true, Ordering::Relaxed);
+    }
 
     let write_txn = db
         .begin_write()
@@ -137,7 +168,9 @@ fn open_db(path: &Path) -> Result<Database, String> {
 /// is held only for the lookup (and the rare first open per path); the redb
 /// read/write transactions in the callers below run on the returned handle
 /// WITHOUT any app-level lock, so a reader never blocks behind an unrelated
-/// writer's fsync.
+/// writer's fsync. A cached handle keeps the file locked for the life of the
+/// process, so a database other processes use goes through the `_shared`
+/// functions instead.
 fn get_db(path: &Path) -> Result<Arc<Database>, String> {
     let mut cache = DB_CACHE
         .lock()
@@ -155,9 +188,6 @@ fn get_db(path: &Path) -> Result<Arc<Database>, String> {
 /// suffix so users can recover the data manually if they really need
 /// to (open it from a backup, etc.) and so we keep evidence for support
 /// if the corruption was due to a KeepItLocal bug rather than disk damage.
-///
-/// Sets `DB_CORRUPTION_RECOVERED` so the frontend can show a one-time
-/// warning banner informing the user that their preferences were reset.
 fn quarantine_corrupt_db(path: &Path) -> Result<(), String> {
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -165,12 +195,7 @@ fn quarantine_corrupt_db(path: &Path) -> Result<(), String> {
         .unwrap_or(0);
     let quarantine = path.with_extension(format!("corrupt-{timestamp}.redb"));
     fs::rename(path, quarantine)
-        .map_err(|error| format!("Cannot quarantine corrupt database: {error}"))?;
-    // Signal the frontend that a corruption recovery happened. The flag
-    // is consumed by `take_db_corruption_notice` (lib.rs) once the main
-    // window's layout polls it on mount — the banner then shows once.
-    DB_CORRUPTION_RECOVERED.store(true, Ordering::Relaxed);
-    Ok(())
+        .map_err(|error| format!("Cannot quarantine corrupt database: {error}"))
 }
 
 pub fn read_json_or_default<T>(db_path: &Path, key: &str, fallback: T) -> Result<T, String>
@@ -250,6 +275,48 @@ where
     write_json_bytes(db_path, key, &data)
 }
 
+/// `read_json` for a database other processes open too (the file index's
+/// state, which its worker processes write): opened for this one read and
+/// closed again, never cached, so no process holds the lock between calls.
+pub fn read_json_shared<T>(db_path: &Path, key: &str) -> Result<Option<T>, String>
+where
+    T: DeserializeOwned,
+{
+    if !db_path.exists() {
+        return Ok(None);
+    }
+    let (db, _) = open_redb(db_path)?;
+    let read_txn = db
+        .begin_read()
+        .map_err(|error| format!("Cannot read local database: {error}"))?;
+    let table = match read_txn.open_table(JSON_TABLE) {
+        Ok(table) => table,
+        Err(TableError::TableDoesNotExist(_)) => return Ok(None),
+        Err(error) => return Err(format!("Cannot read local database table: {error}")),
+    };
+    let Some(value) = table
+        .get(key)
+        .map_err(|error| format!("Cannot read local database value: {error}"))?
+    else {
+        return Ok(None);
+    };
+    let plaintext = decrypt_from_db(value.value())?;
+    serde_json::from_slice::<T>(&plaintext)
+        .map(Some)
+        .map_err(|error| format!("Cannot parse local database value: {error}"))
+}
+
+/// `write_json` for a database other processes open too; see `read_json_shared`.
+pub fn write_json_shared<T>(db_path: &Path, key: &str, value: &T) -> Result<(), String>
+where
+    T: Serialize,
+{
+    let data = serde_json::to_vec_pretty(value)
+        .map_err(|error| format!("Cannot serialize local database value: {error}"))?;
+    let (db, _) = open_redb(db_path)?;
+    write_json_bytes_to_db(&db, key, &data)
+}
+
 pub fn write_json_bytes(db_path: &Path, key: &str, data: &[u8]) -> Result<(), String> {
     let db = get_db(db_path)?;
     write_json_bytes_to_db(&db, key, data)
@@ -298,4 +365,37 @@ pub fn remove_json(db_path: &Path, key: &str) -> Result<(), String> {
     write_txn
         .commit()
         .map_err(|error| format!("Cannot commit local database removal: {error}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A file redb can't read is still set aside and replaced, so the engine
+    /// keeps working: being busy is no longer mistaken for this, but this
+    /// must still be recognised.
+    #[test]
+    fn an_unreadable_database_is_set_aside_and_replaced() {
+        let dir = std::env::temp_dir().join(format!(
+            "kil-local-db-test-{}",
+            SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        let path = database_path_for_dir(&dir);
+        fs::write(&path, vec![0x5au8; 8192]).unwrap();
+
+        write_json_shared(&path, "k", &7u32).unwrap();
+        let read: Option<u32> = read_json_shared(&path, "k").unwrap();
+
+        let set_aside = fs::read_dir(&dir)
+            .unwrap()
+            .filter(|entry| {
+                let name = entry.as_ref().unwrap().file_name().to_string_lossy().into_owned();
+                name.starts_with("keepitlocal.corrupt-") && name.ends_with(".redb")
+            })
+            .count();
+        let _ = fs::remove_dir_all(&dir);
+        assert_eq!(read, Some(7));
+        assert_eq!(set_aside, 1);
+    }
 }

@@ -241,21 +241,36 @@ public sealed partial class Shield : Model
         workerCore = core;
     }
 
-    /// A worker's own request, decided against the same list — but with no
-    /// page to call first-party, since a worker isn't one page's alone.
+    /// A worker's own request, decided against the same list. A worker isn't
+    /// one tab's, so the page it works for is what the request says: its
+    /// Origin or Referer (SearchKit.Shields.WorkerRequest) — which makes a
+    /// site's own requests first-party, lets `$domain=` rules hold, and
+    /// leaves a paused site's worker alone. Never a navigation the worker
+    /// fetches for a page: that is the page itself.
     private void WorkerRequested(object? sender, CoreWebView2WebResourceRequestedEventArgs e)
     {
         if (!Enabled || Trouble != null) return;
         string raw;
         CoreWebView2WebResourceContext context;
-        try { context = e.ResourceContext; raw = e.Request.Uri; }
+        CoreWebView2HttpRequestHeaders headers;
+        try { context = e.ResourceContext; raw = e.Request.Uri; headers = e.Request.Headers; }
         catch { return; }
+        if (WorkerRequest.IsNavigation(context == CoreWebView2WebResourceContext.Document,
+                Header(headers, "Sec-Fetch-Mode"), Header(headers, "Sec-Fetch-Dest"))) return;
         if (!raw.StartsWith("http", StringComparison.OrdinalIgnoreCase) || !Uri.TryCreate(raw, UriKind.Absolute, out var url)) return;
+        var page = WorkerRequest.Page(Header(headers, "Origin"), Header(headers, "Referer"));
+        if (page != null && (Own(page) || IsPaused(Curtain.Host(page)))) return;
         bool refused;
-        try { refused = Refuses(url, null, context); }
+        try { refused = Refuses(url, Address.Host(page), context); }
         catch { return; }
         if (!refused || sender is not CoreWebView2 core) return;
         e.Response = core.Environment.CreateWebResourceResponse(null, 403, "Blocked", "");
+    }
+
+    private static string? Header(CoreWebView2HttpRequestHeaders headers, string name)
+    {
+        try { return headers.Contains(name) ? headers.GetHeader(name) : null; }
+        catch { return null; }
     }
 
     /// Whether a request from a page on `pageHost` should be refused.

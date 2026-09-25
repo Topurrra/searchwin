@@ -385,6 +385,7 @@ pub fn run() {
     // What Workspace's setup did that still belongs to the engine. Everything
     // else it started (clipboard listener, index scheduler, time tracker) is
     // a command, and the browser starts it when the person turns it on.
+    crate::core::packs::set_data_dir(options.data_dir.clone());
     commands::ffmpeg::hydrate_override(&app);
     commands::embedding::set_model_dir(resources.join("embedding-runtime"));
     // Copies of other browsers' history left by a crash are swept first, always.

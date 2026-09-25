@@ -1,8 +1,9 @@
-//! Shared resolver for a user-installed FFmpeg.
+//! Shared resolver for FFmpeg, used by Screen Recorder and the media tools.
 //!
-//! KeepItLocal never bundles FFmpeg. A user can either expose it on PATH or
-//! choose `ffmpeg.exe` once; the selected directory is stored locally and
-//! shared by Screen Recorder and media tools.
+//! Search doesn't carry FFmpeg: it's a pack (Settings › Packs), an LGPL
+//! build the browser downloads, verifies and unpacks when asked, and names
+//! in `packs.json` (core::packs). That one comes first. A person may still
+//! choose their own `ffmpeg.exe` (kept locally) or have one on PATH.
 
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
@@ -15,6 +16,8 @@ use tauri::AppHandle;
 use super::secure_kv;
 
 const FFMPEG_OVERRIDE_KEY: &str = "ffmpeg-directory";
+
+const NOT_FOUND: &str = "FFmpeg isn't installed. Add the FFmpeg pack in Settings › Packs.";
 
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
@@ -31,8 +34,8 @@ pub struct FfmpegStatus {
     pub ffprobe_available: bool,
     pub path: Option<String>,
     pub version: Option<String>,
-    /// `user` for an explicitly selected installation, `path` for PATH, or
-    /// `none` when neither resolves.
+    /// `pack` for Search's FFmpeg pack, `user` for an explicitly selected
+    /// installation, `path` for PATH, or `none` when nothing resolves.
     pub source: String,
 }
 
@@ -52,6 +55,10 @@ fn selected_directory(picked: &Path) -> Result<PathBuf, String> {
         .parent()
         .map(Path::to_path_buf)
         .ok_or_else(|| "bad_path".to_string())
+}
+
+fn pack_dir() -> Option<PathBuf> {
+    crate::core::packs::bin_dir("ffmpeg")
 }
 
 fn override_dir() -> Option<PathBuf> {
@@ -86,7 +93,7 @@ fn runs(program: &Path) -> bool {
 }
 
 fn resolve(stem: &str) -> Option<PathBuf> {
-    if let Some(dir) = override_dir() {
+    for dir in pack_dir().into_iter().chain(override_dir()) {
         let selected = dir.join(binary_name(stem));
         if selected.is_file() && runs(&selected) {
             return Some(selected);
@@ -97,7 +104,7 @@ fn resolve(stem: &str) -> Option<PathBuf> {
     runs(&on_path).then_some(on_path)
 }
 
-/// Resolve the user-selected or PATH-provided FFmpeg executable.
+/// Resolve the pack's, the user-selected or the PATH-provided FFmpeg executable.
 pub fn resolve_ffmpeg() -> Option<PathBuf> {
     resolve("ffmpeg")
 }
@@ -126,7 +133,7 @@ fn supports_encoder(ffmpeg: &Path, encoder: &str) -> bool {
 /// Build an FFmpeg command without showing a console window on Windows.
 pub fn ffmpeg_command() -> Result<Command, String> {
     let path = resolve_ffmpeg().ok_or_else(|| {
-        "FFmpeg was not found. Install it, add it to PATH, or locate ffmpeg.exe here.".to_string()
+        NOT_FOUND.to_string()
     })?;
     Ok(new_command(path))
 }
@@ -134,7 +141,7 @@ pub fn ffmpeg_command() -> Result<Command, String> {
 /// Build an FFmpeg command suitable for Screen Recorder's H.264 output.
 pub fn screen_recording_command() -> Result<Command, String> {
     let path = resolve_ffmpeg().ok_or_else(|| {
-        "FFmpeg was not found. Install it, add it to PATH, or locate ffmpeg.exe here.".to_string()
+        NOT_FOUND.to_string()
     })?;
     if !supports_encoder(&path, "h264_mf") {
         return Err(
@@ -157,7 +164,7 @@ pub fn ffprobe_command() -> Result<Command, String> {
 /// Pick the best MP3 encoder offered by the user's FFmpeg build.
 pub fn mp3_encoder() -> Result<&'static str, String> {
     let path = resolve_ffmpeg().ok_or_else(|| {
-        "FFmpeg was not found. Install it, add it to PATH, or locate ffmpeg.exe here.".to_string()
+        NOT_FOUND.to_string()
     })?;
     if supports_encoder(&path, "libmp3lame") {
         Ok("libmp3lame")
@@ -191,6 +198,7 @@ fn current_status() -> FfmpegStatus {
         .as_deref()
         .is_some_and(|ffmpeg| supports_encoder(ffmpeg, "h264_mf"));
     let source = match path.as_deref() {
+        Some(ffmpeg) if pack_dir().is_some_and(|dir| ffmpeg.starts_with(dir)) => "pack",
         Some(ffmpeg) if override_dir().is_some_and(|dir| ffmpeg.starts_with(dir)) => "user",
         Some(_) => "path",
         None => "none",

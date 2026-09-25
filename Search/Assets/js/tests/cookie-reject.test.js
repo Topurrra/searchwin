@@ -198,6 +198,23 @@ test('inConsentContainer accepts a fixed or sticky container even without a dial
   assert.equal(cookies.inConsentContainer({ parentElement: unpinned }, win), false);
 });
 
+test('inConsentContainer matches real consent banner ids/classes a word-bounded regex missed', () => {
+  // These are the actual ids/classes CMPs and plugins ship. Most glue
+  // "cookie"/"consent"/"gdpr" to other words with `_` or camelCase, so a
+  // `\b`-bounded match (the old CONSENT_NAME) missed nearly all of them —
+  // `_` and letters share no word boundary.
+  const win = { getComputedStyle: (el) => ({ position: el.pinned ? 'fixed' : 'static' }) };
+  const names = [
+    'cookies-banner', 'cookieBanner', 'cookie_notice', 'cookiebar', 'CookieConsent',
+    'CybotCookiebotDialog', 'sp_message_container_123', 'cmplz-cookiebanner',
+    'moove_gdpr_cookie_info_bar', 'BorlabsCookie',
+  ];
+  for (const name of names) {
+    const container = { className: name, pinned: true, parentElement: null };
+    assert.equal(cookies.inConsentContainer({ parentElement: container }, win), true, name);
+  }
+});
+
 test('inConsentContainer never matches Adobe Experience Manager\'s own "cmp-" component classes', () => {
   // AEM's core components give ordinary page chrome — a header, a button —
   // classes like "cmp-container" and "cmp-button", nothing to do with
@@ -353,7 +370,10 @@ test('init never acts on an OAuth/account-permissions screen', () => {
   assert.deepEqual(calls, []);
 });
 
-test('init never acts on a page with a visible sign-in form', () => {
+test('init still lets a CMP\'s own API reject on a page with a visible sign-in form', () => {
+  // The password guard exists so a "Reject"-shaped click doesn't land on an
+  // arbitrary button on a sign-in form; it must not also silence a CMP's own
+  // documented reject call, which is never a click on the page at all.
   const calls = [];
   const win = {
     top: null,
@@ -363,7 +383,25 @@ test('init never acts on a page with a visible sign-in form', () => {
   };
   win.top = win;
   assert.doesNotThrow(() => cookies.init(win));
-  assert.deepEqual(calls, []);
+  assert.deepEqual(calls, ['reject']);
+});
+
+test('init never scans for a generic text button on a page with a visible sign-in form', () => {
+  const scans = [];
+  const win = {
+    top: null,
+    location: { hostname: 'example.com', pathname: '/account' },
+    document: {
+      querySelectorAll: (sel) => {
+        if (sel === 'input[type="password"]') return [{ getClientRects: () => [{}] }];
+        scans.push(sel);
+        return [];
+      },
+    },
+  };
+  win.top = win;
+  assert.doesNotThrow(() => cookies.init(win));
+  assert.deepEqual(scans, []);
 });
 
 test('init leaves an ordinary frame alone', () => {

@@ -199,5 +199,23 @@ public static class FileKinds
         return ActionFor(dot < 0 ? "" : name[(dot + 1)..]);
     }
 
+    /// Audio and video the player plays once the FFmpeg pack has remuxed
+    /// it. Kept in step by hand with the player page (Tools/src/routes/play).
+    private static readonly HashSet<string> Remuxable = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "mkv", "avi", "wmv", "flv", "mpg", "mpeg", "m2ts", "mts", "3gp", "wma", "mka", "ape", "wv", "aiff", "aif",
+    };
+
+    /// What Enter does with the file at `path` whose row says `action`, now:
+    /// with the FFmpeg pack in, audio and video WebView2 can't play go to
+    /// the player (remuxed) instead of their own app.
+    public static RowAction Opening(RowAction action, string path, bool remuxes)
+    {
+        if (!remuxes || action != RowAction.OpenWithApp) return action;
+        var name = path[(path.LastIndexOfAny(['\\', '/']) + 1)..].TrimEnd('.', ' ');
+        var dot = name.LastIndexOf('.');
+        return dot >= 0 && Remuxable.Contains(name[(dot + 1)..]) ? RowAction.Play : action;
+    }
+
     private static string Bare(string extension) => extension.Trim().TrimStart('.').TrimEnd('.', ' ');
 }

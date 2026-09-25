@@ -126,6 +126,22 @@ public class FileKindsTests
         Assert.Equal(RowAction.OpenInTab, FileKinds.ActionForPath(@"C:\t\exe\notes.txt"));
     }
 
+    // With the FFmpeg pack, what WebView2 can't play goes to the player
+    // (remuxed); without it, to its own app as before. Nothing else moves.
+    [Theory]
+    [InlineData(@"C:\films\film.mkv", true, RowAction.Play)]
+    [InlineData(@"C:\films\old.AVI", true, RowAction.Play)]
+    [InlineData(@"C:\music\track.wma", true, RowAction.Play)]
+    [InlineData(@"C:\films\film.mkv", false, RowAction.OpenWithApp)]
+    [InlineData(@"C:\docs\report.docx", true, RowAction.OpenWithApp)]
+    [InlineData(@"C:\films\clip.mp4", true, RowAction.Play)]
+    [InlineData(@"C:\films\setup.mkv.exe", true, RowAction.Reveal)]
+    public void The_ffmpeg_pack_sends_what_webview2_cant_play_to_the_player(string path, bool pack, RowAction expected)
+    {
+        var row = FileNameSource.File(FakeEngine.Json($$"""{"path":{{System.Text.Json.JsonSerializer.Serialize(path)}},"entryType":"file"}""")!)!;
+        Assert.Equal(expected, FileKinds.Opening(row.Action, row.Target, pack));
+    }
+
     [Fact]
     public async Task Engine_rows_for_programs_show_in_their_folder()
     {

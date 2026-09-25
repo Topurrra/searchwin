@@ -212,6 +212,10 @@ public static class ToolsHost
         });
     }
 
+    /// An event from the browser itself (a pack came or went, the player's
+    /// progress) to every open tool page. On the UI thread.
+    public static void Tell(string name, JsonNode? payload) => Broadcast(name, payload);
+
     /// An event to every open tool page.
     private static void Broadcast(string name, JsonNode? payload)
     {
@@ -290,6 +294,15 @@ public static class ToolsHost
                 return await OnUi(async () => (JsonNode?)await Confirm(args, withCancel: true));
             case "dialog.message":
                 return await OnUi(async () => { await Confirm(args, withCancel: false); return (JsonNode?)null; });
+            case "packs.open":
+                // A page may show Settings › Packs; installing is a click there.
+                UI.Do(Packs.Show);
+                return null;
+            case "play.prepare":
+                return await Player.Prepare(args);
+            case "play.cancel":
+                Player.Cancel(Text(args, "path"));
+                return null;
             default:
                 throw new InvalidOperationException($"the browser doesn't do {what}");
         }

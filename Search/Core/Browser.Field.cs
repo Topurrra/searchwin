@@ -181,7 +181,8 @@ public sealed partial class Browser
         Editing = false;
         Typed = "";
         Picked = null;
-        switch (row.Action)
+        // MKV, AVI, WMV… play in the player once the FFmpeg pack is in.
+        switch (FileKinds.Opening(row.Action, row.Target, Packs.FfmpegBin != null))
         {
             case RowAction.Copy:
                 Copy(row.Target);

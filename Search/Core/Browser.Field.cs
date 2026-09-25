@@ -220,6 +220,27 @@ public sealed partial class Browser
         }
     }
 
+    /// A file a tool page opens (the file manager's Enter): what the field
+    /// does with it — a tab, the player, its own app, or its folder.
+    public void OpenLocal(string path)
+    {
+        switch (FileKinds.ActionForPath(path))
+        {
+            case RowAction.OpenInTab:
+                OpenFile(path);
+                break;
+            case RowAction.Play:
+                OpenPlayer(path);
+                break;
+            case RowAction.OpenWithApp:
+                Send("open_search_result_path", new JsonObject { ["path"] = path }, "Couldn't open that");
+                break;
+            default:
+                Reveal(path);
+                break;
+        }
+    }
+
     /// A file in a tab: the blank one you're on, or a new one beside it.
     /// Chromium shows PDFs, pictures and text itself.
     private void OpenFile(string path) => WhenThere(path, () =>

@@ -14,6 +14,7 @@
 */
 import { writable, get } from 'svelte/store';
 import { invoke } from '@tauri-apps/api/core';
+import { downloadDir, homeDir } from '@tauri-apps/api/path';
 import {
     Folder,
     File as FileIcon,
@@ -102,9 +103,8 @@ function emptyPane(path: string): PaneState {
     };
 }
 
-/** First-run seed path. On first init we replace this with the first
- *  logical drive root (usually C:\) — a directory fm_list_dir can always
- *  read. Re-mounts keep wherever the user navigated to. */
+/** Where the panes start before the first init puts them in your home
+ *  folder and Downloads. Re-mounts keep wherever the user navigated to. */
 const SEED = 'C:\\';
 
 export const leftPane = writable<PaneState>(emptyPane(SEED));
@@ -266,16 +266,20 @@ function paneStore(pane: PaneId) {
     return pane === 'left' ? leftPane : rightPane;
 }
 
-/** Load drives, seed both panes at the first drive root on the very
- *  first mount only, then list both panes. On re-mounts this only
- *  refreshes the drive list and re-lists the (preserved) paths. */
+/** Load drives, seed the panes (home on the left, Downloads on the right)
+ *  on the very first mount only, then list both panes. On re-mounts this
+ *  only refreshes the drive list and re-lists the (preserved) paths. */
 export async function initFileManager(): Promise<void> {
     await loadDrives();
     if (!seeded) {
         seeded = true;
-        const first = get(driveList)[0] ?? SEED;
-        leftPane.update((p) => ({ ...p, path: first }));
-        rightPane.update((p) => ({ ...p, path: first }));
+        const fallback = get(driveList)[0] ?? SEED;
+        const [home, downloads] = await Promise.all([
+            homeDir().catch(() => fallback),
+            downloadDir().catch(() => fallback),
+        ]);
+        leftPane.update((p) => ({ ...p, path: home }));
+        rightPane.update((p) => ({ ...p, path: downloads }));
     }
     await Promise.all([loadDir('left'), loadDir('right')]);
 }

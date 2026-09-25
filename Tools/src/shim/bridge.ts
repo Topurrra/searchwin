@@ -21,6 +21,7 @@ type Handler = (event: { event: string; id: number; payload: unknown }) => void;
 
 interface HostView {
     postMessage(message: unknown): void;
+    postMessageWithAdditionalObjects?(message: unknown, objects: ArrayLike<unknown>): void;
     addEventListener(type: 'message', listener: (event: { data: any }) => void): void;
 }
 
@@ -62,6 +63,17 @@ export function call<T = unknown>(cmd: string, args: Record<string, unknown> = {
     return new Promise<T>((resolve, reject) => {
         waiting.set(id, { resolve: resolve as (v: unknown) => void, reject });
         host.postMessage({ kind: 'invoke', id, cmd, args: args ?? {} });
+    });
+}
+
+/** Where files dropped on the page are. A page can't see that; the browser
+ *  can, when the File objects travel beside the message. */
+export function dropped(files: ArrayLike<File>): Promise<string[]> {
+    if (!host?.postMessageWithAdditionalObjects || files.length === 0) return Promise.resolve([]);
+    const id = nextId++;
+    return new Promise<string[]>((resolve, reject) => {
+        waiting.set(id, { resolve: resolve as (v: unknown) => void, reject });
+        host.postMessageWithAdditionalObjects!({ kind: 'invoke', id, cmd: 'host:drop.paths', args: {} }, files);
     });
 }
 

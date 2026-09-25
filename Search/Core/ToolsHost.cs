@@ -177,11 +177,32 @@ public static class ToolsHost
         var id = message["id"]?.DeepClone();
         var cmd = message["cmd"]?.GetValue<string>() ?? "";
         var args = message["args"] as JsonObject ?? [];
+        // Files dropped on the page arrive as File objects beside the
+        // message; where they are is only the browser's to read.
+        if (cmd == "host:drop.paths")
+            args = new JsonObject { ["paths"] = new JsonArray([.. Dropped(e).Select(path => (JsonNode)path)]) };
         // A network share or a device path, anywhere a path goes: refused
         // unless it's inside a folder chosen in Settings › Search.
         var refused = SearchKit.Web.ToolGate.ArgsRefused(args, Chosen);
         _ = Answer(core, id, cmd, args, refused);
         return true;
+    }
+
+    private static List<string> Dropped(CoreWebView2WebMessageReceivedEventArgs e)
+    {
+        var paths = new List<string>();
+        try
+        {
+            if (e.AdditionalObjects is { } objects)
+                foreach (var item in objects)
+                    if (item != null && WinRT.CastExtensions.As<CoreWebView2File>(item).Path is { Length: > 0 } path)
+                        paths.Add(path);
+        }
+        catch (Exception error) when (error is InvalidCastException or System.Runtime.InteropServices.COMException)
+        {
+            Log.Write($"tools: dropped files: {error.Message}");
+        }
+        return paths;
     }
 
     private static async Task Answer(CoreWebView2 core, JsonNode? id, string cmd, JsonObject args, string? refused)
@@ -281,6 +302,13 @@ public static class ToolsHost
                 return null;
             case "opener.reveal":
                 Process.Start("explorer.exe", $"/select,\"{Text(args, "path")}\"")?.Dispose();
+                return null;
+            case "drop.paths":
+                return args["paths"]?.DeepClone();
+            case "open.file":
+                // As the field opens it: never run from a tool page.
+                var local = Text(args, "path");
+                UI.Do(() => App.Window?.Browser.OpenLocal(local));
                 return null;
             case "dialog.open":
                 return await OnUi(() => PickOpen(args));

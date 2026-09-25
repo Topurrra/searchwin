@@ -19,6 +19,7 @@
     import { listen, type UnlistenFn } from '@tauri-apps/api/event';
     import { getCurrentWebview } from '@tauri-apps/api/webview';
     import { open as openDialog } from '@tauri-apps/plugin-dialog';
+    import { revealItemInDir } from '@tauri-apps/plugin-opener';
     import {
         Columns2,
         HardDrive,
@@ -29,6 +30,7 @@
         FilePenLine,
         FolderPlus,
         FolderSync,
+        FolderSearch,
         ChevronRight,
         RotateCw,
         X,
@@ -253,12 +255,18 @@
         if (entry.isDir) {
             void navigateTo(pane, entry.path);
         } else {
-            // Open files with the OS default app via the shell-less
-            // invoke path used elsewhere; fall back to a toast if absent.
-            void invoke('open_search_result_path', { path: entry.path }).catch(() => {
+            // As the field would: a tab, the player, its own app, or shown
+            // in its folder (a program is never run from here).
+            void invoke('host:open.file', { path: entry.path }).catch(() => {
                 toast('Could not open this file', 'error');
             });
         }
+    }
+
+    function actionReveal() {
+        const entries = selectedEntries(active);
+        if (entries.length !== 1) return toast('Select one item to show in its folder', 'info');
+        void revealItemInDir(entries[0].path).catch(() => toast('Could not show this item', 'error'));
     }
 
     function onRowDblClick(pane: PaneId, entry: FmEntry) {
@@ -835,6 +843,9 @@
                         </Button>
                         <Button variant="secondary" size="sm" icon={FolderSync} disabled={busy} onclick={actionBackup}>
                             Backup
+                        </Button>
+                        <Button variant="secondary" size="sm" icon={FolderSearch} onclick={actionReveal}>
+                            Show in folder
                         </Button>
                         <div class="fm-actions-sep"></div>
                         <Button variant="danger" size="sm" icon={Trash2} disabled={busy} onclick={actionDelete}>

@@ -5,6 +5,8 @@
     // serves tool pages (see ToolsHost.cs), and this page only ever asks it
     // for the path the browser handed it or a sibling the engine listed.
     import { invoke, convertFileSrc } from '@tauri-apps/api/core';
+    import * as positions from '$lib/player/positions';
+    import { folderOf, inFolder, after } from '$lib/player/positions';
     import {
         Play,
         Pause,
@@ -39,10 +41,6 @@
     function baseName(path: string): string {
         const m = /[^\\/]+$/.exec(path);
         return m ? m[0] : path;
-    }
-    function folderOf(path: string): string {
-        const i = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
-        return i >= 0 ? path.slice(0, i) : '';
     }
     function sameFile(a: string, b: string): boolean {
         return a.replace(/\//g, '\\').toLowerCase() === b.replace(/\//g, '\\').toLowerCase();
@@ -114,7 +112,7 @@
                 if (folder !== wanted) return; // moved on while this was in flight
                 tracks = children
                     .filter((c) => !c.isDir)
-                    .map((c) => ({ name: c.name, path: `${wanted}\\${c.name}`, kind: kindOf(c.name) }))
+                    .map((c) => ({ name: c.name, path: inFolder(wanted, c.name), kind: kindOf(c.name) }))
                     .filter((t) => t.kind !== 'unsupported');
             })
             .catch(() => {
@@ -146,36 +144,50 @@
 
     // MARK: - remembered position (localStorage on tools.search)
 
-    function storageKey(p: string): string {
-        return `search-player:position:${p.replace(/\//g, '\\').toLowerCase()}`;
-    }
+    // The last 200 files played; a finished one is forgotten (see
+    // $lib/player/positions).
     function loadPosition(p: string): number {
         try {
-            const raw = localStorage.getItem(storageKey(p));
-            const value = raw ? Number(raw) : 0;
-            return Number.isFinite(value) && value > 0 ? value : 0;
+            return positions.load(localStorage, p);
         } catch {
             return 0;
         }
     }
     function savePosition(p: string, time: number) {
         try {
-            localStorage.setItem(storageKey(p), String(Math.floor(time)));
+            positions.save(localStorage, p, time, media?.duration ?? NaN);
         } catch {
-            /* private mode, quota, or storage disabled — just don't remember */
+            /* storage disabled — just don't remember */
         }
     }
 
+    // Where the position was last saved. Saving used to wait for playback to
+    // move two seconds PAST it, so a seek back while paused (after a track
+    // had ended and saved 0, say) was never saved — and the pause button,
+    // on media already paused, fires no pause event: the file came back at
+    // 0. Now any move of two seconds either way saves, and so does every
+    // seek.
     let lastSaved = 0;
+    // Events from the file just left (a timeupdate as the source changes)
+    // are not the new file's position.
+    function playingPath(): boolean {
+        return !!media && !!src && media.currentSrc === src;
+    }
+    function remember() {
+        if (!media || !playingPath()) return;
+        lastSaved = media.currentTime;
+        savePosition(path, media.currentTime);
+    }
     function onTimeUpdate() {
         if (!media) return;
         current = media.currentTime;
         // Once every couple of seconds, not every frame.
-        if (current - lastSaved >= 2) {
-            lastSaved = current;
-            savePosition(path, current);
-        }
+        if (Math.abs(current - lastSaved) >= 2) remember();
         setPositionState();
+    }
+    function onSeeked() {
+        if (media) current = media.currentTime;
+        remember();
     }
     function onLoadedMetadata() {
         if (!media) return;
@@ -191,13 +203,23 @@
         });
     }
     function onEnded() {
+        // Finished: forgotten, so it starts over next time.
+        lastSaved = 0;
         savePosition(path, 0);
-        if (tracks.length > 0) next();
+        // On through the folder, stopping after its last track.
+        const following = after(index, tracks.length);
+        if (following >= 0) go(tracks[following].path);
     }
     function onPause() {
         playing = false;
-        if (media) savePosition(path, media.currentTime);
+        if (media && !media.ended) remember();
     }
+    // Reloading or closing the tab keeps where it was, to the second.
+    $effect(() => {
+        const leaving = () => remember();
+        window.addEventListener('pagehide', leaving);
+        return () => window.removeEventListener('pagehide', leaving);
+    });
 
     // MARK: - MediaSession: Windows' media overlay and the hardware keys
 
@@ -379,6 +401,7 @@
                     {src}
                     ontimeupdate={onTimeUpdate}
                     onloadedmetadata={onLoadedMetadata}
+                    onseeked={onSeeked}
                     onended={onEnded}
                     onplay={() => (playing = true)}
                     onpause={onPause}
@@ -396,6 +419,7 @@
                     {src}
                     ontimeupdate={onTimeUpdate}
                     onloadedmetadata={onLoadedMetadata}
+                    onseeked={onSeeked}
                     onended={onEnded}
                     onplay={() => (playing = true)}
                     onpause={onPause}

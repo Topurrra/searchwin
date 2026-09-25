@@ -568,17 +568,35 @@ public sealed class Bench
     private static async Task Field(Browser b, JsonObject request, Action<JsonObject> answer)
     {
         var text = Str(request, "text") ?? "";
-        b.Editing = true;
-        b.Typed = "";
+        // `ctrlk`: the switcher's field (Ctrl+K), typed into the same way.
+        if (Bool(request, "ctrlk") == true) b.Summon();
+        else
+        {
+            b.Editing = true;
+            b.Typed = "";
+        }
         var times = new JsonArray();
         var clock = new System.Diagnostics.Stopwatch();
         IEnumerable<string> steps = Bool(request, "keys") == true ? Enumerable.Range(1, text.Length).Select(n => text[..n]) : [text];
+        // Into the field on screen, as a key would put it there, and taken
+        // from it when WinUI says it changed; `direct` sets the text from
+        // the browser's side instead, as Ctrl+L does.
+        var box = Bool(request, "direct") == true ? null : App.Window?.Field;
         foreach (var step in steps)
         {
+            if (box != null)
+            {
+                box.Key(step);
+                for (var wait = 0; wait < 100 && b.Typed != step; wait++) await Task.Delay(5);
+                times.Add((JsonNode)Math.Round(box.KeyMs, 3));
+                continue;
+            }
             clock.Restart();
             b.Typed = step;
             times.Add((JsonNode)Math.Round(clock.Elapsed.TotalMilliseconds, 3));
         }
+        // Whatever WinUI has still to say about the field's text.
+        await Task.Delay(30);
         clock.Restart();
         await Task.WhenAny(b.Reach.WhenSettled, Task.Delay(TimeSpan.FromSeconds(Num(request, "seconds") ?? 5)));
         var settled = clock.Elapsed.TotalMilliseconds;
@@ -600,6 +618,7 @@ public sealed class Bench
             })]),
             ["picked"] = b.Picked,
             ["ending"] = b.Ending,
+            ["typed"] = b.Typed,
         };
         var pick = Int(request, "pick");
         if (pick != null || Bool(request, "enter") == true)

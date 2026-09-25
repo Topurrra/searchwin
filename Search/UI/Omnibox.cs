@@ -84,6 +84,11 @@ public sealed partial class Omnibox : Grid
             Visibility = Visibility.Collapsed,
         };
         Kit.Lift(list, 20);
+        // The list outlives its rows, which are drawn anew as rows land: the
+        // pointer over it is known even before it moves onto a new row.
+        list.PointerEntered += (_, _) => browser.OverList(true);
+        list.PointerExited += (_, _) => browser.OverList(false);
+        list.PointerCanceled += (_, _) => browser.OverList(false);
         // On a canvas, which measures its children at their own size and never
         // clips them: the list hangs below a field that is only as tall as
         // itself.
@@ -213,11 +218,11 @@ public sealed partial class Omnibox : Grid
     private void Put(string text)
     {
         if (field.Text == text) return;
-        expected = text;
+        echo.Put(text);
         field.Text = text;
     }
 
-    private string? expected;
+    private readonly FieldEcho echo = new();
     private bool typing;
 
     /// The part after the caret, shown as selected, so the next keystroke
@@ -229,15 +234,28 @@ public sealed partial class Omnibox : Grid
         field.Select(start, length - start);
     }
 
+    /// The bench's keystroke: the field now holds `text`, the caret at its
+    /// end, and WinUI tells of it a moment later, as it does of a real key.
+    public void Key(string text)
+    {
+        field.Text = text;
+        field.Select(text.Length, 0);
+    }
+
+    /// How long the last keystroke took on this thread, for the bench.
+    public double KeyMs { get; private set; }
+
     private void Typed()
     {
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        try { Take(); }
+        finally { KeyMs = clock.Elapsed.TotalMilliseconds; }
+    }
+
+    private void Take()
+    {
         var text = field.Text;
-        if (expected != null)
-        {
-            var ours = expected;
-            expected = null;
-            if (text == ours) return;
-        }
+        if (echo.Ours(text)) return;
         plate.BorderBrush = Palette.Hairline;
         typing = true;
         browser.Typed = text;
@@ -311,6 +329,8 @@ public sealed partial class Omnibox : Grid
         rows.Children.Clear();
         var offers = browser.Offers;
         list.Visibility = offers.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
+        // A list put away tells of no pointer leaving it.
+        if (offers.Count == 0) browser.OverList(false);
         for (var i = 0; i < offers.Count; i++)
         {
             var offer = offers[i];

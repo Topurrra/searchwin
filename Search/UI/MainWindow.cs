@@ -361,6 +361,9 @@ public sealed partial class MainWindow : Window
     /// The popup, for the bench.
     public ClipPopup? Clips => clips.Children.OfType<ClipPopup>().FirstOrDefault();
 
+    /// The field, for the bench: typed into as a person types.
+    public Omnibox Field => omnibox;
+
     /// The panels. All the same kind of thing, so they are built the same way:
     /// a dimmed ground a click on which puts the panel away.
     private void ShowPanels()

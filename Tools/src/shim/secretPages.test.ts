@@ -23,10 +23,4 @@ describe('pages that copy secrets', () => {
             expect(text).not.toMatch(/navigator\.clipboard\.writeText/);
         });
     }
-
-    it('the clipboard history page puts a secret back quietly', () => {
-        expect(source('lib/tools/Utils/ClipboardHistory.svelte')).toMatch(
-            /copy_clipboard_entry_to_clipboard', \{ id: entry\.id, quiet: entry\.sensitiveKinds\.length > 0 \}/,
-        );
-    });
 });

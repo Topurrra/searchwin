@@ -58,6 +58,9 @@ public sealed class FilterList
     internal (int Indexed, int Words, int Everywhere) IndexShape =>
         (tokenIndex.Values.Sum(b => b.Length), tokenIndex.Count, genericPlain.Length);
 
+    /// Every word the index is filed under, for the worst-case benchmark.
+    internal IEnumerable<string> IndexWords => tokenIndex.Keys;
+
     private FilterList(
         NetworkRule[] rules, Dictionary<string, int[]> domainAnchored, Dictionary<string, int[]> tokenIndex, int[] genericPlain,
         HashSet<string> plainDomains, HashSet<string> plainThirdPartyDomains,
@@ -254,6 +257,7 @@ public sealed class FilterList
         var thirdParty = pageHost != null && !string.Equals(sites.Of(host), sites.Of(pageHost), StringComparison.Ordinal);
         var lowerUrl = request.AbsoluteUri.ToLowerInvariant();
         var afterHost = request.GetLeftPart(UriPartial.Authority).Length;
+        var limit = Math.Min(lowerUrl.Length, MatchedLength);
 
         var blocked = false;
         var important = false;
@@ -263,7 +267,7 @@ public sealed class FilterList
         {
             var rule = rules[idx];
             if (!rule.MatchesContext(kind, thirdParty, pageHost)) return;
-            if (!rule.MatchesUrl(lowerUrl, afterHost, host)) return;
+            if (!rule.MatchesUrl(lowerUrl, afterHost, host, limit)) return;
             if (rule.IsException) excepted = true;
             else { blocked = true; if (rule.Important) important = true; }
         }
@@ -281,20 +285,52 @@ public sealed class FilterList
         }
 
         var tried = Tried();
-        var url = lowerUrl.AsSpan();
-        for (var i = 0; i < url.Length; )
-        {
-            if (!char.IsAsciiLetterOrDigit(url[i])) { i++; continue; }
-            var start = i;
-            while (i < url.Length && char.IsAsciiLetterOrDigit(url[i])) i++;
-            if (i - start < AbpPattern.MinToken) continue;
-            if (tokenIndexBySpan.TryGetValue(url[start..i], out var bucket) && tried.Add(bucket))
-                foreach (var idx in bucket) Consider(idx);
-        }
+        var words = 0;
+        // The words of the part the patterns read (the last may run on past
+        // it), and of the very end, where a rule held there by `|` looks.
+        var tail = Math.Max(limit, lowerUrl.Length - EndRead);
+        // From the start of a word, never half of one.
+        while (tail > limit && tail < lowerUrl.Length && char.IsAsciiLetterOrDigit(lowerUrl[tail - 1])) tail++;
+        Words(lowerUrl, 0, limit);
+        Words(lowerUrl, tail, lowerUrl.Length);
         foreach (var idx in genericPlain) Consider(idx);
 
         return important || (blocked && !excepted);
+
+        void Words(ReadOnlySpan<char> url, int from, int to)
+        {
+            for (var i = from; i < to && words < MaxWords; )
+            {
+                if (!char.IsAsciiLetterOrDigit(url[i])) { i++; continue; }
+                var start = i;
+                while (i < url.Length && char.IsAsciiLetterOrDigit(url[i])) i++;
+                if (i - start < AbpPattern.MinToken) continue;
+                words++;
+                if (tokenIndexBySpan.TryGetValue(url[start..i], out var bucket) && tried.Add(bucket))
+                    foreach (var idx in bucket) Consider(idx);
+            }
+        }
     }
+
+    /// How much of the end of a long address is looked at for words, for
+    /// the rules held at the end by `|`.
+    private const int EndRead = 256;
+
+    /// How much of an address the patterns read, in characters. Each rule a
+    /// request tries reads it once; an address made of every word the index
+    /// knows would otherwise open thousands of buckets and read 64 KB for
+    /// each of their rules — 20 ms a request with EasyList + EasyPrivacy, on
+    /// the thread that draws every window, and a page can ask for hundreds;
+    /// at 16 KB it was still 4 ms, at 4 KB it is a third of one. Nearly
+    /// every real address fits inside. Past it a match must start within
+    /// it — the host and the path are there — and a rule held at the end by
+    /// `|` is still checked at the address's real end (the words of its last
+    /// `EndRead` characters are looked up too).
+    public const int MatchedLength = 4 * 1024;
+
+    /// At most this many words of an address are looked up in the index
+    /// (µBlock Origin stops at about as many).
+    public const int MaxWords = 2048;
 
     // The buckets one request has tried, kept per thread and emptied at the
     // start of each request rather than made anew. A set that grew large

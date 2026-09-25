@@ -184,11 +184,12 @@ public sealed class NetworkRule
 
     /// `lowerUrl` is the full request URL, already lower-cased once by the
     /// caller and shared across every rule it tries; `afterHost` is the
-    /// index right after the request's `scheme://host[:port]`.
-    public bool MatchesUrl(string lowerUrl, int afterHost, string requestHost)
+    /// index right after the request's `scheme://host[:port]`. A match must
+    /// start within the first `limit` characters (FilterList.MatchedLength).
+    public bool MatchesUrl(string lowerUrl, int afterHost, string requestHost, int limit = int.MaxValue)
     {
         if (AnchorDomain != null && !HostMatches(requestHost, AnchorDomain)) return false;
-        return pattern.IsMatch(lowerUrl, AnchorDomain != null ? afterHost : 0);
+        return pattern.IsMatch(lowerUrl, AnchorDomain != null ? afterHost : 0, limit);
     }
 
     /// Every whole word this pattern could be indexed under

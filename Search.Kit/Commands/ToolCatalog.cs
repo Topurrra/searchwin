@@ -40,11 +40,13 @@ public static class ToolCatalog
         item[key] is JsonValue value && value.TryGetValue<string>(out var text) ? text.Trim() : "";
 
     /// Each tool as a command: its name is its words, Enter opens its page.
+    /// A tool listed twice is one command.
     public static void Register(CommandRegistry registry, IEnumerable<ToolEntry> tools, Action<string> open)
     {
         foreach (var tool in tools)
         {
             var id = tool.Id;
+            if (registry.Get($"tools.{id}") != null) continue;
             registry.Add(new Command($"tools.{id}", tool.Name, Tier.Read, [tool.Name], Group: "Tools"), _ => open(id));
         }
     }

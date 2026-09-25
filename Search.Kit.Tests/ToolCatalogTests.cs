@@ -49,7 +49,8 @@ public class ToolCatalogTests
         var registry = new CommandRegistry();
         registry.Add(new Command("open.tools", "Tools", Tier.Read, ["tools", "all tools"]), _ => { });
         var opened = new List<string>();
-        ToolCatalog.Register(registry, Tools, opened.Add);
+        // A tool listed twice (a hand-edited catalog) is one command, not a crash in the field.
+        ToolCatalog.Register(registry, [.. Tools, Tools[1]], opened.Add);
 
         var (command, argument) = registry.Find("image studio")[0];
         Assert.Equal(("Image Studio", ""), (command.Title, argument));

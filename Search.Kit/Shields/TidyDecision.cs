@@ -17,7 +17,9 @@ public static class TidyDecision
     /// likely to — a Content-Type header is the signal WebView2 exposes
     /// before the request goes out, and is set for a form's POST but not for
     /// an ordinary GET. `redirectStatus`: the HTTP status of the redirect
-    /// this navigation is following, or 0 when it isn't following one.
+    /// this navigation is following, or 0 when it isn't following one or the
+    /// status isn't known (the browser goes by the Content-Type a replayed
+    /// POST carries on, and doesn't listen for statuses).
     public static bool CanTidy(bool hasRequestBody, int redirectStatus) =>
         !hasRequestBody && redirectStatus is not (307 or 308);
 }

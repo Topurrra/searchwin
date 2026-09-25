@@ -165,7 +165,6 @@ public sealed partial class Shield : Model
         core.WebResourceRequested += ward.Requested;
         core.NavigationStarting += ward.Starting;
         core.ContentLoading += ward.Loading;
-        core.WebResourceResponseReceived += ward.ResponseReceived;
         ward.Dress(tab.Address);
         ArmWorkers(core);
     }
@@ -477,13 +476,6 @@ public sealed partial class Shield : Model
         private string? tidied;
         private long tidiedAt;
 
-        /// The status of a redirect this Ward has just watched go by, keyed
-        /// by where it leads — filled in from WebResourceResponseReceived,
-        /// read back when NavigationStarting says this navigation followed a
-        /// redirect. WebView2 doesn't hand NavigationStarting the status
-        /// itself, only IsRedirected.
-        private readonly Dictionary<string, int> redirectStatus = new(StringComparer.Ordinal);
-
         public void Requested(object? sender, CoreWebView2WebResourceRequestedEventArgs e)
         {
             // Timed for the bench: this is the cost every request pays.
@@ -565,39 +557,25 @@ public sealed partial class Shield : Model
             tab.Blocked = 0;
             tab.ShieldSeen = 0;
             tab.ShieldMs = 0;
-            if (redirectStatus.Count > 0) redirectStatus.Clear();
             Dress(url);
-        }
-
-        /// Watches redirect responses go by so Starting can tell a 307/308
-        /// apart from an ordinary one — NavigationStarting itself is only
-        /// told IsRedirected, never the status.
-        public void ResponseReceived(object? sender, CoreWebView2WebResourceResponseReceivedEventArgs e)
-        {
-            try
-            {
-                var status = e.Response.StatusCode;
-                if (status is not (307 or 308)) return;
-                var location = e.Response.Headers.GetHeader("Location");
-                if (location == null || !Uri.TryCreate(e.Request.Uri, UriKind.Absolute, out var from)) return;
-                if (!Uri.TryCreate(from, location, out var to)) return;
-                if (redirectStatus.Count > 50) redirectStatus.Clear();
-                redirectStatus[to.AbsoluteUri] = status;
-            }
-            catch { }
         }
 
         /// The address this navigation should have had instead, if any.
         /// Never for a navigation that isn't a plain GET — a form's POST, or
         /// a 307/308 redirect that must replay one — since Browser.Go always
         /// starts a fresh, bodyless GET (SearchKit.Shields.TidyDecision).
+        ///
+        /// A 307 or 308 that replays a POST carries the POST's Content-Type
+        /// on to the next hop's NavigationStarting, so that one header tells
+        /// both apart; a 307 of a GET is a GET, and tidied like one. The
+        /// status itself would take hearing every response of every page on
+        /// this thread (WebResourceResponseReceived), which it isn't worth.
         private Uri? Tidied(Uri url, CoreWebView2NavigationStartingEventArgs e)
         {
             if (Browser.Shared is not { Prefs.TidiesLinks: true }) return null;
             bool hasBody;
-            try { hasBody = e.RequestHeaders.Contains("Content-Type"); } catch { hasBody = false; }
-            var status = e.IsRedirected && redirectStatus.TryGetValue(url.AbsoluteUri, out var s) ? s : 0;
-            if (!TidyDecision.CanTidy(hasBody, status)) return null;
+            try { hasBody = e.RequestHeaders.Contains("Content-Type"); } catch { hasBody = true; } // unread: left alone
+            if (!TidyDecision.CanTidy(hasBody, redirectStatus: 0)) return null;
             Uri.TryCreate(core.Source, UriKind.Absolute, out var from);
             if (shield.Tidy(url, Address.IsWeb(from) ? from : null) is not { } clean) return null;
             // A site that sends the clean address straight back to the

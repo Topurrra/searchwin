@@ -448,24 +448,9 @@ public sealed partial class Shield : Model
         return siteCss[host] = rules.SiteCss(host);
     }
 
-    /// The per-site stylesheet as a page script, for that host only: a page
-    /// on another site that inherits it before it is swapped leaves it be.
-    /// The applied-already flag lives behind a Symbol, not a plain
-    /// `__search…` name — one string a page can just ask
-    /// `window.__searchShieldSite` for — so telling Search's stylesheet
-    /// apart from anyone else's costs enumerating symbols, not a lookup.
-    private static string SiteScript(string host, string css) => $$"""
-    (function () {
-      var mark = Symbol.for('search:shield-site');
-      if (location.hostname !== {{Bridge.Literal(host)}} || window[mark]) return;
-      Object.defineProperty(window, mark, { value: true });
-      try {
-        var sheet = new CSSStyleSheet();
-        sheet.replaceSync({{Bridge.Literal(css)}});
-        document.adoptedStyleSheets = document.adoptedStyleSheets.concat([sheet]);
-      } catch (e) {}
-    })();
-    """;
+    /// The per-site stylesheet as a page script (SearchKit.Shields.SiteSheet),
+    /// for that host only, leaving no mark on the page.
+    private static string SiteScript(string host, string css) => SiteSheet.Script(Bridge.Literal(host), Bridge.Literal(css));
 
     /// One tab's part in all this: its page's site, the per-site stylesheet
     /// it holds, and the navigation it is waiting on.

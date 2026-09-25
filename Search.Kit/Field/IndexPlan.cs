@@ -76,7 +76,7 @@ public static class IndexPlan
             ["maxContentKb"] = null,
             ["commitEvery"] = null,
             ["watcherEnabled"] = true,
-            ["excludeFolders"] = new JsonArray([.. excludes.Distinct(StringComparer.Ordinal).Select(e => (JsonNode)e)]),
+            ["excludeFolders"] = new JsonArray([.. Once(excludes).Select(e => (JsonNode)e)]),
         };
     }
 
@@ -146,7 +146,19 @@ public static class IndexPlan
         }
         list.AddRange(Secrets);
         if (own != null && Normal(own) is { Length: > 0 } mine) list.Add(mine);
-        return [.. list.Distinct(StringComparer.Ordinal)];
+        return Once(list);
+    }
+
+    /// Each rule once, in the place of its last copy: the engine lets the
+    /// last rule that matches decide.
+    private static List<string> Once(List<string> rules)
+    {
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var once = new List<string>();
+        for (var i = rules.Count - 1; i >= 0; i--)
+            if (seen.Add(rules[i])) once.Add(rules[i]);
+        once.Reverse();
+        return once;
     }
 
     private static bool InAppData(string root) => root.Split('/').Contains("appdata", StringComparer.Ordinal);

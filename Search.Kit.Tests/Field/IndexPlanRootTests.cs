@@ -202,6 +202,15 @@ public class IndexPlanRootTests
     }
 
     [Fact]
+    public void The_browsers_own_folder_wins_over_a_folder_kept_inside_it()
+    {
+        // `own` repeats the profile's AppData rule, which comes before the
+        // Notes keep: the copy after the keep must be the one that stays.
+        var options = IndexPlan.Options([@"C:\Users\me", @"C:\Users\me\AppData\Roaming\Notes", @"D:\.notes"], true, own: @"C:\Users\me\AppData");
+        Assert.True(Skipped(options, @"C:\Users\me\AppData\Roaming\Notes\plan.md"));
+    }
+
+    [Fact]
     public void A_secret_folder_chosen_itself_still_gives_nothing()
     {
         Assert.True(Skipped(IndexPlan.Options([@"C:\Users\me\.ssh"], true), @"C:\Users\me\.ssh\id_ed25519"));

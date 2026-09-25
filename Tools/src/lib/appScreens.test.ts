@@ -36,7 +36,7 @@ describe('app screen catalog', () => {
 
     it('keeps core pack minimal and filters optional packs', () => {
         const coreTools = toolScreensForPacks(['core']);
-        expect(coreTools.map((tool) => tool.id)).toEqual(['file-search']);
+        expect(coreTools.map((tool) => tool.id)).toEqual([]);
         expect(screensForPacks(['core']).some((screen) => screen.id === 'settings')).toBe(true);
         expect(toolScreensForPacks(['core', 'privacy']).some((tool) => tool.id === 'file-shredder')).toBe(true);
     });

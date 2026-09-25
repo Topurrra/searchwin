@@ -32,10 +32,6 @@ export const libraryActivePack = writable<ToolPackId | null>(null);
 */
 export type CommandTab = 'search' | 'clipboard' | 'voice' | 'snippets';
 export const commandActiveTab = writable<CommandTab | null>(null);
-export type CommandWorkspaceTab = Exclude<CommandTab, 'snippets'>;
-export type CommandWorkspaceClipboardView = 'history' | 'snippets';
-export const commandWorkspaceTab = writable<CommandWorkspaceTab>('search');
-export const commandWorkspaceClipboardView = writable<CommandWorkspaceClipboardView>('history');
 
 /** Map a legacy screen id to the command tab it now lives in, or null if
  *  the id isn't merged into the command page. Used by the router redirect. */

@@ -10,7 +10,6 @@ import {
     Code2,
     Clock3,
     Columns2,
-    Database,
     EyeOff,
     FileImage,
     FileLock2,
@@ -35,7 +34,6 @@ import {
     Pin,
     Pipette,
     QrCode,
-    Search,
     Settings,
     ShieldCheck,
     Sparkles,
@@ -281,20 +279,6 @@ export const pageScreens: PageScreen[] = [
         acceptsSelected: true,
     },
     {
-        // Command — the merged Search / Clipboard / Voice page (tabs). The
-        // legacy ids (file-search, clipboard-history, voice-to-text, snippets)
-        // still exist as screens but the router redirects them HERE onto the
-        // right tab (see commandTabForId). acceptsSelected so the embedded
-        // FileSearch / VoiceToText can route to Settings when needed.
-        id: 'command',
-        name: 'Command',
-        description: 'Search, clipboard, and voice — your core local workflows in one place.',
-        kind: 'page',
-        icon: Search,
-        loader: () => import('$lib/CommandWorkspace.svelte'),
-        acceptsSelected: true,
-    },
-    {
         // Notes — local note-taking. `.ki` files (Markdown + YAML frontmatter)
         // in Documents/KeepItLocal Notes; indexed by the content-search pillar.
         // Manages its own state, so no `selected` prop needed.
@@ -374,19 +358,6 @@ export const pageScreens: PageScreen[] = [
         acceptsSelected: true,
     },
     {
-        // Privacy Audit — the v1 flagship. A first-class, always-available
-        // top-level surface (its own sidebar entry), NOT a pack tool: the
-        // feature that most defines KeepItLocal shouldn't be hidden behind
-        // an optional, default-off pack. Runs local, user-initiated scans
-        // (Phase 0: microphone & camera) — zero network, no background work.
-        id: 'privacy-audit',
-        name: 'Privacy Audit',
-        description: 'Local, no-network checks of what can see, hear, or read you on this machine.',
-        kind: 'page',
-        icon: ShieldCheck,
-        loader: () => import('$lib/tools/Privacy/PrivacyAudit.svelte'),
-    },
-    {
         id: 'settings',
         name: 'Settings',
         description: 'Local preferences and system integrations.',
@@ -397,15 +368,6 @@ export const pageScreens: PageScreen[] = [
         // and uses it for in-app navigation, so it MUST be bound to the router —
         // otherwise those writes go to a dead local prop and "Manage index" /
         // back-links throw or no-op.
-        acceptsSelected: true,
-    },
-    {
-        id: 'file-search-index',
-        name: 'File Search Index',
-        description: 'Manage indexed sources, rebuilds, exclusions, and live watcher behavior.',
-        kind: 'page',
-        icon: Database,
-        loader: () => import('$lib/tools/TopBar/FileSearchIndex.svelte'),
         acceptsSelected: true,
     },
     {
@@ -618,22 +580,8 @@ export const toolScreens: ToolScreen[] = [
         kind: 'tool',
         loader: () => import('$lib/tools/Utils/UtilCalculator.svelte'),
     },
-    {
-        id: 'file-search',
-        name: 'File Search',
-        category: 'File',
-        description: 'Indexed local file search with live updates',
-        available: true,
-        icon: FileSearch,
-        kind: 'tool',
-        acceptsSelected: true,
-        loader: () => import('./tools/Search/FileSearch.svelte'),
-        docs: {
-            use: 'Build a local search index and find files using advanced search (AND, OR, quotes, ext:, path:, size:).',
-            offline: 'Indexing and search stay on your machine. No file content is uploaded.',
-            tip: 'Start with metadata-only indexing for huge folders, then enable content indexing when needed.',
-        },
-    },
+    // File search is Search's own field (names and contents, Ctrl+L) and
+    // Settings › Search, so Workspace's File Search tool isn't carried over.
     // File Manager leads the File pack deliberately (moved 2026-07-23), so a
     // category workspace opens on the safer browsing tool instead of a
     // destructive analyzer.
@@ -726,6 +674,17 @@ export const toolScreens: ToolScreen[] = [
         icon: Sparkles,
         kind: 'tool',
         loader: () => import('$lib/tools/Automation/AutomationRecipes.svelte'),
+    },
+    {
+        // Read-only: it reports, and each fix is the person's to make.
+        id: 'privacy-audit',
+        name: 'Privacy Audit',
+        category: 'Privacy',
+        description: 'What can see, hear, or read you on this machine — checked locally',
+        available: true,
+        icon: ShieldCheck,
+        kind: 'tool',
+        loader: () => import('$lib/tools/Privacy/PrivacyAudit.svelte'),
     },
     {
         id: 'file-shredder',
@@ -1089,7 +1048,6 @@ const screenMap = new Map(allScreens.map((screen) => [screen.id, screen]));
 
 export function toolPackIdForScreen(screen: ToolScreen): ToolPackId {
     if (screen.packId) return screen.packId;
-    if (screen.id === 'file-search') return 'core';
     const categoryToPack: Record<Category, ToolPackId> = {
         Utils: 'utils',
         Development: 'development',

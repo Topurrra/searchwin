@@ -222,6 +222,45 @@ test('patchXhr only patches a given constructor once', () => {
   assert.equal(shield.patchXhr(FakeXHR), false);
 });
 
+// ---- nothing page-visible marks a patched object --------------------------
+//
+// These used to be a `__searchShield` property stamped directly on the
+// wrapped function/constructor (and `__searchShieldMatch` on every XHR
+// instance), so any page could fingerprint Shields with e.g.
+// `!!window.fetch.__searchShield`. Idempotency now lives in a WeakSet/WeakMap
+// the page has no handle to.
+
+test('patchJsonParse leaves no __searchShield (or other __search*) property on the wrapped parse', () => {
+  const fakeJson = { parse: JSON.parse };
+  shield.patchJsonParse(fakeJson);
+  assert.equal('__searchShield' in fakeJson.parse, false);
+  assert.equal(Object.getOwnPropertyNames(fakeJson.parse).some((n) => n.indexOf('__search') !== -1), false);
+});
+
+test('patchFetch leaves no __searchShield (or other __search*) property on the wrapped fetch', () => {
+  const fakeWindow = { Response: Response, fetch: async () => new Response('{}') };
+  shield.patchFetch(fakeWindow);
+  assert.equal('__searchShield' in fakeWindow.fetch, false);
+  assert.equal(Object.getOwnPropertyNames(fakeWindow.fetch).some((n) => n.indexOf('__search') !== -1), false);
+});
+
+test('patchXhr leaves no __searchShield on the constructor and no __searchShieldMatch on instances', () => {
+  const FakeXHR = makeFakeXhrCtor(JSON.stringify({ videoDetails: {}, playerAds: [1] }));
+  shield.patchXhr(FakeXHR);
+  assert.equal('__searchShield' in FakeXHR, false);
+  assert.equal(Object.getOwnPropertyNames(FakeXHR).some((n) => n.indexOf('__search') !== -1), false);
+
+  const matching = new FakeXHR();
+  matching.open('POST', 'https://www.youtube.com/youtubei/v1/next');
+  // The instance still behaves correctly (proves the WeakMap swap didn't
+  // just drop the matching logic)...
+  assert.equal(JSON.parse(matching.responseText).playerAds, undefined);
+  // ...without leaving a __searchShieldMatch (or any __search*) own property
+  // a page could read straight off its own XHR object.
+  assert.equal('__searchShieldMatch' in matching, false);
+  assert.equal(Object.getOwnPropertyNames(matching).some((n) => n.indexOf('__search') !== -1), false);
+});
+
 // ---- init: never throws, even with a hostile/missing window --------------
 
 test('init never throws when handed nothing at all', () => {

@@ -228,15 +228,20 @@
     return '';
   }
 
-  // What a consent banner calls itself: "cookie" or "consent" as a whole
-  // word, or a specific CMP's own container name — never the bare "cmp" or
-  // "privacy" that used to be here. Adobe Experience Manager gives ordinary
-  // page chrome classes like "cmp-container" and "cmp-button" to every
-  // button on the page; a bare "cmp" (even word-bounded: the hyphen already
-  // makes "cmp" its own word) turned every one of them into "a consent
-  // banner" on any AEM site. "privacy" alone catches privacy-policy links
-  // and settings pages that have nothing to do with a banner.
-  var CONSENT_NAME = /\b(cookie|consent|gdpr|onetrust|didomi|usercentrics|cookiebot|truste|sp_message|qc-cmp2?|tarteaucitron|klaro|cc-window|cc_banner)\b/i;
+  // What a consent banner calls itself: "cookie", "consent" or "gdpr"
+  // anywhere in the name, or a specific CMP's own container name — never the
+  // bare "cmp" or "privacy" that used to be here, and never word-bounded
+  // (`\b`) either: real ids and classes glue these into one run with an
+  // underscore or camelCase (`sp_message_container_123`,
+  // `moove_gdpr_cookie_info_bar`, `cookieBanner`), and `_`/letters share no
+  // `\b` boundary, so a word-bounded match missed most of them. A plain
+  // substring is safe here because it is combined below with the dialog/
+  // fixed/sticky shape check: Adobe Experience Manager's ordinary page-chrome
+  // classes ("cmp-container", "cmp-button") still don't contain any of these
+  // words, so AEM's chrome still doesn't match. "privacy" alone still catches
+  // privacy-policy links and settings pages that have nothing to do with a
+  // banner, so it stays out.
+  var CONSENT_NAME = /cookie|consent|gdpr|onetrust|didomi|usercentrics|cookiebot|truste|sp_message|qc-cmp2?|tarteaucitron|klaro|cc-window|cc_banner|cmplz|borlabscookie/i;
   var MAX_ANCESTORS = 12;
 
   /** Whether `el` is a dialog by shape: a <dialog>, or role="dialog"/"alertdialog". */
@@ -416,13 +421,15 @@
     var settled = false;
     function attempt() {
       if (settled) return true;
-      // A sign-in form on screen: a "Deny"-shaped click here could be
-      // answering that instead of a cookie banner. Leave the whole page
-      // alone rather than guess which is which.
-      if (hasVisiblePasswordField(doc)) { settled = true; return true; }
       try {
         if (!framed && runCmpHandlers(win)) { settled = true; return true; }
       } catch (e) { /* never throw into the page */ }
+      // A sign-in form on screen: a "Reject"-shaped click on some arbitrary
+      // button could be answering that form instead of a cookie banner.
+      // This guards only the generic text-button fallback below — the CMP's
+      // own documented reject call above, and the leftover-banner CSS at
+      // WAIT_TIMEOUT_MS, are never a click on the page and stay safe to run.
+      if (hasVisiblePasswordField(doc)) return false;
       var target = findRejectButton(collectClickable(doc), wholeFrame, win);
       if (target) {
         settled = clickElement(target);

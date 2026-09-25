@@ -74,6 +74,9 @@ if (Get-Command pnpm -ErrorAction SilentlyContinue) {
     $built = $LASTEXITCODE
     Pop-Location
     if ($built -ne 0) { throw "the tool pages didn't build" }
+    # publish-aot.cmd may have put a copy there already; into an existing
+    # folder, Copy-Item would nest this one inside it.
+    if (Test-Path "$out\tools") { Remove-Item -Recurse -Force "$out\tools" }
     Copy-Item Tools\dist -Destination "$out\tools" -Recurse
 } else {
     "No pnpm here: building without the tool pages."

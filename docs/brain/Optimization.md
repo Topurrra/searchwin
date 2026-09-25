@@ -27,6 +27,11 @@ feature or phase gets its own optimization note (for example
        written. Seeking into parts not yet written restarts FFmpeg with `-ss`.
      - Cache the probe result per file (path + size + mtime).
      - Measure: time to first frame, direct and remuxed, for a 2-hour MKV.
+   - **Controls hidden outside full screen:** when a movie isn't in full
+     screen, the player's buttons and controls (play/pause, seek bar, volume,
+     next/previous, subtitles) aren't visible. The video should fit the tab
+     with the controls always reachable, as in Workspace's player; check small
+     windows and tall videos too.
 2. **Settings is weaker than Workspace's settings.**
    - Moving the mouse over the Settings sidebar gives an odd highlight
      animation. The field's result list hover looks good: use the same hover

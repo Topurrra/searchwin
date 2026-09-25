@@ -29,7 +29,8 @@ public class FieldQueryTests
     [InlineData("-5+3", QueryKind.Calculation)]
     [InlineData("15% of 240", QueryKind.Calculation)]
     [InlineData("240 + 15%", QueryKind.Calculation)]
-    [InlineData("10/4", QueryKind.Calculation)]
+    [InlineData("10/4", QueryKind.Words)] // a bare pair: see Ambiguous_sums_stay_words
+    [InlineData("10 / 4", QueryKind.Calculation)]
     [InlineData("23*", QueryKind.Words)] // still being typed
     [InlineData("-5", QueryKind.Words)]
     [InlineData("2024-01-05", QueryKind.Words)] // a date
@@ -88,6 +89,66 @@ public class FieldQueryTests
         Assert.Equal(scope, query.Scope);
         Assert.Equal(kind, query.Kind);
         Assert.Equal(text, query.Text);
+    }
+
+    [Theory]
+    [InlineData("24/7")]
+    [InlineData("9/11")]
+    [InlineData("7-11")]
+    [InlineData("50/50")]
+    [InlineData("20-20")]
+    [InlineData("1/2")]
+    [InlineData("3.5/2")]
+    public void Ambiguous_sums_stay_words(string typed)
+    {
+        var query = Read(typed);
+        Assert.Equal(QueryKind.Words, query.Kind);
+        Assert.False(query.IsAnswer);
+        // The calculator may still read it, on the side.
+        Assert.Equal(typed, query.Sum);
+    }
+
+    [Theory]
+    [InlineData("24 / 7", "24 / 7")]
+    [InlineData("7 - 11", "7 - 11")]
+    [InlineData("24/7=", "24/7")]
+    [InlineData("7-11 =", "7-11")]
+    [InlineData("2+2", "2+2")]
+    [InlineData("6*7", "6*7")]
+    [InlineData("6×7", "6×7")]
+    [InlineData("10÷4", "10÷4")]
+    [InlineData("2^10", "2^10")]
+    [InlineData("50%", "50%")]
+    [InlineData("(10-2)/4", "(10-2)/4")]
+    [InlineData("15% of 240", "15% of 240")]
+    public void An_operator_nothing_else_uses_makes_a_sum(string typed, string text)
+    {
+        var query = Read(typed);
+        Assert.Equal(QueryKind.Calculation, query.Kind);
+        Assert.Equal(text, query.Text);
+        Assert.Null(query.Sum);
+    }
+
+    [Theory]
+    [InlineData("(555) 123-4567")]
+    [InlineData("555-1234")]
+    [InlineData("2024-01-05")]
+    [InlineData("12/31/2024")]
+    [InlineData("1-2-3")]
+    [InlineData("24/")]
+    public void Dates_numbers_and_half_typed_sums_are_neither(string typed)
+    {
+        var query = Read(typed);
+        Assert.False(query.IsAnswer);
+        Assert.Null(query.Sum);
+    }
+
+    [Fact]
+    public void An_address_is_never_a_sum()
+    {
+        var query = Read("192.168.1.1/24");
+        Assert.Equal(QueryKind.Address, query.Kind);
+        Assert.Null(query.Sum);
     }
 
     [Fact]

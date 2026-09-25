@@ -58,6 +58,10 @@ public sealed record FieldQuery(string Typed, QueryKind Kind, string Text, Scope
     public string? Mode { get; init; }
     public string? Operand { get; init; }
 
+    /// Words the calculator can also read (`24/7`, `7-11`): its answer is
+    /// offered below the rows Enter takes, never as what Enter copies.
+    public string? Sum { get; init; }
+
     /// An instant answer is wanted: the engine (or a hash or colour worked
     /// out here) answers, and Enter copies it.
     public bool IsAnswer => Kind is QueryKind.Calculation or QueryKind.Conversion or QueryKind.Color
@@ -89,8 +93,11 @@ public sealed record FieldQuery(string Typed, QueryKind Kind, string Text, Scope
             return new(typed, QueryKind.Bang, bang.Query) { Bang = bang.Bang };
 
         if (Scoped(typed, text) is { } scoped) return scoped;
-        if (Answer(typed, text) is { } answer) return answer;
+        var answer = Answer(typed, text);
+        if (answer is { IsAnswer: true }) return answer;
         if ((isAddress ?? LooksLikeAddress)(text)) return new(typed, QueryKind.Address, text);
+        // Words the calculator can also read (`24/7`).
+        if (answer != null) return answer;
         return new(typed, QueryKind.Words, text);
     }
 
@@ -296,22 +303,50 @@ public sealed record FieldQuery(string Typed, QueryKind Kind, string Text, Scope
         return trimmed.Length is > 0 and <= 16 && Units.Contains(trimmed.ToString());
     }
 
-    /// `23*47`, `(2+3)^2`, `15% of 240`, `240 + 15%`. The engine evaluates;
-    /// this only makes sure it's arithmetic, and not a date, a phone number
-    /// or an expression still being typed ("23*").
+    /// `23*47`, `(2+3)^2`, `15% of 240`, `240 + 15%`, `24 / 7`, `24/7=`. The
+    /// engine evaluates; this only makes sure it's arithmetic, and not a
+    /// date, a phone number or an expression still being typed ("23*").
+    ///
+    /// Only an operator nothing else uses makes it a sum: `*` `×` `÷` `^` `%`
+    /// `+`, "of", brackets around one, a `/` or `-` with spaces around it, or
+    /// `=` at the end. `24/7`, `9/11`, `7-11`, `50/50`, `1/2` are how people
+    /// write names, dates and scores, so they stay words; the calculator
+    /// still reads them (`Sum`), below the rows Enter takes.
     private static FieldQuery? Calculation(string typed, string text)
     {
+        // `24/7=`: the answer, asked for outright.
+        var asked = text[^1] == '=';
+        if (asked) text = text[..^1].TrimEnd();
+        if (text.Length == 0) return null;
         var operators = 0;
         var digits = 0;
         var words = false;
+        var plain = asked;
+        // Operators seen when each open bracket was.
+        var brackets = new Stack<int>();
         var i = 0;
         while (i < text.Length)
         {
             var c = text[i];
             if (char.IsAsciiDigit(c)) { digits++; i++; continue; }
-            if (c is '.' or ' ' or '(' or ')') { i++; continue; }
-            if (c is '+' or '*' or '/' or '×' or '÷' or '^' or '%') { operators++; i++; continue; }
-            if (c == '-') { if (i > 0) operators++; i++; continue; }
+            if (c is '.' or ' ') { i++; continue; }
+            if (c == '(') { brackets.Push(operators); i++; continue; }
+            if (c == ')')
+            {
+                // `(2+3)`, not `(555) 123-4567`.
+                if (brackets.TryPop(out var before) && operators > before) plain = true;
+                i++;
+                continue;
+            }
+            if (c is '+' or '*' or '×' or '÷' or '^' or '%') { operators++; plain = true; i++; continue; }
+            if (c is '/' or '-')
+            {
+                // A leading minus is the number's sign.
+                if (c == '/' || i > 0) operators++;
+                if (i > 0 && text[i - 1] == ' ' && i + 1 < text.Length && text[i + 1] == ' ') plain = true;
+                i++;
+                continue;
+            }
             if (!char.IsAsciiLetter(c)) return null;
             // The only words are the engine's percentages: "15% of 240",
             // "15 percent of 240", "240 plus 15%", "240 minus 15%".
@@ -323,14 +358,18 @@ public sealed record FieldQuery(string Typed, QueryKind Kind, string Text, Scope
                 return null;
             words = true;
             operators++;
+            plain = true;
             i = end;
         }
         if (digits == 0 || operators == 0) return null;
         if (words && !text.Contains('%') && !text.Contains("percent", StringComparison.OrdinalIgnoreCase)) return null;
         var last = text[^1];
         if (!char.IsAsciiDigit(last) && last != ')' && last != '%') return null;
-        if (LooksLikeDateOrNumber(text)) return null;
-        return new(typed, QueryKind.Calculation, text);
+        if (plain) return new(typed, QueryKind.Calculation, text);
+        // Only a bare pair is offered to the calculator on the side: not a
+        // date, a phone number, or `(555) 123-4567`.
+        if (operators != 1 || text.AsSpan().IndexOfAny(" ()") >= 0 || LooksLikeDateOrNumber(text)) return null;
+        return new(typed, QueryKind.Words, text) { Sum = text };
     }
 
     /// `2024-01-05`, `12/31/2024`, `555-1234`: digits joined by one kind of

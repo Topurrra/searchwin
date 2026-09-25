@@ -33,8 +33,9 @@ Drive the Search you already have open, from the shell.
                                            Go back, Continue anyway, Go to the real site, close the quiet line
                                            — --test runs only. `tabs`/`wait` show FishCatcher's verdict as "fish"
     ./bench.ps1 hit X Y                  what a press at X Y (points from the window's top left) lands on
-    ./bench.ps1 field TEXT [keys] [enter | pick N] [wait SECONDS]
-                                           type into the field (keys: one keystroke at a time, each timed),
+    ./bench.ps1 field TEXT [keys] [direct] [ctrlk] [enter | pick N] [wait SECONDS]
+                                           type into the field (keys: one keystroke at a time, each timed; direct: set from
+                                           the browser's side, as Ctrl+L does; ctrlk: the Ctrl+K switcher),
                                            the rows once the engine has answered, then Enter or row N pressed
                                            — --test runs only
     ./bench.ps1 clip [open | close | type TEXT | down | up | enter | go | secret TEXT]
@@ -45,7 +46,8 @@ Drive the Search you already have open, from the shell.
                                            — --test runs only
     ./bench.ps1 ui KEY VALUE               settings/passwords/welcome/history/downloads/bookmarks/hidden on|off,
                                            look light|dark|system, sidebar on|off, spaces on|off, hides on|off,
-                                           folded on|off, peek on|off
+                                           folded on|off, peek on|off; test runs: folders PATH;PATH|none,
+                                           contents on|off (Settings › Search)
 
 Needs Settings › General › "Let a script drive Search" switched on in the
 running app. IDs are the first characters of a tab's id, as `tabs` prints
@@ -168,7 +170,7 @@ switch ($verb) {
     }
     'ui' {
         if ($rest.Count -ne 2) { Usage 'ui KEY VALUE' }
-        $request[$rest[0]] = if ($rest[0] -eq 'look') { $rest[1] } else { On $rest[1] }
+        $request[$rest[0]] = if ($rest[0] -in @('look', 'folders')) { $rest[1] } else { On $rest[1] }
     }
     'press' {
         if ($rest.Count -lt 1) { Usage 'press VIRTUALKEY [ctrl] [shift] [alt] [repeat]' }
@@ -212,15 +214,17 @@ switch ($verb) {
         $request.x = Number $rest[0]; $request.y = Number $rest[1]
     }
     'field' {
-        if ($rest.Count -lt 1) { Usage 'field TEXT [keys] [enter | pick N] [wait SECONDS]' }
+        if ($rest.Count -lt 1) { Usage 'field TEXT [keys] [direct] [ctrlk] [enter | pick N] [wait SECONDS]' }
         $request.text = $rest[0]
         for ($i = 1; $i -lt $rest.Count; $i++) {
             switch ($rest[$i]) {
                 'keys' { $request.keys = $true }
+                'direct' { $request.direct = $true }
+                'ctrlk' { $request.ctrlk = $true }
                 'enter' { $request.enter = $true }
                 'pick' { $request.pick = Whole $rest[++$i] }
                 'wait' { $request.seconds = Number $rest[++$i] }
-                default { Usage 'field TEXT [keys] [enter | pick N] [wait SECONDS]' }
+                default { Usage 'field TEXT [keys] [direct] [ctrlk] [enter | pick N] [wait SECONDS]' }
             }
         }
     }

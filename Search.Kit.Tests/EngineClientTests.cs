@@ -130,6 +130,86 @@ public class EngineClientTests
     }
 
     [Fact]
+    public async Task Keystrokes_that_give_up_waiting_share_one_start()
+    {
+        // Fast typing on a cold engine: each keystroke asks, then cancels
+        // when the next arrives. The engine is started once, and the start
+        // goes on without them.
+        var pipe = NewPipe();
+        var starts = 0;
+        var started = new TaskCompletionSource();
+        Task? engine = null;
+        await using var client = new EngineClient(pipe, _ =>
+        {
+            // The process starts at once; its pipe comes up a while later.
+            Interlocked.Increment(ref starts);
+            engine = Task.Run(async () =>
+            {
+                await started.Task;
+                await FakeEngine(pipe, _ => new JsonObject { ["result"] = "up" }, calls: 1);
+            });
+            return Task.CompletedTask;
+        });
+        for (var key = 0; key < 5; key++)
+        {
+            using var typing = new CancellationTokenSource();
+            var call = client.CallAsync("engine.hello", cancel: typing.Token);
+            // Past the first look for a running engine, into the start.
+            await Task.Delay(350);
+            typing.Cancel();
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => call);
+        }
+        started.SetResult();
+        Assert.Equal("up", (await client.CallAsync("engine.hello"))!.GetValue<string>());
+        Assert.Equal(1, starts);
+        await engine!;
+    }
+
+    [Fact]
+    public async Task A_start_that_fails_is_tried_again_by_the_next_call()
+    {
+        var pipe = NewPipe();
+        var starts = 0;
+        Task? engine = null;
+        await using var client = new EngineClient(pipe, _ =>
+        {
+            if (Interlocked.Increment(ref starts) == 1) throw new EngineException("not yet");
+            engine = FakeEngine(pipe, _ => new JsonObject { ["result"] = "up" }, calls: 1);
+            return Task.CompletedTask;
+        });
+        await Assert.ThrowsAsync<EngineException>(() => client.CallAsync("engine.hello"));
+        Assert.Equal("up", (await client.CallAsync("engine.hello"))!.GetValue<string>());
+        Assert.Equal(2, starts);
+        await engine!;
+    }
+
+    [Fact]
+    public async Task The_start_runs_off_the_callers_thread()
+    {
+        // Starting a process blocks for a while; the UI thread that asked
+        // must not be the one that waits.
+        var pipe = NewPipe();
+        bool? onPool = null;
+        Task? engine = null;
+        await using var client = new EngineClient(pipe, _ =>
+        {
+            onPool = Thread.CurrentThread.IsThreadPoolThread;
+            Thread.Sleep(300);
+            engine = FakeEngine(pipe, _ => new JsonObject { ["result"] = "up" }, calls: 1);
+            return Task.CompletedTask;
+        });
+        Task<JsonNode?>? call = null;
+        var asked = System.Diagnostics.Stopwatch.StartNew();
+        var ui = new Thread(() => call = client.CallAsync("engine.hello"));
+        ui.Start();
+        ui.Join();
+        Assert.True(asked.ElapsedMilliseconds < 200, $"the asking thread waited {asked.ElapsedMilliseconds} ms");
+        Assert.Equal("up", (await call!)!.GetValue<string>());
+        Assert.True(onPool);
+        await engine!;
+    }
+
+    [Fact]
     public async Task A_crash_fails_the_waiting_call_and_the_next_call_starts_it_again()
     {
         var pipe = NewPipe();

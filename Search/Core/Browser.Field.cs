@@ -31,22 +31,26 @@ public sealed partial class Browser
         // Files only from folders chosen in Settings › Search, and only while
         // they still are: an index that hasn't caught up with a folder taken
         // away never shows it.
-        bool files(FieldQuery _) => Engine.Available && Prefs.SearchFolders.Count > 0;
+        bool files(FieldQuery _) => Prefs.SearchFolders.Count > 0;
         bool chosen(FieldRow row) => IndexPlan.Covers(Prefs.SearchFolders, row.Target);
-        var model = new FieldModel(
-            local: [],
-            engine:
+        // Hashes and colours are worked out here; sums, units and encodings
+        // need the engine.
+        List<IEngineSource> sources = [new GatedSource(new AnswerSource(calls), q => Engine.Available || Answers.Plan(q) == null)];
+        // No engine beside Search: nothing is ever asked of one, so no
+        // keystroke pays for looking.
+        if (Engine.Available)
+            sources.InsertRange(0,
             [
                 new GatedSource(new FileNameSource(calls), files, chosen),
                 new GatedSource(new FileContentSource(calls), q => files(q) && Prefs.FileContents, chosen),
-                new GatedSource(new AppSource(calls), _ => Engine.Available && Prefs.AppsInField),
+                new GatedSource(new AppSource(calls), _ => Prefs.AppsInField),
                 // `clip:` and `clipboard` list it; words find a couple of
                 // matches among the rest. Secrets only ever by their kind.
                 new GatedSource(new ClipboardSource(calls, inField: true), _ => ClipHistory.On),
-                // Hashes and colours are worked out here; sums, units and
-                // encodings need the engine.
-                new GatedSource(new AnswerSource(calls), q => Engine.Available || Answers.Plan(q) == null),
-            ],
+            ]);
+        var model = new FieldModel(
+            local: [],
+            engine: sources,
             new FieldOptions
             {
                 Bangs = Commands.Bangs,
@@ -92,20 +96,33 @@ public sealed partial class Browser
     private static Suggestion Found(FieldRow row) =>
         new(row.Title, row.Detail, Suggestion.Nowhere, SuggestionKind.Found) { Row = row };
 
-    /// The board keeps a picked engine row where it is.
+    /// The board keeps a picked row where it is: its own, or one of ours
+    /// below its top hit.
     private void HoldPick()
     {
         if (field == null) return;
-        field.Board.Pick(Picked is { } p && p < slots.Count && !slots[p].IsLocal ? slots[p].Board : null);
+        field.Board.Pick(OnBoard(Picked));
     }
 
-    /// The pointer over a row (null: off the list). An engine row under it
-    /// stays put while late rows land.
+    /// The pointer over a row (null: off it). The row under it stays put
+    /// while late rows land, the browser's own rows included.
     public void Hover(int? index)
     {
         if (field == null) return;
-        field.Board.Hold(index is { } i && i < slots.Count && !slots[i].IsLocal ? slots[i].Board : null);
+        field.Board.Hold(OnBoard(index));
     }
+
+    /// The pointer over the list or off it: while it's over, a reserved top
+    /// hit that never comes stays as an empty row rather than pulling every
+    /// row below it up under the pointer.
+    public void OverList(bool over)
+    {
+        if (field == null) return;
+        field.Board.PointerOver = over;
+    }
+
+    private int? OnBoard(int? index) =>
+        index is { } i && i >= 0 && i < slots.Count ? slots[i].IsLocal ? FieldBoard.Beside : slots[i].Board : null;
 
     /// Enter with nothing picked belongs to the engine for an answer
     /// (`23*47`) and for a scope (`files: invoice`), whose first row is what
@@ -177,6 +194,9 @@ public sealed partial class Browser
             case RowAction.OpenWithApp:
                 Send("open_search_result_path", new JsonObject { ["path"] = row.Target }, "Couldn't open that");
                 break;
+            case RowAction.Reveal:
+                Reveal(row.Target);
+                break;
             case RowAction.Launch:
                 Send("launch_cached_target", new JsonObject { ["path"] = row.Target }, "Couldn't start that");
                 Announce($"Opening {row.Title}");
@@ -210,6 +230,34 @@ public sealed partial class Browser
         var url = new Uri(path);
         if (Active is { IsBlank: true } blank && Floating != blank.Id) Go(blank, url);
         else Open(url, foreground: true);
+    }
+
+    /// A program or a script: shown in its folder, selected, never run. What
+    /// to do with it is Explorer's question, asked by the person.
+    private void Reveal(string path)
+    {
+        if (!File.Exists(path))
+        {
+            Announce("That file isn't there any more");
+            return;
+        }
+        Announce("Shown in its folder");
+        _ = Task.Run(() =>
+        {
+            try
+            {
+                var explorer = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "explorer.exe");
+                using var _ = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(explorer)
+                {
+                    Arguments = $"/select,\"{path}\"",
+                    UseShellExecute = false,
+                });
+            }
+            catch (Exception error) when (error is System.ComponentModel.Win32Exception or InvalidOperationException)
+            {
+                Log.Write($"field: reveal: {error.Message}");
+            }
+        });
     }
 
     /// An engine call nothing waits on; if it fails, the line says `trouble`.

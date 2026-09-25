@@ -42,6 +42,39 @@ public class AnswerTests
     }
 
     [Fact]
+    public void An_ambiguous_sum_is_answered_on_the_side()
+    {
+        // `24/7` is words: the calculator is still asked, but its answer is
+        // an ordinary row, never the top hit that Enter would copy.
+        var query = FieldQuery.Read("24/7");
+        var ask = Answers.Plan(query)!;
+        Assert.Equal("""{"query":"24/7","webSearchEnabled":false}""", ask.Args.ToJsonString());
+        Assert.True(new AnswerSource(new FakeEngine()).Wants(query));
+        Assert.Null(FieldLayout.Reserve(query, [Group.Answer]));
+        var row = Assert.Single(Answers.Shape(query,
+            FakeEngine.Json("""{"type":"calculator","expression":"24/7","result":"3.428571"}""")));
+        Assert.Equal(Group.Answer, row.Group);
+    }
+
+    [Fact]
+    public async Task Enter_on_an_ambiguous_sum_takes_nothing_from_the_board()
+    {
+        var engine = new FakeEngine
+        {
+            Answer = (_, _, _) => Task.FromResult(FakeEngine.Json("""{"type":"calculator","expression":"24/7","result":"3.428571"}""")),
+        };
+        using var model = new FieldModel([], [new AnswerSource(engine)]);
+        model.Type("24/7");
+        await model.WhenSettled.WaitAsync(TimeSpan.FromSeconds(5));
+        var row = Assert.Single(model.Board.Rows);
+        Assert.Equal(Group.Answer, row.Group);
+        // Nothing to take: the browser searches for the words.
+        Assert.Null(await model.EnterAsync(TimeSpan.FromMilliseconds(50)));
+        // The browser's own rows (the search for "24/7") stay first.
+        Assert.True(FieldMix.Compose(1, model.Board.Rows)[0].IsLocal);
+    }
+
+    [Fact]
     public void System_commands_addresses_and_bangs_never_come_back_as_answers()
     {
         var query = FieldQuery.Read("23*47");

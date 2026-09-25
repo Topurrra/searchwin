@@ -22,37 +22,87 @@ public static class IndexPlan
         "windows/softwaredistribution/download", "windows/temp", "windows/winsxs/temp",
     ];
 
+    /// Never indexed, whatever folder is chosen, even when it's one of them:
+    /// keys, tokens and saved sign-ins, and browsers' profiles, this one's
+    /// own included (every world's).
+    public static readonly IReadOnlyList<string> Secrets =
+    [
+        ".ssh", ".aws", ".gnupg", ".azure", ".kube", ".docker", ".password-store", ".config/gcloud",
+        "appdata/roaming/microsoft/credentials", "appdata/local/microsoft/credentials",
+        "appdata/roaming/microsoft/protect", "appdata/roaming/microsoft/crypto",
+        "appdata/roaming/microsoft/systemcertificates", "appdata/local/microsoft/vault",
+        "appdata/local/google/chrome/user data", "appdata/local/microsoft/edge/user data",
+        "appdata/local/bravesoftware/brave-browser/user data", "appdata/local/vivaldi/user data",
+        "appdata/roaming/opera software", "appdata/roaming/mozilla/firefox/profiles",
+        "appdata/local/search", "appdata/local/search (*",
+    ];
+
     /// `save_file_search_index_options {options}` for these folders. The
     /// same folders feed both indexes; the watcher keeps them current.
-    public static JsonObject Options(IReadOnlyList<string> folders, bool contents)
+    /// `own` is the browser's own data folder, never indexed.
+    public static JsonObject Options(IReadOnlyList<string> folders, bool contents, string? own = null)
     {
         JsonArray Folders() => [.. folders.Select(f => (JsonNode)f)];
+        var roots = Roots(folders);
+        var excludes = Excludes(folders, own);
+        // The engine skips anything with a folder whose name starts with a
+        // dot anywhere in its path, the chosen folder's own parents too. A
+        // folder chosen inside one needs that off, and then every folder's
+        // dot-folders are skipped by name instead: below each chosen folder,
+        // not above it.
+        var hidden = roots.Any(r => r.Split('/').Any(p => p.StartsWith('.')));
+        if (hidden)
+            foreach (var root in roots) excludes.AddRange([root + "/.*", root + "/*/."]);
         return new JsonObject
         {
             ["roots"] = Folders(),
             ["filenameRoots"] = Folders(),
-            // The engine skips anything under a folder whose name starts with
-            // a dot; a folder chosen inside one is still wanted.
-            ["includeHidden"] = folders.Any(f => Parts(f).Any(p => p.StartsWith('.'))),
+            ["includeHidden"] = hidden,
             ["indexContent"] = contents,
             ["contentIndexingEnabled"] = contents,
             ["maxContentKb"] = null,
             ["commitEvery"] = null,
             ["watcherEnabled"] = true,
-            ["excludeFolders"] = new JsonArray([.. Excludes(folders).Select(e => (JsonNode)e)]),
+            ["excludeFolders"] = new JsonArray([.. excludes.Select(e => (JsonNode)e)]),
         };
     }
 
-    /// The default exclusions, less the ones a chosen folder sits inside: the
-    /// engine tests every folder of a path, the chosen one's own parents too,
-    /// so a folder picked under Temp or a `build` folder would come back
-    /// empty. Below the chosen folders the rest still apply.
-    public static List<string> Excludes(IReadOnlyList<string> folders)
+    /// The exclusions, per chosen folder. The engine tests every folder of a
+    /// path, the chosen one's own parents too, so a folder picked under Temp
+    /// or a `build` folder would come back empty. Such an exclusion is
+    /// narrowed to below each chosen folder (not dropped: a `build` inside
+    /// another chosen folder is still skipped). The secrets and `own` always
+    /// apply, even to a folder chosen inside them.
+    public static List<string> Excludes(IReadOnlyList<string> folders, string? own = null)
     {
-        var paths = folders.Select(Normal).Where(p => p.Length > 0).ToList();
-        var names = new HashSet<string>(paths.SelectMany(p => p.Split('/')), StringComparer.Ordinal);
-        return [.. DefaultExcludes.Where(e => IsPathLike(e) ? !paths.Any(p => Matches(p, e)) : !names.Contains(e))];
+        var roots = Roots(folders);
+        var list = new List<string>();
+        foreach (var exclusion in DefaultExcludes)
+        {
+            if (!roots.Any(r => Within(r, exclusion)))
+            {
+                list.Add(exclusion);
+                continue;
+            }
+            foreach (var root in roots)
+            {
+                // Right below the folder, and anywhere deeper. (A trailing
+                // `/` would be trimmed by the engine, hence the `*`.)
+                list.Add(exclusion.Contains('*') ? $"{root}/{exclusion}/*" : $"{root}/{exclusion}");
+                list.Add($"{root}/*/{exclusion}/*");
+            }
+        }
+        list.AddRange(Secrets);
+        if (own != null && Normal(own) is { Length: > 0 } mine) list.Add(mine);
+        return [.. list.Distinct(StringComparer.Ordinal)];
     }
+
+    private static List<string> Roots(IReadOnlyList<string> folders) =>
+        [.. folders.Select(Normal).Where(p => p.Length > 0).Distinct(StringComparer.Ordinal)];
+
+    /// Whether the chosen folder itself, or a parent of it, is excluded.
+    private static bool Within(string root, string exclusion) =>
+        IsPathLike(exclusion) ? Matches(root, exclusion) : root.Split('/').Contains(exclusion, StringComparer.Ordinal);
 
     /// Whether `path` is inside one of `folders`, so a result left in the
     /// index from a folder since removed is never shown.
@@ -70,9 +120,6 @@ public static class IndexPlan
 
     private static string Normal(string path) =>
         path.Trim().Replace('\\', '/').TrimEnd('/').ToLowerInvariant();
-
-    private static IEnumerable<string> Parts(string path) =>
-        path.Replace('\\', '/').Split('/', StringSplitOptions.RemoveEmptyEntries);
 
     private static bool IsPathLike(string exclusion) =>
         exclusion.Contains('/') || exclusion.Contains(':') || exclusion.Contains('*');

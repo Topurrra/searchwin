@@ -26,6 +26,8 @@ public static class Answers
         // must never come back as somebody else's search.
         QueryKind.Calculation or QueryKind.Conversion =>
             new("evaluate_quick_query", new JsonObject { ["query"] = query.Text, ["webSearchEnabled"] = false }),
+        QueryKind.Words when query.Sum != null =>
+            new("evaluate_quick_query", new JsonObject { ["query"] = query.Sum, ["webSearchEnabled"] = false }),
         QueryKind.Encode when query.Tool != null && query.Operand != null =>
             new("encode_decode", new JsonObject { ["algorithm"] = query.Tool, ["mode"] = query.Mode ?? "encode", ["input"] = query.Operand }),
         QueryKind.Format when query.Tool != null && query.Mode != null && query.Operand != null =>
@@ -42,6 +44,7 @@ public static class Answers
         switch (query.Kind)
         {
             case QueryKind.Calculation or QueryKind.Conversion:
+            case QueryKind.Words when query.Sum != null:
                 var type = Nodes.Str(answer, "type");
                 var result = Nodes.Str(answer, "result");
                 if (result.Length == 0) return [];
@@ -225,7 +228,9 @@ public sealed class AnswerSource(IEngineCalls engine) : IEngineSource
 {
     public Group Group => Group.Answer;
 
-    public bool Wants(FieldQuery query) => query.IsAnswer && query.Scope == Scope.All;
+    /// Answers, and words the calculator can also read (`24/7`), which
+    /// reserve nothing: their answer is only another row.
+    public bool Wants(FieldQuery query) => (query.IsAnswer || query.Sum != null) && query.Scope == Scope.All;
 
     public TimeSpan Delay(FieldQuery query) => TimeSpan.Zero;
 

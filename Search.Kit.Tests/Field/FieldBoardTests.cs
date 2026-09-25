@@ -173,15 +173,77 @@ public class FieldBoardTests
     }
 
     [Fact]
-    public void A_reserved_top_hit_that_never_comes_goes_away_and_the_pick_stays()
+    public void A_reserved_top_hit_that_never_comes_goes_away()
+    {
+        var board = Board(FieldRow.Placeholder(Group.Answer), Rows.Page(Group.History, "a.com"), Rows.Search("5 km to zz"));
+        Assert.True(board.Settle(1, Group.Answer));
+        Assert.Equal(["url:a.com", RowKey.WebSearch("5 km to zz")], board.Keys());
+        Assert.False(board.Waiting);
+        Assert.Null(board.EnterRow);
+        Assert.Equal(RowKey.WebSearch("5 km to zz"), board.Fallback!.Key);
+    }
+
+    [Fact]
+    public void Under_a_pick_it_stays_as_a_spacer_and_nothing_moves()
     {
         var board = Board(FieldRow.Placeholder(Group.Answer), Rows.Page(Group.History, "a.com"), Rows.Search("5 km to zz"));
         board.Walk(1);
         Assert.Equal("url:a.com", board.EnterRow!.Key);
-        Assert.True(board.Settle(1, Group.Answer));
-        Assert.Equal(["url:a.com", RowKey.WebSearch("5 km to zz")], board.Keys());
+        Assert.False(board.Settle(1, Group.Answer));
+        Assert.Equal([FieldRow.Placeholder(Group.Answer).Key, "url:a.com", RowKey.WebSearch("5 km to zz")], board.Keys());
+        Assert.Equal(1, board.Picked);
         Assert.Equal("url:a.com", board.EnterRow!.Key);
         Assert.Equal(RowKey.WebSearch("5 km to zz"), board.Fallback!.Key);
+        // The next question starts clean.
+        board.Reset(2, [FieldRow.Placeholder(Group.Answer), Rows.Search("5 km to zzz")], null);
+        Assert.True(board.Settle(2, Group.Answer));
+    }
+
+    [Theory]
+    [InlineData("hold board row")]
+    [InlineData("hold beside")]
+    [InlineData("pick beside")]
+    [InlineData("pointer over")]
+    public void Under_the_pointer_or_a_pick_of_the_browsers_own_rows_it_stays_too(string how)
+    {
+        // The browser's own rows are drawn below the board's top hit (see
+        // FieldMix): they move up if it goes away.
+        var board = Board(FieldRow.Placeholder(Group.Answer), Rows.File("a.txt"));
+        switch (how)
+        {
+            case "hold board row": board.Hold(1); break;
+            case "hold beside": board.Hold(FieldBoard.Beside); break;
+            case "pick beside": board.Pick(FieldBoard.Beside); break;
+            case "pointer over": board.PointerOver = true; break;
+        }
+        var before = FieldMix.Compose(3, board.Rows);
+        Assert.False(board.Settle(1, Group.Answer));
+        Assert.Equal(before, FieldMix.Compose(3, board.Rows));
+        // Waiting is over, though: Enter doesn't wait for what won't come.
+        Assert.False(board.Waiting);
+        Assert.Null(board.EnterRow);
+    }
+
+    [Fact]
+    public void The_pointer_over_the_list_outlasts_a_new_question_a_hold_does_not()
+    {
+        var board = Board(FieldRow.Placeholder(Group.Answer), Rows.File("a.txt"));
+        board.Hold(FieldBoard.Beside);
+        board.Pick(FieldBoard.Beside);
+        board.PointerOver = true;
+        board.Reset(2, [FieldRow.Placeholder(Group.Answer), Rows.File("a.txt")], null);
+        Assert.True(board.PointerOver);
+        Assert.False(board.Settle(2, Group.Answer));
+
+        board.PointerOver = false;
+        board.Reset(3, [FieldRow.Placeholder(Group.Answer), Rows.File("a.txt")], null);
+        Assert.True(board.Settle(3, Group.Answer));
+
+        // Letting go of the browser's row lets the slot go.
+        board.Reset(4, [FieldRow.Placeholder(Group.Answer), Rows.File("a.txt")], null);
+        board.Hold(FieldBoard.Beside);
+        board.Hold(null);
+        Assert.True(board.Settle(4, Group.Answer));
     }
 
     [Fact]

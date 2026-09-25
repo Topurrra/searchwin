@@ -8,21 +8,23 @@ namespace SearchKit.Shields;
 /// page asked for, a navigation included; there are no Sec-Fetch headers
 /// and no Origin; there is the Accept the page's own request had, the
 /// Upgrade-Insecure-Requests a navigation sends, and a Referer naming the
-/// page. So those are what say what the request is, and for whom.
+/// page. The Accept says what kind of thing was asked for; whether it's a
+/// navigation is only ever what the engine says, or the address a tab is
+/// waiting for (AwaitedNavigations).
 public static class WorkerRequest
 {
     /// A navigation the worker fetches for a page (a PWA's
     /// `fetch(event.request)`): the page itself, which Shields never
     /// refuses — a page you asked for is a page you get, served by its
-    /// worker or not. `document` is WebView2's Document context; the
-    /// Sec-Fetch headers say so where the engine shows them; otherwise a
-    /// navigation's Accept (HTML first) and its Upgrade-Insecure-Requests.
-    public static bool IsNavigation(bool document, string? fetchMode, string? fetchDest, string? accept = null, string? upgradeInsecure = null) =>
+    /// worker or not. Only what the engine says (Document context, the
+    /// Sec-Fetch headers where it shows them) or the address a tab is
+    /// waiting for counts: the headers a page can set on any fetch (an HTML
+    /// Accept, Upgrade-Insecure-Requests) would let every request through.
+    public static bool IsNavigation(bool document, string? fetchMode, string? fetchDest, Uri? url = null, AwaitedNavigations? awaited = null) =>
         document
         || Is(fetchMode, "navigate")
         || Is(fetchDest, "document")
-        || Is(upgradeInsecure, "1")
-        || (accept ?? "").TrimStart().StartsWith("text/html", StringComparison.OrdinalIgnoreCase);
+        || (url != null && awaited != null && awaited.IsAwaited(url));
 
     /// What the page asked for, when the context only says "a worker's
     /// fetch": an image's or a stylesheet's Accept gives it away, so

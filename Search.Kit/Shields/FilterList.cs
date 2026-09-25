@@ -455,7 +455,10 @@ public sealed class FilterList
         return false;
     }
 
-    private const int FormatVersion = 4;
+    // Raised whenever compiling a rule changes, so a list saved by an older
+    // build is compiled again rather than kept with its old meaning (5: a
+    // `||name.` rule is a host prefix, not a dead name).
+    private const int FormatVersion = 5;
 
     /// The compact binary form: every compiled rule, with no re-parsing of
     /// list text needed to use it again — `Load` rebuilds the same indices

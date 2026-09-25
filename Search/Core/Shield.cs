@@ -256,9 +256,9 @@ public sealed partial class Shield : Model
         }
         catch { return; }
         var accept = Header(headers, "Accept");
-        if (WorkerRequest.IsNavigation(context == CoreWebView2WebResourceContext.Document,
-                Header(headers, "Sec-Fetch-Mode"), Header(headers, "Sec-Fetch-Dest"), accept, Header(headers, "Upgrade-Insecure-Requests"))) return;
         if (!raw.StartsWith("http", StringComparison.OrdinalIgnoreCase) || !Uri.TryCreate(raw, UriKind.Absolute, out var url)) return;
+        if (WorkerRequest.IsNavigation(context == CoreWebView2WebResourceContext.Document,
+                Header(headers, "Sec-Fetch-Mode"), Header(headers, "Sec-Fetch-Dest"), url, Awaited)) return;
         var page = WorkerRequest.Page(Header(headers, "Origin"), Header(headers, "Referer"));
         if (page != null && (Own(page) || IsPaused(Curtain.Host(page)))) return;
         bool refused;
@@ -267,6 +267,10 @@ public sealed partial class Shield : Model
         if (!refused || sender is not CoreWebView2 core) return;
         e.Response = core.Environment.CreateWebResourceResponse(null, 403, "Blocked", "");
     }
+
+    /// The pages tabs have just started for: a worker fetching one of these
+    /// is fetching the page itself (see SearchKit.Shields.AwaitedNavigations).
+    internal static readonly AwaitedNavigations Awaited = new();
 
     private static bool FromWorker(CoreWebView2WebResourceRequestedEventArgs e)
     {
@@ -562,6 +566,7 @@ public sealed partial class Shield : Model
             }
 
             top = url;
+            Awaited.Expect(url);
             site = Curtain.Host(url);
             pageHost = Address.Host(url);
             own = Own(url);

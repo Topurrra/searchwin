@@ -368,6 +368,20 @@ test('captureSender keeps working after chrome.webview.postMessage is reassigned
   assert.deepEqual(sent, [{ name: 'x' }]);
 });
 
+test('captureSender keeps working after the page replaces Function.prototype.call', () => {
+  const sent = [];
+  const win = { chrome: { webview: { postMessage(m) { sent.push([this === win.chrome.webview, m]); } } } };
+  const sender = probe.captureSender(win);
+  const call = Function.prototype.call;
+  Function.prototype.call = function () { throw new Error('muted'); };
+  try {
+    sender({ name: 'x' });
+  } finally {
+    Function.prototype.call = call;
+  }
+  assert.deepEqual(sent, [[true, { name: 'x' }]]);
+});
+
 test('captureSender returns null when there is no bridge, and never throws', () => {
   assert.equal(probe.captureSender(null), null);
   assert.equal(probe.captureSender({}), null);

@@ -17,19 +17,51 @@ public class WorkerRequestTests
 
     // What WebView2 153 really sends for a service worker's fetches (seen in
     // a test world): XmlHttpRequest context every time, no Sec-Fetch, no
-    // Origin — the navigation told apart by its Accept and its
-    // Upgrade-Insecure-Requests.
-    private const string NavigationAccept = "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7";
+    // Origin. So a navigation is told apart only by being the address a tab
+    // is waiting for.
     private const string ImageAccept = "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8";
 
     [Fact]
-    public void A_navigation_a_worker_fetches_is_told_apart_by_what_webview2_really_sends()
+    public void A_navigation_a_worker_fetches_is_the_address_a_tab_is_waiting_for()
     {
-        Assert.True(WorkerRequest.IsNavigation(false, null, null, NavigationAccept, "1"));
-        Assert.True(WorkerRequest.IsNavigation(false, null, null, NavigationAccept, null));
-        Assert.True(WorkerRequest.IsNavigation(false, null, null, null, "1"));
-        Assert.False(WorkerRequest.IsNavigation(false, null, null, ImageAccept, null));
-        Assert.False(WorkerRequest.IsNavigation(false, null, null, "*/*", null));
+        var awaited = new AwaitedNavigations();
+        var page = new Uri("https://www.site.example/2026/9/article");
+        Assert.False(WorkerRequest.IsNavigation(false, null, null, page, awaited));
+        awaited.Expect(new Uri("https://WWW.site.example/2026/9/article#top"));
+        Assert.True(WorkerRequest.IsNavigation(false, null, null, page, awaited));
+        Assert.False(WorkerRequest.IsNavigation(false, null, null, new Uri("https://www.site.example/2026/9/other"), awaited));
+    }
+
+    // A page can put an HTML Accept and Upgrade-Insecure-Requests on any
+    // fetch it makes (Accept is even CORS-safelisted): those headers must
+    // never be what spares a tracker's request.
+    [Fact]
+    public void Headers_a_page_can_set_do_not_make_a_navigation()
+    {
+        var awaited = new AwaitedNavigations();
+        awaited.Expect(new Uri("https://www.site.example/"));
+        Assert.False(WorkerRequest.IsNavigation(false, null, null, new Uri("https://tracker.example/px"), awaited));
+    }
+
+    [Fact]
+    public void A_page_is_awaited_for_a_while_not_for_ever()
+    {
+        var awaited = new AwaitedNavigations(keep: TimeSpan.FromSeconds(30));
+        var at = new DateTime(2026, 9, 25, 12, 0, 0, DateTimeKind.Utc);
+        var page = new Uri("https://site.example/a");
+        awaited.Expect(page, at);
+        Assert.True(awaited.IsAwaited(page, at.AddSeconds(29)));
+        Assert.False(awaited.IsAwaited(page, at.AddSeconds(31)));
+    }
+
+    [Fact]
+    public void Only_so_many_pages_are_remembered()
+    {
+        var awaited = new AwaitedNavigations(capacity: 3);
+        var at = new DateTime(2026, 9, 25, 12, 0, 0, DateTimeKind.Utc);
+        for (var i = 0; i < 5; i++) awaited.Expect(new Uri($"https://site.example/{i}"), at.AddSeconds(i));
+        Assert.False(awaited.IsAwaited(new Uri("https://site.example/0"), at.AddSeconds(5)));
+        Assert.True(awaited.IsAwaited(new Uri("https://site.example/4"), at.AddSeconds(5)));
     }
 
     [Theory]
@@ -67,7 +99,9 @@ public class WorkerRequestTests
         var list = FilterList.Compile(["-banner-ads-", "/adverts/*"]);
         var url = new Uri(address);
         Assert.True(list.ShouldBlock(url, null, ResourceKind.XmlHttpRequest));
-        Assert.True(WorkerRequest.IsNavigation(false, null, null, NavigationAccept, "1"));
+        var awaited = new AwaitedNavigations();
+        awaited.Expect(url);
+        Assert.True(WorkerRequest.IsNavigation(false, null, null, url, awaited));
     }
 
     [Theory]

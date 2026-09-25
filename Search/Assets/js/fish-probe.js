@@ -330,7 +330,10 @@
       var bridge = win && win.chrome && win.chrome.webview;
       var send = bridge && bridge.postMessage;
       if (typeof send !== 'function') return null;
-      return function (message) { send.call(bridge, message); };
+      // Bound now with the original bind: calling it later mustn't reach for
+      // Function.prototype.call, which a page can replace.
+      var bound = BIND.call(send, bridge);
+      return function (message) { bound(message); };
     } catch (e) { /* never throw into the page */ }
     return null;
   }
@@ -369,6 +372,12 @@
   // there); the text is read once the page has loaded and settled, when the
   // browser is idle (or a few seconds after it was parsed, for a page that
   // never finishes loading), and on that first focus.
+  // The built-ins the probe leans on after the page's own scripts have run,
+  // taken while it still has them: a page can overwrite any of these on
+  // the page's globals to mute the probe.
+  var BIND = Function.prototype.bind;
+  var STRINGIFY = JSON.stringify;
+
   var SETTLE_MS = 1200;
   var STUCK_MS = 5000;
   var IDLE_MS = 1000;
@@ -394,19 +403,23 @@
       try {
         var facts = collect(doc, win, readText);
         if (!facts) return;
-        var text = JSON.stringify(facts);
+        var text = STRINGIFY(facts);
         if (text === said) return;
         said = text;
         post(win, facts, sender);
       } catch (e) { /* never throw into the page */ }
     }
 
+    // The timers too, taken now: a page replacing setTimeout or
+    // requestIdleCallback later can't stop the settled look.
+    var timer = typeof win.setTimeout === 'function' ? BIND.call(win.setTimeout, win) : null;
+    var idle = typeof win.requestIdleCallback === 'function' ? BIND.call(win.requestIdleCallback, win) : null;
     function later(fn, ms) {
-      if (typeof win.setTimeout === 'function') win.setTimeout(fn, ms);
+      if (timer) timer(fn, ms);
       else setTimeout(fn, ms);
     }
     function whenIdle() {
-      if (typeof win.requestIdleCallback === 'function') win.requestIdleCallback(function () { look(true); }, { timeout: IDLE_MS });
+      if (idle) idle(function () { look(true); }, { timeout: IDLE_MS });
       else look(true);
     }
     // The text look, once: after load has settled, or when load is stuck.

@@ -397,3 +397,18 @@ the fix lives. *(uncertain)* marks things that weren't proven.
 - **Unit tests caught the forgery immediately:** a test feeding `FromProbe` a page with 20 forged fields (gsbThreat 'Your PC is infected. Call 1-888...', youngDomainDays, form actions like 'call support now') showed every forged value was dropped. The resulting `Reasons` contained only fixed sentences from `Messages.cs`.
 - **Fuzz testing for the index:** 60,000 random requests against a brute-force pass over every parsed rule (with mixed separators, `*`, `^`, `|`, options like `$third-party/$1p`, exceptions, trailing-dot hosts) gave 0 mismatches. The real lists showed 0 mismatches too.
 - **End-to-end verification without hand-testing:** test worlds with `SEARCH_HOST_RULES` (--host-resolver-rules pointing lookalike domains at a local server) and `SEARCH_PROBE=worldname` let us verify the full path: a page posting forged facts got the expected low verdict; a real phishing-like form got Critical or High; the probe's budget worked; etc.
+### Phase 1, round 2 (2026-09-25)
+- **Count every failing shape before calling a matcher gap fixed.** Reviving
+  17 odd `||` rules hid 125 more (names ending in a dot). Grep the real lists for everything that fails the parse gate.
+- **Never exempt a request because of headers a page can set** (Accept is
+  CORS-safelisted). Say "navigation" only when the engine does, or when the
+  URL is the one a tab is loading.
+- **A value captured at document start is only safe if it's called safely:**
+  `send.call(...)` reaches for `Function.prototype.call` again. Bind once with
+  the original `bind`, and capture every built-in you use later.
+- **`\b` fails on real class names** (`cookie_notice`, `cookieBanner`):
+  underscores and letters are both word characters. When a structural check
+  already bounds false positives, a plain substring match is right.
+- **Agents mirroring docs one way can overwrite each other's docs.** The notes
+  agent's vault → repo `/MIR` reverted the integration agents' committed
+  `docs/brain`; recovered with `git checkout -- docs/brain`. Sync from the newer side only.

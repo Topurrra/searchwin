@@ -313,8 +313,10 @@ public sealed class NetworkRule
         return (domain, AbpPattern.Parse(rest[end..], forceStartAnchor: true), false);
     }
 
+    // A name ending in a dot ("google.*" once its * is cut, "142.91.159.")
+    // is a prefix of names, not a name: it takes the host-anchored path.
     private static bool IsPlausibleDomain(string domain) =>
-        domain.Contains('.') && !domain.Contains("..") &&
+        domain.Contains('.') && !domain.Contains("..") && !domain.EndsWith('.') &&
         domain.All(c => char.IsAsciiLetterOrDigit(c) || c is '.' or '-');
 
     internal void WriteTo(BinaryWriter w)

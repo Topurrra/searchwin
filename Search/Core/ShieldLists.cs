@@ -93,6 +93,9 @@ public static class ShieldLists
             turns.MarkLoaded(gen);
             Publish(saved, gen);
         }
+        // Forget may have run while the saved list was being read, and found
+        // lists.bin held open: whatever it couldn't delete goes now.
+        if (turns.Overtaken(gen, Cleanup)) return;
         if (!download) return;
         if (!force && turns.Loaded && DateTime.UtcNow - state.Checked < Every) return;
 
@@ -284,15 +287,16 @@ public static class ShieldLists
     /// that finds Forget ran while it was still downloading.
     private static void Cleanup()
     {
-        try
+        // One file at a time: one held open (a read still under way) must
+        // not keep the others on disk.
+        foreach (var name in (string[])[Blob, State, .. ListSource.BuiltIn.Select(FileOf)])
         {
-            foreach (var name in (string[])[Blob, State, .. ListSource.BuiltIn.Select(FileOf)])
+            foreach (var file in (string[])[name, name + ".part"])
             {
-                File.Delete(Path.Combine(Folder, name));
-                File.Delete(Path.Combine(Folder, name + ".part"));
+                try { File.Delete(Path.Combine(Folder, file)); }
+                catch { }
             }
         }
-        catch { }
     }
 
     /// "EasyList and EasyPrivacy · 125,176 rules · updated 3 hr. ago", for

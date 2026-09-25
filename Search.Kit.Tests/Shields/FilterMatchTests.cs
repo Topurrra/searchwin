@@ -194,6 +194,15 @@ public class FilterMatchTests
     // The shape the real lists have (17 lines of EasyList + EasyPrivacy).
     [InlineData("||collector-*.luigisbox.com^", "https://collector-12.luigisbox.com/v1/t", true)]
     [InlineData("||collector-*.luigisbox.com^", "https://www.luigisbox.com/", false)]
+    // A name ending in a dot is a prefix of names (125 real lines).
+    [InlineData("||adservice.google.", "https://adservice.google.com/x", true)]
+    [InlineData("||adservice.google.", "https://adservice.google.co.uk/x", true)]
+    [InlineData("||adservice.google.", "https://notadservice.google.com/x", false)]
+    [InlineData("||google.*/pagead/lvz?", "https://www.google.com/pagead/lvz?x=1", true)]
+    [InlineData("||google.*/pagead/lvz?", "https://www.google.de/pagead/lvz?x=1", true)]
+    [InlineData("||google.*/pagead/lvz?", "https://www.google.com/search?q=1", false)]
+    [InlineData("||142.91.159.", "http://142.91.159.12/a", true)]
+    [InlineData("||142.91.159.", "http://142.91.15.9/a", false)]
     public void A_double_bar_rule_with_an_odd_name_is_anchored_at_the_host(string rule, string url, bool blocked)
     {
         var list = Compile(rule);
@@ -213,6 +222,16 @@ public class FilterMatchTests
         var list = FilterList.Compile(["/banner/*", "@@||ad_server.example.com/banner/"]);
         Assert.False(list.ShouldBlock(new Uri("https://ad_server.example.com/banner/1.png"), "page.com", ResourceKind.Image));
         Assert.True(list.ShouldBlock(new Uri("https://other.example.com/banner/1.png"), "page.com", ResourceKind.Image));
+    }
+
+    // EasyList's own shape: an exception for Google's search requests on
+    // any Google country site.
+    [Fact]
+    public void An_exception_whose_name_ends_in_a_dot_still_excepts()
+    {
+        var list = FilterList.Compile(["/search?$xmlhttprequest", "@@||www.google.*/search?$xmlhttprequest"]);
+        Assert.False(list.ShouldBlock(new Uri("https://www.google.de/search?q=x"), "www.google.de", ResourceKind.XmlHttpRequest));
+        Assert.True(list.ShouldBlock(new Uri("https://other.example/search?q=x"), "other.example", ResourceKind.XmlHttpRequest));
     }
 
     // MARK: - the token index

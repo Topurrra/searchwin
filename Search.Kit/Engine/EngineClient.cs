@@ -24,7 +24,12 @@ public sealed class EngineClient : IAsyncDisposable
     private readonly string pipe;
     private readonly Func<CancellationToken, Task>? start;
     private readonly TimeSpan startWait;
-    private readonly SemaphoreSlim connecting = new(1, 1);
+    private readonly object gate = new();
+    /// The one start-and-connect under way, shared by every call that needs
+    /// it. It never takes a caller's cancellation: a keystroke that moves on
+    /// stops waiting for the engine, not the engine's start, so the next
+    /// keystroke finds it further along rather than starting another.
+    private Task? connecting;
     private readonly SemaphoreSlim writing = new(1, 1);
     private readonly ConcurrentDictionary<long, TaskCompletionSource<JsonNode?>> pending = new();
     private NamedPipeClientStream? stream;
@@ -83,52 +88,56 @@ public sealed class EngineClient : IAsyncDisposable
         return await answer.Task.ConfigureAwait(false);
     }
 
-    private async Task EnsureConnectedAsync(CancellationToken cancel)
+    private Task EnsureConnectedAsync(CancellationToken cancel)
     {
-        if (IsConnected) return;
-        await connecting.WaitAsync(cancel).ConfigureAwait(false);
+        if (IsConnected) return Task.CompletedTask;
+        Task shared;
+        lock (gate)
+        {
+            // A start that failed, or a connection since lost, begins afresh.
+            if (connecting is not { IsCompleted: false } && !IsConnected)
+                connecting = Task.Run(ConnectAsync, CancellationToken.None);
+            shared = connecting ?? Task.CompletedTask;
+        }
+        return shared.WaitAsync(cancel);
+    }
+
+    /// Off the caller's thread, the UI's included: starting a process and
+    /// waiting for its pipe take a while.
+    private async Task ConnectAsync()
+    {
+        Drop();
+        var attempt = new NamedPipeClientStream(".", pipe, PipeDirection.InOut, PipeOptions.Asynchronous);
         try
         {
-            if (IsConnected) return;
-            Drop();
-            var attempt = new NamedPipeClientStream(".", pipe, PipeDirection.InOut, PipeOptions.Asynchronous);
-            if (!await TryConnectAsync(attempt, TimeSpan.FromMilliseconds(250), cancel).ConfigureAwait(false))
+            if (!await TryConnectAsync(attempt, TimeSpan.FromMilliseconds(250)).ConfigureAwait(false))
             {
-                if (start == null)
-                {
-                    await attempt.DisposeAsync().ConfigureAwait(false);
-                    throw new EngineException($"The engine isn't running (pipe {pipe}).");
-                }
-                await start(cancel).ConfigureAwait(false);
+                if (start == null) throw new EngineException($"The engine isn't running (pipe {pipe}).");
+                await start(CancellationToken.None).ConfigureAwait(false);
                 var until = DateTime.UtcNow + startWait;
                 var connected = false;
                 while (!connected && DateTime.UtcNow < until)
-                {
-                    connected = await TryConnectAsync(attempt, TimeSpan.FromMilliseconds(200), cancel).ConfigureAwait(false);
-                }
-                if (!connected)
-                {
-                    await attempt.DisposeAsync().ConfigureAwait(false);
-                    throw new EngineException("The engine didn't start.");
-                }
+                    connected = await TryConnectAsync(attempt, TimeSpan.FromMilliseconds(200)).ConfigureAwait(false);
+                if (!connected) throw new EngineException("The engine didn't start.");
             }
-            stream = attempt;
-            writer = new StreamWriter(attempt, new UTF8Encoding(false)) { NewLine = "\n", AutoFlush = false };
-            var reading = new StreamReader(attempt, new UTF8Encoding(false));
-            _ = Task.Run(() => ReadAsync(attempt, reading), CancellationToken.None);
-            if (Connected is { } told) _ = Task.Run(() => { try { told(); } catch { } }, CancellationToken.None);
         }
-        finally
+        catch
         {
-            connecting.Release();
+            await attempt.DisposeAsync().ConfigureAwait(false);
+            throw;
         }
+        stream = attempt;
+        writer = new StreamWriter(attempt, new UTF8Encoding(false)) { NewLine = "\n", AutoFlush = false };
+        var reading = new StreamReader(attempt, new UTF8Encoding(false));
+        _ = Task.Run(() => ReadAsync(attempt, reading), CancellationToken.None);
+        if (Connected is { } told) _ = Task.Run(() => { try { told(); } catch { } }, CancellationToken.None);
     }
 
-    private static async Task<bool> TryConnectAsync(NamedPipeClientStream attempt, TimeSpan wait, CancellationToken cancel)
+    private static async Task<bool> TryConnectAsync(NamedPipeClientStream attempt, TimeSpan wait)
     {
         try
         {
-            await attempt.ConnectAsync((int)wait.TotalMilliseconds, cancel).ConfigureAwait(false);
+            await attempt.ConnectAsync((int)wait.TotalMilliseconds).ConfigureAwait(false);
             return true;
         }
         catch (TimeoutException)
@@ -138,7 +147,7 @@ public sealed class EngineClient : IAsyncDisposable
         catch (IOException)
         {
             // The name exists but every instance is busy; try again shortly.
-            await Task.Delay(50, cancel).ConfigureAwait(false);
+            await Task.Delay(50).ConfigureAwait(false);
             return false;
         }
     }

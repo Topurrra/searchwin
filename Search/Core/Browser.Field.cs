@@ -31,22 +31,26 @@ public sealed partial class Browser
         // Files only from folders chosen in Settings › Search, and only while
         // they still are: an index that hasn't caught up with a folder taken
         // away never shows it.
-        bool files(FieldQuery _) => Engine.Available && Prefs.SearchFolders.Count > 0;
+        bool files(FieldQuery _) => Prefs.SearchFolders.Count > 0;
         bool chosen(FieldRow row) => IndexPlan.Covers(Prefs.SearchFolders, row.Target);
-        var model = new FieldModel(
-            local: [],
-            engine:
+        // Hashes and colours are worked out here; sums, units and encodings
+        // need the engine.
+        List<IEngineSource> sources = [new GatedSource(new AnswerSource(calls), q => Engine.Available || Answers.Plan(q) == null)];
+        // No engine beside Search: nothing is ever asked of one, so no
+        // keystroke pays for looking.
+        if (Engine.Available)
+            sources.InsertRange(0,
             [
                 new GatedSource(new FileNameSource(calls), files, chosen),
                 new GatedSource(new FileContentSource(calls), q => files(q) && Prefs.FileContents, chosen),
-                new GatedSource(new AppSource(calls), _ => Engine.Available && Prefs.AppsInField),
+                new GatedSource(new AppSource(calls), _ => Prefs.AppsInField),
                 // `clip:` and `clipboard` list it; words find a couple of
                 // matches among the rest. Secrets only ever by their kind.
                 new GatedSource(new ClipboardSource(calls, inField: true), _ => ClipHistory.On),
-                // Hashes and colours are worked out here; sums, units and
-                // encodings need the engine.
-                new GatedSource(new AnswerSource(calls), q => Engine.Available || Answers.Plan(q) == null),
-            ],
+            ]);
+        var model = new FieldModel(
+            local: [],
+            engine: sources,
             new FieldOptions
             {
                 Bangs = Commands.Bangs,

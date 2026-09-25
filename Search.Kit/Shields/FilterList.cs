@@ -53,6 +53,11 @@ public sealed class FilterList
     /// Sites that asked for no generic cosmetic rules (`$generichide`).
     public IReadOnlyCollection<string> GenericHideSites => genericHide;
 
+    /// How the index came out, for the benchmarks: rules filed under a
+    /// word, and rules with no whole word that every request tries.
+    internal (int Indexed, int Words, int Everywhere) IndexShape =>
+        (tokenIndex.Values.Sum(b => b.Length), tokenIndex.Count, genericPlain.Length);
+
     private FilterList(
         NetworkRule[] rules, Dictionary<string, int[]> domainAnchored, Dictionary<string, int[]> tokenIndex, int[] genericPlain,
         HashSet<string> plainDomains, HashSet<string> plainThirdPartyDomains,
@@ -100,6 +105,9 @@ public sealed class FilterList
         foreach (var rule in hostScopedCosmetic) mentioned.UnionWith(rule.ExcludedDomains);
     }
 
+    /// `sites` decides which requests are third-party; left out, it's
+    /// `LiveRegistrableDomain` — the Public Suffix List once FishCatcher has
+    /// loaded it, a guess until then. The same goes for `Load`.
     public static FilterList Compile(IEnumerable<string> lines, IRegistrableDomain? sites = null) =>
         Compile([lines], sites);
 
@@ -125,7 +133,7 @@ public sealed class FilterList
             else if (rule.ThirdParty == true) plainThirdParty.Add(rule.AnchorDomain!);
             else plain.Add(rule.AnchorDomain!);
         }
-        return Build(rest, plain, plainThirdParty, cosmetic, genericHide, stats, sites ?? SimpleRegistrableDomain.Instance);
+        return Build(rest, plain, plainThirdParty, cosmetic, genericHide, stats, sites ?? LiveRegistrableDomain.Instance);
     }
 
     private static FilterList Build(List<NetworkRule> network, List<string> plain, List<string> plainThirdParty,
@@ -231,14 +239,18 @@ public sealed class FilterList
     ///
     /// Called for every request a page makes, on the thread that draws the
     /// window, so it allocates as little as it can: lookups go by span
-    /// rather than by substring, and a rule met twice (a token repeated in
-    /// the address) is simply tested twice — the answer is the same, and
-    /// cheaper than a set to remember it in.
+    /// rather than by substring, and a word the address repeats has its
+    /// rules tested once, not once a time — a long address made of one word
+    /// would otherwise test the same rules thousands of times.
+    ///
+    /// `ads.example.` is `ads.example` (a name may end in the root's dot),
+    /// for the request and for the page alike.
     public bool ShouldBlock(Uri request, string? pageHost, ResourceKind kind)
     {
         if (request.Scheme is not ("http" or "https")) return false;
 
-        var host = request.Host.ToLowerInvariant();
+        var host = Bare(request.Host);
+        if (pageHost != null) pageHost = Bare(pageHost);
         var thirdParty = pageHost != null && !string.Equals(sites.Of(host), sites.Of(pageHost), StringComparison.Ordinal);
         var lowerUrl = request.AbsoluteUri.ToLowerInvariant();
         var afterHost = request.GetLeftPart(UriPartial.Authority).Length;
@@ -268,14 +280,15 @@ public sealed class FilterList
             at = at[(dot + 1)..];
         }
 
+        var tried = Tried();
         var url = lowerUrl.AsSpan();
         for (var i = 0; i < url.Length; )
         {
             if (!char.IsAsciiLetterOrDigit(url[i])) { i++; continue; }
             var start = i;
             while (i < url.Length && char.IsAsciiLetterOrDigit(url[i])) i++;
-            if (i - start < 3) continue;
-            if (tokenIndexBySpan.TryGetValue(url[start..i], out var bucket))
+            if (i - start < AbpPattern.MinToken) continue;
+            if (tokenIndexBySpan.TryGetValue(url[start..i], out var bucket) && tried.Add(bucket))
                 foreach (var idx in bucket) Consider(idx);
         }
         foreach (var idx in genericPlain) Consider(idx);
@@ -283,10 +296,30 @@ public sealed class FilterList
         return important || (blocked && !excepted);
     }
 
+    // The buckets one request has tried, kept per thread and emptied at the
+    // start of each request rather than made anew. A set that grew large
+    // (an address with thousands of different words) is let go, so the next
+    // request doesn't pay to empty it.
+    [ThreadStatic] private static HashSet<int[]>? tried;
+
+    private static HashSet<int[]> Tried()
+    {
+        var set = tried;
+        if (set == null || set.Count > 64) return tried = new HashSet<int[]>(ReferenceEqualityComparer.Instance);
+        set.Clear();
+        return set;
+    }
+
+    private static string Bare(string host)
+    {
+        host = host.ToLowerInvariant();
+        return host.EndsWith('.') ? host.TrimEnd('.') : host;
+    }
+
     /// Whether the generic rules apply on `host` at all.
     public bool HidesGenerics(string host)
     {
-        for (var at = host.ToLowerInvariant(); ; )
+        for (var at = Bare(host); ; )
         {
             if (genericHide.Contains(at)) return false;
             var dot = at.IndexOf('.');
@@ -302,7 +335,7 @@ public sealed class FilterList
     /// nothing else down with it. "" when there is nothing to add.
     public string SiteCss(string host)
     {
-        host = host.ToLowerInvariant();
+        host = Bare(host);
         if (!Mentions(host)) return unmentionedCss ??= Compose("\u0001");
         return Compose(host);
     }
@@ -340,10 +373,13 @@ public sealed class FilterList
     /// The stylesheet hiding every cosmetic rule that applies to `host` and
     /// isn't cancelled by an exception — one `display: none !important`
     /// rule covering every matching selector, or "" when nothing applies.
-    /// `GenericCss` + `SiteCss` is the same set, split for the browser.
+    /// `GenericCss` + `SiteCss` is the same set, split for the browser, and
+    /// like them it leaves out every selector `Css.IsSafe` refuses: here all
+    /// of them share one rule, so a single one that closed it could write
+    /// any CSS it liked into the page.
     public string CssFor(string host)
     {
-        host = host.ToLowerInvariant();
+        host = Bare(host);
         var selectors = new HashSet<string>(StringComparer.Ordinal);
         var excepted = new HashSet<string>(StringComparer.Ordinal);
 
@@ -355,6 +391,7 @@ public sealed class FilterList
         Scoped(host, selectors, excepted);
 
         selectors.ExceptWith(excepted);
+        selectors.RemoveWhere(s => !Css.IsSafe(s));
         if (selectors.Count == 0) return "";
         return string.Join(", ", selectors.OrderBy(s => s, StringComparer.Ordinal)) + " { display: none !important; }";
     }
@@ -382,7 +419,7 @@ public sealed class FilterList
         return false;
     }
 
-    private const int FormatVersion = 2;
+    private const int FormatVersion = 3;
 
     /// The compact binary form: every compiled rule, with no re-parsing of
     /// list text needed to use it again — `Load` rebuilds the same indices
@@ -452,7 +489,7 @@ public sealed class FilterList
             Blank = r.ReadInt32(),
         };
 
-        return Build(network, plain, plainThirdParty, cosmetic, genericHide, stats, sites ?? SimpleRegistrableDomain.Instance);
+        return Build(network, plain, plainThirdParty, cosmetic, genericHide, stats, sites ?? LiveRegistrableDomain.Instance);
 
         List<string> Names()
         {

@@ -56,6 +56,31 @@ public class CosmeticTests
     public void No_matching_rule_is_an_empty_stylesheet() =>
         Assert.Equal("", FilterList.Compile(["example.com##.x"]).CssFor("unrelated.org"));
 
+    // CssFor is the whole set in one rule, so one selector that closes the
+    // rule would let a list write any CSS it likes into the page.
+    [Theory]
+    [InlineData("##.x}body{display:none")]
+    [InlineData("example.com##.x{}html{visibility:hidden}")]
+    [InlineData("##.x;color:red")]
+    [InlineData("##.x/*")]
+    [InlineData("##div:has-text(Sponsored)")]
+    [InlineData("##@import url(x)")]
+    public void Unsafe_selectors_never_reach_the_stylesheet(string line)
+    {
+        var list = FilterList.Compile(["##.ad-slot", line]);
+        Assert.Equal(".ad-slot { display: none !important; }", list.CssFor("example.com"));
+        Assert.Equal("", FilterList.Compile([line]).CssFor("example.com"));
+    }
+
+    [Fact]
+    public void A_trailing_dot_on_the_host_is_the_same_site()
+    {
+        var list = FilterList.Compile(["example.com##.banner", "@@||quiet.example^$generichide", "##.ad"]);
+        Assert.Equal(list.CssFor("example.com"), list.CssFor("example.com."));
+        Assert.Equal(list.SiteCss("example.com"), list.SiteCss("example.com."));
+        Assert.False(list.HidesGenerics("quiet.example."));
+    }
+
     [Theory]
     [InlineData("example.com##+js(set-constant, x, true)")]
     [InlineData("example.com#?#.ad:has(> img)")]

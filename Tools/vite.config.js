@@ -26,6 +26,8 @@ const tauri = {
 export default defineConfig({
   plugins: [sveltekit()],
   resolve: {
+    // Tests that mount a page (in jsdom) need Svelte's browser build.
+    ...(process.env.VITEST ? { conditions: ["browser"] } : {}),
     alias: Object.entries(tauri).map(([module, file]) => ({
       find: new RegExp(`^${module.replace(/[/-]/g, "\\$&")}$`),
       replacement: shim(file),

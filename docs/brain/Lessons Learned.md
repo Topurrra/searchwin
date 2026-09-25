@@ -370,6 +370,50 @@ the fix lives. *(uncertain)* marks things that weren't proven.
 - Stopping `Get-Process Search` would also stop a real Search; stop test
   runs by PID.
 
+## Round 2: Phase 2 fixes and integration (2026-09-26)
+
+### Workflow isolation
+- **Worktree creation:** three parallel agents built fixes on branches p2-field, p2-clip, p2-player. The session started in the parent `Search` repo instead of the `searchwin` subdirectory, so `git worktree add` created worktrees there (`../searchwin-wt/{branch}` from the parent). The agents then lost their branches when they `cd` back to the searchwin folder without pointing to the worktrees explicitly. **Fix:** create worktrees *by hand* with explicit target and branch name: `git worktree add ../searchwin-wt/branch-name branch-name` from the searchwin folder itself, and point each agent at the full absolute path `C:\Users\user\Projects\Search\searchwin-wt\branch-name`.
+
+### Engine timing and the clipboard
+- **WM_CLIPBOARDUPDATE arrives before data is ready.** PowerShell's `.SetText()` and other OLE-delayed copies were failing ~1–2% when the engine read the clipboard on the message itself. **Symptom:** copies were dropped or truncated; silence because the listener runs on a background thread. **Fix:** defer the read with `SetTimer(hwnd, 1, 60ms, NULL)` and read in `WM_TIMER` instead. The `WM_CLIPBOARDUPDATE` message records who copied (GetClipboardOwner's process, or foreground app as fallback) and the exclusion markers (no clipboard data read at this point); only the data itself waits the 60 ms. Result: 0% failure rate on 360 burst copies and 25 cross-process copies. **Also:** GetClipboardSequenceNumber before and after the read confirms no intervening copy corrupted the record.
+
+### Test isolation: clipboard history opt-in
+- **Symptom:** bench scripts created made-up clipboard strings (e.g. `p2clip-guid-world`) for testing. Early runs never printed or echoed these strings, but test worlds defaulted `clip.history` on like production, so the test strings were captured to disk. If a test used the real clipboard *anywhere* (saved it, printed it, or read it), the test would have corrupted the user's real clipboard history with these garbage entries.
+- **Root cause:** no test explicitly checked clipboard history recording; the kit tests covered the logic, but no integration test read what was actually saved to disk. The bench's clip and field reports only showed rows captured during the current session (`RunStartedMs` filter), so pre-test leftover garbage was invisible.
+- **Fix:** test worlds now opt in with `{"clip.history": true}` in their `settings.json`. Off by default in all test worlds means the real clipboard is never touched unless a test explicitly enables history recording. The default production (real profile) stays on. **Lesson:** *an integration test that touches the user's environment (filesystem, clipboard, credentials) must not do so in a default/production world. Require explicit opt-in.*
+
+### SvelteKit hash router and media playback
+- **SvelteKit's hash router (`kit.router.type = "hash"`) does not expose hash-embedded query strings in `page.url.searchParams`.** The router only extracts the path portion for route matching; query strings like `#/play?path=...` never reach `$app/state` or the stores. **Symptom:** the player route tried to read `page.url.searchParams.get('path')` and got null. **Fix:** read `location.hash` directly with `new URL(hash, origin)`, cache the path in local state, and resync on `popstate` and `hashchange` events. **Also:** `goto()` inside SvelteKit silently drops query strings in the hash; use `history.pushState()` directly for navigation.
+- **CoreWebView2.Navigate unescapes percent-encoded fragments.** A path `%5C%3A` (backslash and colon, percent-encoded) arrives at the browser as literal `\:`. This is harmless when a component encodes with `encodeURIComponent`, but breaks assumptions about having percent-encoded URLs end-to-end. *Not critical, but surprising.*
+- **Short synthetic test audio (1 s) makes bench-driven testing unreliable.** A file that reaches `ended` and auto-advances to the next track between bench calls makes a manual seek look like it reverted when it was actually the player's own next-track logic. *Use a longer test clip (e.g. 12 s) or pause playback before exercising seek/volume/mute.*
+
+### Engine and the build process
+- **Building the engine from source (`cargo build --release`) is not implicit.** The `publish-aot.cmd` script copies `Engine/target/release/kil-engine.exe` if it exists, without checking whether it's current. Leftover binaries from hours-old builds will be shipped with the app, silently losing any engine fixes committed since then. **Symptom:** a native-AOT build used a 14-hour-old engine, so secrets weren't marked with exclusion markers and the `clear_file_search_index` command didn't exist, even though both fixes were in the current source. **Fix:** publish-aot should run `cargo build --release` first, or at minimum pick the newer of the release and debug binaries (as `Engine.Executable` does in the running app).
+
+### Row deduplication and the pointer
+- **Rows are redrawn on every result batch, so a new row appearing under a still mouse pointer gets no `PointerEntered` event.** The fix was to track "pointer over the list" on the list container itself (the `Border`), not on individual rows. But the tracking is only reset by `PointerExited`, `PointerCanceled` and `PointerCaptureLost` — if any of those are missed (e.g. the window is deactivated), the flag sticks and every later question keeps unfilled top-hit spacers. **The FieldBoard.PointerOver guard needs to also clear on window `Deactivated` and when `Editing` turns false.**
+
+### File operations on the UI thread
+- **File.Exists() and ToolsHost.ServeFile's range-request checking both block on the UI thread.** For files on a network share or an offline mapped drive, each call can block for seconds. During media playback in ServeFile, this happens once per chunk request. **Fix:** move existence checks into `Task.Run` and report results via `UI.Do`, or drop the check and rely on `GetFileFromPathAsync` throwing `FileNotFoundException` for the 404 response.
+
+### Omnibox state and the field model integration
+- **Cause:** Omnibox.Put() remembered only the last text it put into a box and forgot it after the first change report. When the browser's `Recompose()` sets text twice in one keystroke (e.g., Show→Recompose puts '>dark', then Picked=0 puts the command's title 'Dark'), the TextBox reports two changes after the fact. Both changes read the final text 'Dark', so the second was mistaken for user typing. **Symptom:** >command and !bang became plain Google searches. **Root cause analysis:** the one-slot `expected` echo suppression is too simple. **Fix:** FieldEcho keeps the most recent text put into the box and updates it only when the box itself reports different text.
+- **A popup inherits the gate of the address it's about to have.** Setting a
+  new window's address optimistically let a web page's `window.open` pass the
+  tools.search gate. Gate on the document that actually loaded.
+- **Bench on a bug before believing the obvious cause.** "The seek on load does
+  nothing" was really "the position was never saved": a backward seek, a pause
+  of paused media and a track's end all skipped the save.
+- **A copied binary goes stale silently.** publish-aot shipped an engine from
+  hours earlier and fixes vanished only in AOT. Build what you ship, or refuse
+  when it's older than its sources.
+- **`robocopy /MIR` deletes what only the repo has.** A note written straight
+  into docs/brain was wiped by the next vault → repo sync. Write notes in the
+  vault only.
+- **Allowlists for "open with its app".** A blocklist of runnable types always
+  misses some (msix, rdp, iso, vhdx, py…). Open known documents, reveal the rest.
+
 ## Phase 1: Security fixes (2026-09-25)
 
 ### ABP pattern matching

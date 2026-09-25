@@ -82,6 +82,20 @@ Add `--test` to talk to a debug build. Bench URLs may be `http(s)` or `chrome-ex
 - `pwsh -File script.ps1 -Modes a,b` hands the script **one string**
   `"a,b"`, not two; use the defaults or `-Command` for array parameters.
 
+### Testing clipboard history (phase 2+)
+
+- Clipboard history is **on by default** in the real profile; **off by default in test worlds** unless opted in.
+- To enable history in a test world, add `"clip.history": true` to its `settings.json` before launch. The engine then records every copy to disk.
+- **Why test worlds are off by default:** clipboard recording touches the user's environment (filesystem encryption, disk I/O). An integration test that touches the clipboard must require explicit opt-in, so test garbage (made-up strings like `p2clip-guid`) never contaminate the real clipboard history by accident.
+- **Bench isolation:** The `clip` and `field` bench verbs filter clipboard entries captured before `RunStartedMs` (the current run's start time). This hides leftover test data from earlier runs, so reports only show what the current bench session captured.
+- To test history: create a world with `{"clip.history": true}` in settings, `./bench.ps1 clip open` to open the Ctrl+Shift+V popup, `./bench.ps1 clip list` to see entries, `./bench.ps1 clip go <index>` to Shift+Enter on an entry (should refuse if the entry is Sensitive).
+
+### Testing the native AOT build
+
+- `publish-aot.cmd -o <folder>` now copies `kil-engine.exe` and `Tools/dist` beside `Search.exe`.
+- **Known issue:** the script copies `Engine/target/release/kil-engine.exe` unconditionally, which may be hours old and lack current fixes. The engine needs to be rebuilt fresh before publishing AOT for a real build. **Workaround:** `cargo build --release --no-default-features` in the Engine folder first, or pick the newer of release and debug (as `Engine.Executable` does at runtime).
+- Verify the AOT build the same way as the Debug build (smoke test, bench scenarios). Measure first-window latency and keystroke times; they should match Debug within 10–20%.
+
 ## Verifying on screen
 
 The bench can't see WinUI chrome (menus, dialogs, flyouts). To test those,

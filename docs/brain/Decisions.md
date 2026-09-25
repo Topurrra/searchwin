@@ -1,6 +1,6 @@
 ---
 tags: [searchwin, decisions, adr]
-updated: 2026-09-25
+updated: 2026-09-26
 ---
 
 # Decisions
@@ -220,3 +220,29 @@ Newest at the bottom.
   with the lists pre-built (`lists.bin` 3.6 MB) and the feed pre-signed
   (fishcatcher-feed.json 791 KB). That would reduce fresh-install network use
   from ~4 MB to ~500 KB while keeping updates automatic.
+
+### D30 · Clipboard history on by default (2026-09-26)
+- **Decision:** clipboard history is on by default for real users. Settings ›
+  Clipboard turns it off (and offers to clear what's kept, pins aside), sets how
+  long it's kept, keeps pictures or not, pauses, and lists excluded apps
+  (password managers). The engine starts about 3 s after the first window is
+  activated, never before it.
+- **Why:** the user's call: history is "much better and useful" on by default.
+- **Secrets:** the engine tags copies it recognises (API keys, tokens, cards)
+  and keeps them only briefly. They show as "Hidden: {kind}" and are never put
+  in a field row. Shift+Enter never searches or opens them. When Search puts a
+  secret back on the clipboard, or its own tool pages copy a password, it sets
+  the markers that tell Windows' clipboard history (Win+V), the cloud clipboard
+  and other clipboard managers to skip it (QuietCopy).
+- **Revisit:** if people are surprised by it. A one-time line in the popup and
+  on the Welcome page says what's kept and where to turn it off.
+
+### D31 · Test worlds keep clipboard history off (2026-09-26)
+- **Decision:** in test worlds (`SEARCH_PROBE`) clipboard history defaults to
+  off; a test opts in with `{"clip.history": true}`. The real profile keeps D30.
+- **Why:** the engine's listener records every copy on the machine, not just
+  Search's. With history on in test worlds, agents' test runs captured the
+  user's real copies from other apps, and bench output (`clip`, `field`)
+  could print them. Tests must never read the real clipboard.
+- **How:** `ClipGuard.OnByDefault(testing)`; bench clip/field output also drops
+  entries captured before the run started (`RunStartedMs`).

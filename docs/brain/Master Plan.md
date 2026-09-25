@@ -193,7 +193,7 @@ in KeepItLocal Redact" when it's installed: a hand-off, not an integration.
 |---|---|---|---|
 | **0** ✅ | **Foundations** (2026-09-25: engine headless, engine client, tool pages, command registry; packs framework moved to phase 3) | Repo layout; copy the engine and strip Tauri (dispatcher + pipe); tools host + shim; command registry; packs framework; provenance/NOTICE | 3–5 wks |
 | **1** ✅ | **Protection** (2026-09-25: FishCatcher native + Shields 2.0, reviewed twice, fixes verified) | FishCatcher native (probe budget, message caps, fact sanitising); Shields 2.0 (wildcard O(n) matcher, whole-word token index, PSL registrable domains, signed feed with rollback, cookie/AMP/params/redirects, ~200 KB cosmetics); lists + feed on by default | 3–4 wks |
-| **2** | **The universal field** | Converters, bangs/custom commands, files + apps from the engine index, clipboard history + secret guard, open files in tabs | 3–4 wks |
+| **2** ✅ | **The universal field** (2026-09-26: built, reviewed three times, all high and medium findings fixed and verified; small items in [[Log/2026-09-26]]) | Converters, bangs/custom commands, files + apps from the engine index, clipboard history + secret guard, open files in tabs, search://play media route | 3–4 wks |
 | **3** | **Tools as pages** | Pack by pack: Utilities → Files (file manager) → Privacy → Images → Documents → Dev → Media → Focus, each restyled and tested | 4–8 wks |
 | **4** | **Voice + background** | Vosk pack, push-to-talk everywhere, safety gate, tray mode, snippets, global hotkeys | 2–3 wks |
 | **5** | **Ask** | BYOK models (local + keys), Disclosure Firewall on every send, page → Markdown, ask page / tabs / video, receipts | 3–4 wks |

@@ -27,6 +27,7 @@ behave like the Mac app, with the same UI, keys and data.
 | [[Decisions]] | Why things are the way they are (ADR log) |
 | [[Lessons Learned]] | Every gotcha we hit: symptom, cause, fix |
 | [[FishCatcher Port]] | Scam and phishing warnings: the C# engine (parity with the extension) and how the browser uses it |
+| [[Engine Commands]] | The engine commands the browser uses (files, apps, answers, clipboard): params, results, events |
 | [[Roadmap]] | What comes next: installer variant, C++ frame, signing, updates |
 | [[Ideas/Agentic Browser]] | Proposal: Brave-grade shields plus a private, visible AI agent |
 | [[Ideas/Built-in Tools]] | Brainstorm: converters, bangs, voice, clipboard, file search, FishCatcher, file manager, free AI — checked against the user's own projects |

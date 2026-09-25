@@ -714,13 +714,32 @@ struct SearchEngine {
 struct NaturalQueryPlan {
     query_text: String,
     query_keywords: Vec<String>,
-    /// How many of `query_keywords` were typed; the rest are related terms.
-    typed_keywords: usize,
+    /// The words of `query_keywords` that were typed; the rest are related
+    /// terms, which widen the net but rank below a typed word's match.
+    typed_words: Vec<String>,
+    /// `typed_words` joined: what ranking looks for whole in a name.
+    typed_text: String,
     extension_filters: Vec<String>,
     entry_type_filter: Option<String>,
     date_filter: Option<DateFilter>,
     size_filter: Option<SizeFilter>,
     exact_phrases: Vec<String>,
+}
+
+impl NaturalQueryPlan {
+    /// The text ranked as "the whole query in the name": the typed words, not
+    /// their related terms ("notes", not "notes note memo memos jot").
+    fn rank_text(&self) -> &str {
+        if self.typed_text.is_empty() {
+            &self.query_text
+        } else {
+            &self.typed_text
+        }
+    }
+
+    fn is_typed(&self, keyword: &str) -> bool {
+        self.typed_words.is_empty() || self.typed_words.iter().any(|word| word == keyword)
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -1224,7 +1243,6 @@ fn reconcile_filename_index(
 
     for root in &options.roots {
         let mut builder = WalkBuilder::new(root);
-        builder.hidden(!options.include_hidden);
         builder.git_ignore(true);
         builder.git_exclude(true);
         builder.ignore(true);
@@ -1233,6 +1251,9 @@ fn reconcile_filename_index(
         // See FileSearchStatus comment for rationale.
         builder.follow_links(false);
         builder.standard_filters(true);
+        // After standard_filters, which turns hiding back on: dot-folders
+        // are walked when hidden ones are, and the exclusions choose.
+        builder.hidden(!options.include_hidden);
         for entry in builder.build().flatten() {
             let path = entry.path();
             if !should_include_path(path, options) {
@@ -2553,7 +2574,7 @@ fn search_local_files_inner(
         extract_query_keywords(&query_text)
     };
     let normalized_rank_query = normalize_launcher_text(if natural_language {
-        &natural_plan.query_text
+        natural_plan.rank_text()
     } else {
         &query_text
     });
@@ -3027,6 +3048,24 @@ fn search_filename_index(
 
     let mut matched = run(main_query.as_ref(), false)?;
 
+    // A typed word also finds the names it begins a word of ("note" →
+    // notebook.txt), even when exact terms (its own or a related term's)
+    // already matched: typing on must not drop what the shorter word found.
+    if natural_language && natural_plan.date_filter.is_none() && !natural_plan.typed_words.is_empty() {
+        if let Some(prefix_query) = build_prefix_tantivy_query(
+            &natural_plan.typed_words,
+            handle.fields.file_name,
+            handle.fields.path,
+        ) {
+            let seen: HashSet<String> = matched.iter().map(|item| item.path.to_lowercase()).collect();
+            for item in run(prefix_query.as_ref(), false)? {
+                if !seen.contains(&item.path.to_lowercase()) {
+                    matched.push(item);
+                }
+            }
+        }
+    }
+
     // Prefix fallback (as-you-type): match indexed terms that start with each
     // keyword when the exact-term query found nothing.
     if matched.is_empty()
@@ -3144,6 +3183,34 @@ fn search_local_files_via_filename_index(
     options: &FileSearchQueryOptions,
     started_at: SystemTime,
 ) -> Result<FileSearchQueryResult, String> {
+    // Frecency snapshot — loaded once so `search_filename_index` can fuse it
+    // into every result's score (Search #13).
+    let frecency = super::frecency::snapshot(app);
+    let guard = FILENAME_ENGINE
+        .lock()
+        .map_err(|_| "Filename engine lock failed".to_string())?;
+    let handle = guard
+        .as_ref()
+        .ok_or_else(|| "Search index is not ready yet. Build it first.".to_string())?;
+    let (total_hits, results) = query_filename_index(handle, options, &frecency)?;
+    drop(guard);
+    let took_ms = started_at.elapsed().map(|d| d.as_millis()).unwrap_or(0);
+    Ok(FileSearchQueryResult {
+        query: options.query.trim().to_string(),
+        total_hits,
+        returned: results.len(),
+        took_ms,
+        results,
+    })
+}
+
+/// A file search against the filename index alone: the query read, run,
+/// ranked and paged. Returns (total hits, the requested page).
+fn query_filename_index(
+    handle: &FilenameIndexHandle,
+    options: &FileSearchQueryOptions,
+    frecency: &super::frecency::FrecencySnapshot,
+) -> Result<(usize, Vec<FileSearchResultItem>), String> {
     let query_text = options.query.trim().to_string();
     let limit = options.limit.unwrap_or(30).clamp(1, 200);
     let offset = options.offset.unwrap_or(0).min(20_000);
@@ -3160,19 +3227,11 @@ fn search_local_files_via_filename_index(
         NaturalQueryPlan::default()
     };
 
-    let effective_extension_filters =
-        match resolve_extension_filters(&manual_extension_filters, &natural_plan.extension_filters) {
-            Some(filters) => filters,
-            None => {
-                return Ok(FileSearchQueryResult {
-                    query: query_text,
-                    total_hits: 0,
-                    returned: 0,
-                    took_ms: started_at.elapsed().map(|d| d.as_millis()).unwrap_or(0),
-                    results: Vec::new(),
-                });
-            }
-        };
+    let Some(effective_extension_filters) =
+        resolve_extension_filters(&manual_extension_filters, &natural_plan.extension_filters)
+    else {
+        return Ok((0, Vec::new()));
+    };
 
     let query_keywords = if natural_language {
         natural_plan.query_keywords.clone()
@@ -3180,35 +3239,24 @@ fn search_local_files_via_filename_index(
         extract_query_keywords(&query_text)
     };
     let normalized_rank_query = normalize_launcher_text(if natural_language {
-        &natural_plan.query_text
+        natural_plan.rank_text()
     } else {
         &query_text
     });
 
-    // Frecency snapshot — loaded once so `search_filename_index` can fuse it
-    // into every result's score (Search #13).
-    let frecency = super::frecency::snapshot(app);
-    let mut matched = {
-        let guard = FILENAME_ENGINE
-            .lock()
-            .map_err(|_| "Filename engine lock failed".to_string())?;
-        let handle = guard
-            .as_ref()
-            .ok_or_else(|| "Search index is not ready yet. Build it first.".to_string())?;
-        let fetch_limit = (offset + limit).saturating_mul(8).clamp(limit, 8_000);
-        search_filename_index(
-            handle,
-            natural_language,
-            &natural_plan,
-            &query_text,
-            &query_keywords,
-            &normalized_rank_query,
-            &effective_extension_filters,
-            path_filter.as_deref(),
-            fetch_limit,
-            &frecency,
-        )?
-    };
+    let fetch_limit = (offset + limit).saturating_mul(8).clamp(limit, 8_000);
+    let mut matched = search_filename_index(
+        handle,
+        natural_language,
+        &natural_plan,
+        &query_text,
+        &query_keywords,
+        &normalized_rank_query,
+        &effective_extension_filters,
+        path_filter.as_deref(),
+        fetch_limit,
+        frecency,
+    )?;
 
     matched.sort_by(|a, b| {
         b.score
@@ -3224,14 +3272,7 @@ fn search_local_files_via_filename_index(
         .skip(offset)
         .take(limit)
         .collect::<Vec<_>>();
-    let took_ms = started_at.elapsed().map(|d| d.as_millis()).unwrap_or(0);
-    Ok(FileSearchQueryResult {
-        query: query_text,
-        total_hits,
-        returned: results.len(),
-        took_ms,
-        results,
-    })
+    Ok((total_hits, results))
 }
 
 fn search_file_contents_inner(
@@ -6210,7 +6251,6 @@ fn content_index_unchanged(
     let mut scanned: u64 = 0;
     for root in deduped_roots {
         let mut builder = WalkBuilder::new(root);
-        builder.hidden(!options.include_hidden);
         builder.git_ignore(true);
         builder.git_exclude(true);
         builder.ignore(true);
@@ -6219,6 +6259,9 @@ fn content_index_unchanged(
         // See FileSearchStatus comment for rationale.
         builder.follow_links(false);
         builder.standard_filters(true);
+        // After standard_filters, which turns hiding back on: dot-folders
+        // are walked when hidden ones are, and the exclusions choose.
+        builder.hidden(!options.include_hidden);
         // Single-threaded on purpose: metadata-only stat work is cheap, the walk
         // bails on the first change, and a sequential walk avoids sharing the
         // cache across threads. It is still orders of magnitude faster than the
@@ -6572,7 +6615,6 @@ fn build_index_in_worker(
         }
 
         let mut builder = WalkBuilder::new(root);
-        builder.hidden(!options.include_hidden);
         builder.git_ignore(true);
         builder.git_exclude(true);
         builder.ignore(true);
@@ -6581,6 +6623,9 @@ fn build_index_in_worker(
         // See FileSearchStatus comment for rationale.
         builder.follow_links(false);
         builder.standard_filters(true);
+        // After standard_filters, which turns hiding back on: dot-folders
+        // are walked when hidden ones are, and the exclusions choose.
+        builder.hidden(!options.include_hidden);
         // Per-mode parallelism. On an 8-core machine this gives 7 threads in
         // "fast", 8 (capped) in "balanced" (default), and just 2 in "quiet"
         // (1 on a 4-core). Each thread independently extracts content from its
@@ -7089,7 +7134,6 @@ fn build_filename_index_in_worker(
         }
 
         let mut builder = WalkBuilder::new(root);
-        builder.hidden(!options.include_hidden);
         builder.git_ignore(true);
         builder.git_exclude(true);
         builder.ignore(true);
@@ -7098,6 +7142,9 @@ fn build_filename_index_in_worker(
         // See FileSearchStatus comment for rationale.
         builder.follow_links(false);
         builder.standard_filters(true);
+        // After standard_filters, which turns hiding back on: dot-folders
+        // are walked when hidden ones are, and the exclusions choose.
+        builder.hidden(!options.include_hidden);
         builder.threads(index_walker_threads(&performance_mode, on_battery));
 
         let walker = builder.build_parallel();
@@ -7603,7 +7650,6 @@ fn reconcile_watched_index(
 
     for root in &options.roots {
         let mut builder = WalkBuilder::new(root);
-        builder.hidden(!options.include_hidden);
         builder.git_ignore(true);
         builder.git_exclude(true);
         builder.ignore(true);
@@ -7612,6 +7658,9 @@ fn reconcile_watched_index(
         // See FileSearchStatus comment for rationale.
         builder.follow_links(false);
         builder.standard_filters(true);
+        // After standard_filters, which turns hiding back on: dot-folders
+        // are walked when hidden ones are, and the exclusions choose.
+        builder.hidden(!options.include_hidden);
         for entry in builder.build().flatten() {
             let path = entry.path();
             if !should_include_path(path, options) {
@@ -8686,14 +8735,15 @@ fn write_search_config_for_state(
     state_dir: &Path,
     config: &StoredSearchConfig,
 ) -> Result<(), String> {
+    // Shared: the index workers (other processes) read and write it too.
     let db_path = local_db::database_path_for_dir(state_dir);
-    local_db::write_json(&db_path, SEARCH_CONFIG_FILE, config)
+    local_db::write_json_shared(&db_path, SEARCH_CONFIG_FILE, config)
 }
 
 fn read_search_config_for_state(state_dir: &Path) -> Result<Option<StoredSearchConfig>, String> {
     let db_path = local_db::database_path_for_dir(state_dir);
     if let Some(mut parsed) =
-        local_db::read_json::<StoredSearchConfig>(&db_path, SEARCH_CONFIG_FILE)?
+        local_db::read_json_shared::<StoredSearchConfig>(&db_path, SEARCH_CONFIG_FILE)?
     {
         parsed.options.exclude_folders = normalize_exclude_folders(&parsed.options.exclude_folders);
         parsed.options.exclude_extensions =
@@ -8961,25 +9011,32 @@ fn has_excluded_folder(path: &Path, exclude_folders: &[String]) -> bool {
     }
 
     let normalized_path = normalize_path_for_exclusion(path);
-    if exclude_folders.iter().any(|excluded| {
-        is_path_like_exclusion(excluded)
-            && exclusion_pattern_matches_path(&normalized_path, excluded)
-    }) {
-        return true;
+    let names: Vec<String> = path
+        .components()
+        .filter_map(|component| component.as_os_str().to_str().map(str::to_lowercase))
+        .collect();
+    // The last entry that matches decides. `!<folder>` keeps a folder, and
+    // all it holds, that an entry before it excluded (a folder chosen inside
+    // another chosen folder's skipped one); entries after it still apply.
+    let mut excluded = false;
+    for entry in exclude_folders {
+        let (keep, pattern) = match entry.strip_prefix('!') {
+            Some(rest) => (true, rest),
+            None => (false, entry.as_str()),
+        };
+        if pattern.is_empty() || keep != excluded {
+            continue; // this entry can't change the answer
+        }
+        let matches = if is_path_like_exclusion(pattern) {
+            exclusion_pattern_matches_path(&normalized_path, pattern)
+        } else {
+            names.iter().any(|name| name == pattern)
+        };
+        if matches {
+            excluded = !keep;
+        }
     }
-
-    path.components().any(|component| {
-        component
-            .as_os_str()
-            .to_str()
-            .map(|value| {
-                let normalized = value.to_lowercase();
-                exclude_folders
-                    .iter()
-                    .any(|excluded| excluded == &normalized)
-            })
-            .unwrap_or(false)
-    })
+    excluded
 }
 
 fn normalize_path_for_exclusion(path: &Path) -> String {
@@ -8994,10 +9051,34 @@ fn is_path_like_exclusion(excluded: &str) -> bool {
     excluded.contains('/') || excluded.contains(':') || excluded.contains('*')
 }
 
+/// Whether an exclusion matches a path (both normalised: lower case, `/`).
+/// With `*`, the pieces between stars appear in order anywhere in the path;
+/// a pattern that ends in a piece, not a star, ends at a folder name: the
+/// piece is followed by `/` or the end, so `root/*/bin` is any `bin` folder
+/// below `root` (and all it holds) but not `binaries`. Without `*`, a run
+/// of whole folder names.
 fn exclusion_pattern_matches_path(path: &str, excluded: &str) -> bool {
     if excluded.contains('*') {
+        let parts: Vec<&str> = excluded.split('*').filter(|part| !part.is_empty()).collect();
+        let open_end = excluded.ends_with('*');
         let mut remainder = path;
-        for part in excluded.split('*').filter(|part| !part.is_empty()) {
+        for (at, part) in parts.iter().enumerate() {
+            if at + 1 == parts.len() && !open_end {
+                // Earlier pieces sit at their earliest place (which only
+                // leaves more room); this one may sit at any later one.
+                let mut from = 0;
+                while let Some(index) = remainder[from..].find(part) {
+                    let end = from + index + part.len();
+                    if end == remainder.len() || remainder[end..].starts_with('/') {
+                        return true;
+                    }
+                    from += index + 1;
+                    while !remainder.is_char_boundary(from) {
+                        from += 1;
+                    }
+                }
+                return false;
+            }
             let Some(index) = remainder.find(part) else {
                 return false;
             };
@@ -9190,7 +9271,7 @@ fn build_natural_query_plan(input: &str) -> NaturalQueryPlan {
     let (input_without_phrases, exact_phrases) = extract_quoted_phrases(input);
     let tokens = tokenize_search_input(&input_without_phrases);
     let mut query_words = Vec::new();
-    let mut typed_words = 0usize;
+    let mut typed_words = Vec::new();
     let mut inferred_extension_filters = Vec::new();
     let mut explicit_extension_filters = Vec::new();
     let mut entry_type_filter: Option<String> = None;
@@ -9349,7 +9430,8 @@ fn build_natural_query_plan(input: &str) -> NaturalQueryPlan {
     NaturalQueryPlan {
         query_text: query_words.join(" "),
         query_keywords: query_words,
-        typed_keywords: typed_words,
+        typed_text: typed_words.join(" "),
+        typed_words,
         extension_filters,
         entry_type_filter,
         date_filter,
@@ -9444,10 +9526,10 @@ fn tokenize_search_input(input: &str) -> Vec<String> {
         .collect()
 }
 
-/// A word the person typed, then its related terms. `typed` counts only the
+/// A word the person typed, then its related terms. `typed` keeps only the
 /// former: the related terms widen the net, they aren't more words to match.
-fn push_expanded_query_word(query_words: &mut Vec<String>, typed: &mut usize, word: String) {
-    *typed += 1;
+fn push_expanded_query_word(query_words: &mut Vec<String>, typed: &mut Vec<String>, word: String) {
+    push_unique(typed, word.clone());
     push_unique(query_words, word.clone());
     for related in related_natural_terms(&word) {
         push_unique(query_words, related.to_string());
@@ -10411,6 +10493,7 @@ fn build_result_item(
     let mut prefix_keyword_hits = 0usize;
     let mut lexical_keyword_hits = 0usize;
     let mut fuzzy_keyword_hits = 0usize;
+    let mut related_keyword_hits = 0usize;
     let mut matched_keywords = Vec::new();
     for keyword in query_keywords {
         if keyword.is_empty() {
@@ -10429,8 +10512,15 @@ fn build_result_item(
             || file_name_collapsed.contains(keyword)
             || path_collapsed.contains(keyword);
         let has_lexical_signal = contains_match || exact_token_match || prefix_token_match;
+        // A related term ("example" for "sample") lets a result in but ranks
+        // it below any match of a word the person typed.
+        let typed = natural_plan.is_typed(keyword);
 
-        if exact_token_match {
+        if !typed {
+            if has_lexical_signal {
+                related_keyword_hits += 1;
+            }
+        } else if exact_token_match {
             exact_keyword_hits += 1;
         } else if prefix_token_match {
             prefix_keyword_hits += 1;
@@ -10438,7 +10528,7 @@ fn build_result_item(
         if has_lexical_signal {
             lexical_keyword_hits += 1;
             push_unique(&mut matched_keywords, keyword.clone());
-        } else if use_fuzzy && keyword.len() >= 4 {
+        } else if use_fuzzy && typed && keyword.len() >= 4 {
             // Fuzzy pass: check edit-distance-1 against each word in the filename and path.
             let mut fuzzy_hit = false;
             for word in normalized_file_name
@@ -10475,10 +10565,10 @@ fn build_result_item(
     // Single and two-keyword queries keep the existing pass-any-one behaviour.
     // Counted in words typed: "invoice" expands to five terms (invoices, bill,
     // receipt…), and demanding three of those dropped invoice-2024.txt.
-    let typed_keywords = if natural_plan.typed_keywords > 0 {
-        natural_plan.typed_keywords.min(query_keywords.len())
-    } else {
+    let typed_keywords = if natural_plan.typed_words.is_empty() {
         query_keywords.len()
+    } else {
+        natural_plan.typed_words.len().min(query_keywords.len())
     };
     if natural_language && typed_keywords >= 3 {
         let required = (typed_keywords + 1) / 2; // ceil(N/2)
@@ -10568,9 +10658,13 @@ fn build_result_item(
         exact_keyword_hits,
         prefix_keyword_hits,
         fuzzy_keyword_hits,
+        related_keyword_hits,
         phrase_name_hits: phrase_hits,
         phrase_path_hits,
-        total_keywords: query_keywords.iter().filter(|word| !word.is_empty()).count(),
+        total_keywords: query_keywords
+            .iter()
+            .filter(|word| !word.is_empty() && natural_plan.is_typed(word))
+            .count(),
     });
     let adjusted_score = super::rank::fuse(
         &super::rank::RankSignals {
@@ -12480,5 +12574,196 @@ mod tests {
         assert_eq!(split_size_token("100mb", None), Some((100.0, "mb", 1)));
         assert_eq!(split_size_token("100", Some("mb")), Some((100.0, "mb", 2)));
         assert_eq!(split_size_token("mb", None), None);
+    }
+
+    /// A fresh, unique folder under %TEMP%, removed when dropped.
+    struct TempFolder(PathBuf);
+
+    impl TempFolder {
+        fn new(tag: &str) -> Self {
+            let dir = std::env::temp_dir().join(format!("kil-search-test-{tag}-{}", unix_now_ms()));
+            fs::create_dir_all(&dir).unwrap();
+            TempFolder(dir)
+        }
+    }
+
+    impl Drop for TempFolder {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    /// A pattern ending in a name excludes that folder itself and all it
+    /// holds, not a folder whose name merely starts with it; one ending in
+    /// `*` still matches anything that far.
+    #[test]
+    fn a_star_pattern_ending_in_a_name_excludes_that_folder_only() {
+        let bin = ["c:/t/root/*/bin".to_string()];
+        let skipped = |path: &str| has_excluded_folder(Path::new(path), &bin);
+        assert!(skipped("C:\\t\\root\\sub\\bin"));
+        assert!(skipped("C:\\t\\root\\sub\\bin\\tool.exe"));
+        assert!(skipped("C:\\t\\root\\a\\binx\\b\\bin"));
+        assert!(!skipped("C:\\t\\root\\sub\\binaries"));
+        assert!(!skipped("C:\\t\\root\\sub\\binaries\\tool.txt"));
+        assert!(!skipped("C:\\t\\root\\bin.txt"));
+
+        let dots = ["c:/t/root/*/.*".to_string()];
+        assert!(has_excluded_folder(Path::new("C:\\t\\root\\a\\.git\\x"), &dots));
+        assert!(!has_excluded_folder(Path::new("C:\\t\\root\\a\\b.txt"), &dots));
+    }
+
+    /// A folder chosen inside another chosen folder's dot-folder (the
+    /// profile and its `.config`), with the exclusions Search sends for that
+    /// (IndexPlan): the walk reaches it (hidden folders on), its `!` keep
+    /// undoes the outer folder's dot-folder rule, and nothing else comes in.
+    #[test]
+    fn a_folder_chosen_in_another_ones_dot_folder_is_indexed_and_only_it() {
+        let folder = TempFolder::new("walk");
+        let home = folder.0.join("home");
+        for (dir, file) in [
+            (".config/app", "zebrasettings.json"),
+            (".config/.hidden", "zebrahidden.txt"),
+            (".cargo", "zebracargo.toml"),
+            ("docs", "zebradoc.txt"),
+            ("docs/node_modules", "zebramodule.js"),
+        ] {
+            fs::create_dir_all(home.join(dir)).unwrap();
+            fs::write(home.join(dir).join(file), b"x").unwrap();
+        }
+        let root = normalize_path_for_exclusion(&home);
+        let options: FileSearchIndexOptions = serde_json::from_value(serde_json::json!({
+            "roots": [home, home.join(".config")],
+            "includeHidden": true,
+            "indexContent": false,
+            "excludeFolders": [
+                format!("{root}/.*"), format!("{root}/*/.*"), format!("!{root}/.config"),
+                format!("{root}/.config/.*"), format!("{root}/.config/*/.*"), "node_modules".to_string(),
+            ],
+        }))
+        .unwrap();
+        let options = normalize_index_options(options).unwrap();
+        let state = folder.0.join("state");
+        let staging = state.join("filename-build-test");
+        fs::create_dir_all(&staging).unwrap();
+        build_filename_index_in_worker(&state, &staging, &options, &state.join("status.json"), &state.join("cancel"), None)
+            .unwrap();
+
+        let handle = try_open_filename_index(&state).expect("filename index");
+        let query = FileSearchQueryOptions {
+            query: "zebra".to_string(),
+            limit: Some(20),
+            offset: None,
+            extension_filter: None,
+            path_filter: None,
+            natural_language: None,
+        };
+        let frecency = super::super::frecency::FrecencySnapshot {
+            data: Default::default(),
+            now_ms: unix_now_ms(),
+        };
+        let (_, rows) = query_filename_index(&handle, &query, &frecency).unwrap();
+        let mut names: Vec<String> = rows.into_iter().map(|row| row.file_name).collect();
+        names.sort();
+        drop(handle);
+        assert_eq!(names, ["zebradoc.txt", "zebrasettings.json"]);
+    }
+
+    /// The index's state database is shared with the index workers, which are
+    /// other processes (another redb handle stands in for one here): the
+    /// engine never keeps it locked, and finding it busy it waits instead of
+    /// judging it corrupt and setting it aside as `keepitlocal.corrupt-*`.
+    #[test]
+    fn index_state_db_is_shared_with_worker_processes() {
+        let folder = TempFolder::new("state");
+        let state_dir = &folder.0;
+        let options: FileSearchIndexOptions = serde_json::from_value(serde_json::json!({
+            "roots": ["C:\\Somewhere"], "includeHidden": false, "indexContent": true,
+        }))
+        .unwrap();
+        let config = StoredSearchConfig {
+            options,
+            indexed_files: 7,
+            last_indexed_at_ms: Some(1),
+            rebuild_schedule: Default::default(),
+        };
+        write_search_config_for_state(state_dir, &config).unwrap();
+
+        let db_path = local_db::database_path_for_dir(state_dir);
+        let worker = redb::Database::open(&db_path).expect("a worker can open the state db");
+        let release = thread::spawn(move || {
+            thread::sleep(Duration::from_millis(300));
+            drop(worker);
+        });
+        let read = read_search_config_for_state(state_dir).unwrap().expect("config");
+        release.join().unwrap();
+
+        assert_eq!(read.indexed_files, 7);
+        let names: Vec<String> = fs::read_dir(state_dir)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(names, [local_db::LOCAL_DB_FILE], "nothing set aside as corrupt");
+    }
+
+    /// Single words find the names they are, or begin, a word of, ranked above
+    /// names that only match a related term the query was widened with.
+    #[test]
+    fn a_single_word_finds_names_with_it_above_related_terms() {
+        let folder = TempFolder::new("names");
+        let root = &folder.0;
+        let mut paths = Vec::new();
+        for name in ["notes.txt", "notebook.txt", "sample.pdf", "sample.docx", "sampler.wav"] {
+            paths.push(root.join(name));
+        }
+        // Many names that match only the related terms of "notes" / "sample".
+        for dir in ["memos", "examples"] {
+            fs::create_dir_all(root.join(dir)).unwrap();
+            paths.push(root.join(dir));
+        }
+        for n in 1..=12 {
+            paths.push(root.join("memos").join(format!("memo {n}.txt")));
+            paths.push(root.join("examples").join(format!("example {n}.txt")));
+        }
+        for path in &paths {
+            if path.extension().is_some() {
+                fs::write(path, b"x").unwrap();
+            }
+        }
+
+        let index = Index::create_in_ram(build_filename_index_schema());
+        let fields = extract_filename_index_fields(&index.schema()).unwrap();
+        let mut writer: IndexWriter = index.writer(15_000_000).unwrap();
+        for path in &paths {
+            upsert_filename_document(path, &writer, &fields).unwrap();
+        }
+        writer.commit().unwrap();
+        let reader = index.reader().unwrap();
+        let handle = FilenameIndexHandle { index, reader, fields };
+        let frecency = super::super::frecency::FrecencySnapshot {
+            data: Default::default(),
+            now_ms: unix_now_ms(),
+        };
+
+        let names = |query: &str| -> Vec<String> {
+            let options = FileSearchQueryOptions {
+                query: query.to_string(),
+                limit: Some(5),
+                offset: None,
+                extension_filter: None,
+                path_filter: None,
+                natural_language: None,
+            };
+            let (_, rows) = query_filename_index(&handle, &options, &frecency).unwrap();
+            rows.into_iter().map(|row| row.file_name).collect()
+        };
+
+        let mut sample = names("sample");
+        sample[..2].sort();
+        assert_eq!(sample[..3], ["sample.docx", "sample.pdf", "sampler.wav"], "{sample:?}");
+        let notes = names("notes");
+        assert_eq!(notes[0], "notes.txt", "{notes:?}");
+        let note = names("note");
+        assert!(note[..2].contains(&"notes.txt".to_string()), "{note:?}");
+        assert!(note[..2].contains(&"notebook.txt".to_string()), "{note:?}");
     }
 }

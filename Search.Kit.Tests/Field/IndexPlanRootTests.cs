@@ -9,35 +9,51 @@ public class IndexPlanRootTests
 {
     /// The engine's own test (search.rs `should_include_path`, less the
     /// system folders): exclusions normalised as `normalize_unique_tokens`
-    /// does, then a path-like one against the whole path, a name against
-    /// every folder of it, and dot-folders unless hidden ones are on.
+    /// does, then, the last matching one deciding (`!` keeps), a path-like
+    /// one against the whole path and a name against every folder of it;
+    /// and dot-folders unless hidden ones are on.
     private static bool Skipped(JsonObject options, string path)
     {
         var normal = path.Replace('\\', '/').ToLowerInvariant().TrimEnd('/');
+        var skipped = false;
         foreach (var node in options["excludeFolders"]!.AsArray())
         {
             var excluded = node!.GetValue<string>().Trim().Trim('"').Trim('\'').ToLowerInvariant().Replace('\\', '/').Trim('/').Trim();
+            var keep = excluded.StartsWith('!');
+            if (keep) excluded = excluded[1..];
             if (excluded.Length == 0) continue;
-            if (excluded.Contains('/') || excluded.Contains(':') || excluded.Contains('*'))
-            {
-                if (EngineMatches(normal, excluded)) return true;
-            }
-            else if (normal.Split('/').Contains(excluded)) return true;
+            var matches = excluded.Contains('/') || excluded.Contains(':') || excluded.Contains('*')
+                ? EngineMatches(normal, excluded)
+                : normal.Split('/').Contains(excluded);
+            if (matches) skipped = !keep;
         }
-        return !options["includeHidden"]!.GetValue<bool>() && normal.Split('/').Any(p => p.StartsWith('.'));
+        return skipped || !options["includeHidden"]!.GetValue<bool>() && normal.Split('/').Any(p => p.StartsWith('.'));
     }
 
-    /// search.rs `exclusion_pattern_matches_path`.
+    /// search.rs `exclusion_pattern_matches_path`: pieces between `*`s in
+    /// order, a last piece with no `*` after it ending at a folder name.
     private static bool EngineMatches(string path, string excluded)
     {
         if (excluded.Contains('*'))
         {
+            var parts = excluded.Split('*', StringSplitOptions.RemoveEmptyEntries);
             var rest = path;
-            foreach (var part in excluded.Split('*', StringSplitOptions.RemoveEmptyEntries))
+            for (var i = 0; i < parts.Length; i++)
             {
-                var at = rest.IndexOf(part, StringComparison.Ordinal);
+                if (i == parts.Length - 1 && !excluded.EndsWith('*'))
+                {
+                    for (var from = 0; ;)
+                    {
+                        var hit = rest.IndexOf(parts[i], from, StringComparison.Ordinal);
+                        if (hit < 0) return false;
+                        var end = hit + parts[i].Length;
+                        if (end == rest.Length || rest[end] == '/') return true;
+                        from = hit + 1;
+                    }
+                }
+                var at = rest.IndexOf(parts[i], StringComparison.Ordinal);
                 if (at < 0) return false;
-                rest = rest[(at + part.Length)..];
+                rest = rest[(at + parts[i].Length)..];
             }
             return true;
         }
@@ -53,6 +69,10 @@ public class IndexPlanRootTests
         Assert.False(Skipped(options, @"C:\Temp\search-test\deep\b.txt"));
         Assert.True(Skipped(options, @"C:\Temp\search-test\temp\a.txt"));
         Assert.True(Skipped(options, @"C:\Temp\search-test\x\temp\a.txt"));
+        // The excluded folder itself too (no row for it), not one it begins.
+        Assert.True(Skipped(options, @"C:\Temp\search-test\x\temp"));
+        Assert.False(Skipped(options, @"C:\Temp\search-test\x\temperature"));
+        Assert.False(Skipped(options, @"C:\Temp\search-test\x\temperature\a.txt"));
         // The other folder keeps every exclusion.
         Assert.True(Skipped(options, @"D:\Work\temp\a.txt"));
         Assert.True(Skipped(options, @"D:\Work\app\temp\a.txt"));
@@ -65,6 +85,8 @@ public class IndexPlanRootTests
         Assert.False(Skipped(build, @"C:\src\build\docs\readme.md"));
         Assert.True(Skipped(build, @"C:\src\app\build\out.txt"));
         Assert.True(Skipped(build, @"C:\src\build\docs\build\out.txt"));
+        Assert.True(Skipped(build, @"C:\src\build\docs\sub\build"));
+        Assert.False(Skipped(build, @"C:\src\build\docs\sub\builder\notes.md"));
 
         // A folder chosen under AppData\Local; LocalLow and Temp still out.
         var local = IndexPlan.Options([@"C:\Users\me\AppData\Local\Notes", @"D:\Work"], contents: false);
@@ -135,12 +157,31 @@ public class IndexPlanRootTests
     }
 
     [Fact]
+    public void A_folder_chosen_inside_another_ones_dot_folder_is_indexed_and_only_it()
+    {
+        var options = IndexPlan.Options([@"C:\Users\me", @"C:\Users\me\.config"], contents: true);
+        Assert.False(Skipped(options, @"C:\Users\me\.config"));
+        Assert.False(Skipped(options, @"C:\Users\me\.config\app\settings.json"));
+        // The profile's other dot-folders, and the chosen one's own, stay out.
+        Assert.True(Skipped(options, @"C:\Users\me\.cargo\registry\x.rs"));
+        Assert.True(Skipped(options, @"C:\Users\me\projects\.venv\x.py"));
+        Assert.True(Skipped(options, @"C:\Users\me\.config\.hidden\x"));
+        Assert.True(Skipped(options, @"C:\Users\me\.config\app\.cache\x"));
+        // Exclusions and secrets still apply inside it.
+        Assert.True(Skipped(options, @"C:\Users\me\.config\app\node_modules\x.js"));
+        Assert.True(Skipped(options, @"C:\Users\me\.config\gh\hosts.yml"));
+        Assert.False(Skipped(options, @"C:\Users\me\Documents\cv.pdf"));
+    }
+
+    [Fact]
     public void A_folder_chosen_inside_AppData_is_still_indexed()
     {
         var options = IndexPlan.Options([@"C:\Users\me", @"C:\Users\me\AppData\Roaming\Notes", @"D:\.notes"], contents: true);
         Assert.True(options["includeHidden"]!.GetValue<bool>());
         Assert.False(Skipped(options, @"C:\Users\me\AppData\Roaming\Notes\plan.md"));
         Assert.True(Skipped(options, @"C:\Users\me\AppData\Local\Packages\x\y.dat"));
+        // Only that folder: the rest of AppData stays out.
+        Assert.True(Skipped(options, @"C:\Users\me\AppData\Roaming\Code\User\settings.json"));
         Assert.False(Skipped(options, @"C:\Users\me\Documents\cv.pdf"));
         // Chosen inside AppData itself: no AppData exclusion of its own.
         var inside = IndexPlan.Options([@"C:\Users\me\AppData\Roaming\.tool"], contents: true);

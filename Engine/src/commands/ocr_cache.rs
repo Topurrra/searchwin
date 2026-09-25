@@ -26,7 +26,6 @@
 //! one rebuild's worth of duplicate OCR work.
 
 use redb::{Database, ReadableTable, TableDefinition};
-use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::{LazyLock, Mutex};
@@ -197,30 +196,11 @@ fn now_secs() -> u64 {
 }
 
 fn open_db(path: &Path) -> Result<Database, String> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)
-            .map_err(|e| format!("Cannot create OCR cache directory: {e}"))?;
-    }
-
-    // Graceful corruption recovery mirrors local_db.rs. A partially
-    // written cache file caused by an OS crash mid-write must not stop
-    // the indexer from running — we move the bad file aside and start
-    // a fresh cache. Worst case: one rebuild of duplicate OCR work
-    // next time.
-    let db = if path.exists() {
-        match Database::open(path) {
-            Ok(db) => db,
-            Err(error) => {
-                eprintln!(
-                    "ocr_cache: cannot open existing cache ({error}); quarantining and starting fresh."
-                );
-                quarantine(path);
-                Database::create(path).map_err(|e| format!("Cannot create OCR cache: {e}"))?
-            }
-        }
-    } else {
-        Database::create(path).map_err(|e| format!("Cannot create OCR cache: {e}"))?
-    };
+    // Graceful corruption recovery and waiting out another process's hold
+    // live in local_db. A partially written cache file caused by an OS
+    // crash mid-write must not stop the indexer from running. Worst case:
+    // one rebuild of duplicate OCR work next time.
+    let (db, _) = super::local_db::open_redb(path)?;
 
     let write_txn = db
         .begin_write()
@@ -235,15 +215,6 @@ fn open_db(path: &Path) -> Result<Database, String> {
         .map_err(|e| format!("Cannot commit OCR cache init: {e}"))?;
 
     Ok(db)
-}
-
-fn quarantine(path: &Path) {
-    let ts = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_millis())
-        .unwrap_or(0);
-    let quarantined = path.with_extension(format!("corrupt-{ts}.redb"));
-    let _ = fs::rename(path, quarantined);
 }
 
 /// Cache lookup. `Some(text)` on hit (with `last_used_at` bumped to

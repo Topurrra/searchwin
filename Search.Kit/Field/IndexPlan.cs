@@ -58,25 +58,14 @@ public static class IndexPlan
     {
         JsonArray Folders() => [.. folders.Select(f => (JsonNode)f)];
         var roots = Roots(folders);
-        var excludes = Excludes(folders, own);
         // The engine skips anything with a folder whose name starts with a
         // dot anywhere in its path, the chosen folder's own parents too. A
         // folder chosen inside one needs that off, and then every folder's
         // dot-folders are skipped by name instead: below each chosen folder,
         // not above it.
         var hidden = roots.Any(r => r.Split('/').Any(p => p.StartsWith('.')));
-        if (hidden)
-            foreach (var root in roots)
-            {
-                excludes.AddRange([root + "/.*", root + "/*/."]);
-                // Hidden folders on then mean Windows' hidden ones too:
-                // AppData, below a profile (or deeper, below a folder of
-                // profiles), is skipped — unless the folder was chosen
-                // inside it, or another chosen folder lies inside it.
-                if (InAppData(root)) continue;
-                foreach (var appdata in (string[])[root + "/appdata", root + "/*/appdata/*"])
-                    if (!roots.Any(r => Matches(r, appdata))) excludes.Add(appdata);
-            }
+        List<string> excludes = hidden ? HiddenRules(roots) : [];
+        excludes.AddRange(Excludes(folders, own));
         return new JsonObject
         {
             ["roots"] = Folders(),
@@ -87,8 +76,46 @@ public static class IndexPlan
             ["maxContentKb"] = null,
             ["commitEvery"] = null,
             ["watcherEnabled"] = true,
-            ["excludeFolders"] = new JsonArray([.. excludes.Select(e => (JsonNode)e)]),
+            ["excludeFolders"] = new JsonArray([.. excludes.Distinct(StringComparer.Ordinal).Select(e => (JsonNode)e)]),
         };
+    }
+
+    /// With hidden folders on, each chosen folder's dot-folders (right below
+    /// it and deeper) are skipped, and so is AppData, Windows' hidden folder,
+    /// below a profile (or a folder of profiles), unless the folder was
+    /// chosen inside AppData. A folder chosen inside another's skipped
+    /// folder (the profile and its `.config`, or `AppData\Roaming\Notes`) is
+    /// kept by a `!folder` rule: the engine lets a later rule win, so the
+    /// keep undoes only the rules of the folders around it. Everything else
+    /// stays out: the profile's other dot-folders and the rest of its
+    /// AppData, the kept folder's own dot-folders (its rules come after its
+    /// keep), and the default exclusions and secrets (listed after all of
+    /// these).
+    private static List<string> HiddenRules(List<string> roots)
+    {
+        var rules = new List<string>();
+        // Outer folders first, so a folder's keep follows the rules of the
+        // folders it sits in and comes before its own.
+        foreach (var root in roots.OrderBy(r => r.Split('/').Length).ThenBy(r => r, StringComparer.Ordinal))
+        {
+            if (Skips(rules, root)) rules.Add("!" + root);
+            rules.AddRange([root + "/.*", root + "/*/.*"]);
+            if (!InAppData(root)) rules.AddRange([root + "/appdata", root + "/*/appdata"]);
+        }
+        return rules;
+    }
+
+    /// Whether `rules`, read as the engine reads them (the last one that
+    /// matches wins; `!` keeps), skip `path`.
+    private static bool Skips(List<string> rules, string path)
+    {
+        var skipped = false;
+        foreach (var rule in rules)
+        {
+            var keep = rule.StartsWith('!');
+            if (Matches(path, keep ? rule[1..] : rule)) skipped = !keep;
+        }
+        return skipped;
     }
 
     /// The exclusions, per chosen folder. The engine tests every folder of a
@@ -110,10 +137,11 @@ public static class IndexPlan
             }
             foreach (var root in roots)
             {
-                // Right below the folder, and anywhere deeper. (A trailing
-                // `/` would be trimmed by the engine, hence the `*`.)
-                list.Add(exclusion.Contains('*') ? $"{root}/{exclusion}/*" : $"{root}/{exclusion}");
-                list.Add($"{root}/*/{exclusion}/*");
+                // Right below the folder, and anywhere deeper: the excluded
+                // folder itself and all it holds (a `*` pattern ending in a
+                // name ends at a folder name, so `bin` isn't `binaries`).
+                list.Add($"{root}/{exclusion}");
+                list.Add($"{root}/*/{exclusion}");
             }
         }
         list.AddRange(Secrets);
@@ -150,17 +178,30 @@ public static class IndexPlan
     private static bool IsPathLike(string exclusion) =>
         exclusion.Contains('/') || exclusion.Contains(':') || exclusion.Contains('*');
 
-    /// The engine's `exclusion_pattern_matches_path`.
+    /// The engine's `exclusion_pattern_matches_path`: the pieces between
+    /// `*`s in order, a last piece (no `*` after it) ending at a folder name.
     private static bool Matches(string path, string exclusion)
     {
         if (exclusion.Contains('*'))
         {
+            var parts = exclusion.Split('*', StringSplitOptions.RemoveEmptyEntries);
             var rest = path.AsSpan();
-            foreach (var part in exclusion.Split('*', StringSplitOptions.RemoveEmptyEntries))
+            for (var i = 0; i < parts.Length; i++)
             {
-                var at = rest.IndexOf(part, StringComparison.Ordinal);
+                if (i == parts.Length - 1 && !exclusion.EndsWith('*'))
+                {
+                    for (var from = 0; ;)
+                    {
+                        var hit = rest[from..].IndexOf(parts[i], StringComparison.Ordinal);
+                        if (hit < 0) return false;
+                        var end = from + hit + parts[i].Length;
+                        if (end == rest.Length || rest[end] == '/') return true;
+                        from += hit + 1;
+                    }
+                }
+                var at = rest.IndexOf(parts[i], StringComparison.Ordinal);
                 if (at < 0) return false;
-                rest = rest[(at + part.Length)..];
+                rest = rest[(at + parts[i].Length)..];
             }
             return true;
         }

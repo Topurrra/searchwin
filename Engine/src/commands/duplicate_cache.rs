@@ -28,7 +28,6 @@
 //! scan's worth of duplicate hashing work.
 
 use redb::{Database, ReadableTable, TableDefinition};
-use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{LazyLock, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -124,25 +123,7 @@ fn algo_id(algorithm: &str) -> u8 {
 }
 
 fn open_db(path: &Path) -> Result<Database, String> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)
-            .map_err(|e| format!("Cannot create duplicate cache directory: {e}"))?;
-    }
-    let db = if path.exists() {
-        match Database::open(path) {
-            Ok(db) => db,
-            Err(error) => {
-                eprintln!(
-                    "duplicate_cache: cannot open existing cache ({error}); quarantining and starting fresh."
-                );
-                quarantine(path);
-                Database::create(path)
-                    .map_err(|e| format!("Cannot create duplicate cache: {e}"))?
-            }
-        }
-    } else {
-        Database::create(path).map_err(|e| format!("Cannot create duplicate cache: {e}"))?
-    };
+    let (db, _) = super::local_db::open_redb(path)?;
     let write_txn = db
         .begin_write()
         .map_err(|e| format!("Cannot initialize duplicate cache: {e}"))?;
@@ -155,15 +136,6 @@ fn open_db(path: &Path) -> Result<Database, String> {
         .commit()
         .map_err(|e| format!("Cannot commit duplicate cache init: {e}"))?;
     Ok(db)
-}
-
-fn quarantine(path: &Path) {
-    let ts = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_millis())
-        .unwrap_or(0);
-    let quarantined = path.with_extension(format!("corrupt-{ts}.redb"));
-    let _ = fs::rename(path, quarantined);
 }
 
 /// Cache lookup. `Some(hash)` on hit (mtime + algorithm match),

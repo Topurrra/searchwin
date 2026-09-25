@@ -425,6 +425,7 @@ fn score_hit(query: &str, title: &str, url: &str, visit_count: u32, last_visit_m
         exact_keyword_hits: exact,
         prefix_keyword_hits: prefix,
         fuzzy_keyword_hits: 0,
+        related_keyword_hits: 0,
         phrase_name_hits: 0,
         phrase_path_hits: 0,
         total_keywords: keywords.len(),

@@ -115,6 +115,9 @@ pub struct LexicalHits {
     pub prefix_keyword_hits: usize,
     /// Query keywords that matched only fuzzily (edit distance 1).
     pub fuzzy_keyword_hits: usize,
+    /// Related terms the query was widened with ("example" for "sample")
+    /// that matched. Not typed words, so not in `total_keywords`.
+    pub related_keyword_hits: usize,
     /// Quoted exact phrases found in the file name.
     pub phrase_name_hits: usize,
     /// Quoted exact phrases found in the path.
@@ -152,6 +155,11 @@ pub fn lexical_quality(hits: &LexicalHits) -> f32 {
         let prefix = hits.prefix_keyword_hits as f32 / keywords;
         let fuzzy = hits.fuzzy_keyword_hits as f32 / keywords;
         quality += exact * 0.35 + prefix * 0.18 + fuzzy * 0.08;
+    }
+
+    // A related term only: weaker than any typed word matched.
+    if hits.related_keyword_hits > 0 {
+        quality += 0.05;
     }
 
     quality.clamp(0.0, 1.0)
@@ -244,6 +252,7 @@ mod tests {
             exact_keyword_hits: 0,
             prefix_keyword_hits: 0,
             fuzzy_keyword_hits: 0,
+            related_keyword_hits: 0,
             phrase_name_hits: 0,
             phrase_path_hits: 0,
             total_keywords: 1,

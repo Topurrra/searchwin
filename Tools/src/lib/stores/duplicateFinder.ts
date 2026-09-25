@@ -689,7 +689,7 @@ export async function undoDuplicateMove(): Promise<void> {
                 level: failed ? 'warning' : 'success',
                 title: failed ? `Restored ${restored}, failed ${failed}` : `Restored ${restored} duplicate${restored === 1 ? '' : 's'}`,
                 message: response.recovery
-                    ? 'Some files still need manual attention before KeepItLocal can finish the restore.'
+                    ? 'Some files still need manual attention before the restore can finish.'
                     : 'Moved duplicates were restored successfully.',
                 toolId: 'duplicate-finder',
             });

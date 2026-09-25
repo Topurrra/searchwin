@@ -19,6 +19,7 @@
     import { open, save } from '@tauri-apps/plugin-dialog';
     import { writeTextFile } from '@tauri-apps/plugin-fs';
     import { get } from 'svelte/store';
+    import { confirm } from '$lib/stores/confirmDialog';
     import {
         FolderOpen,
         FileCode2,
@@ -59,7 +60,6 @@
         diffFileText,
         diffViewMode,
         diffSyncResult,
-        diffPendingMirror,
         diffSyncing,
         mergeBase,
         mergeOurs,
@@ -172,27 +172,20 @@
         try { await cancelDiffOperation(currentDiffOpId); } catch { /* best-effort */ }
     }
 
-    // Quality Pass Wave 1 / DM-4 (2026-05-29): folder sync state +
-    // handler. `pendingMirror` is the tri-state confirmation gate for
-    // the destructive Mirror action — first click sets it, second
-    // click runs.
-    // `syncing` is transient (local). `syncResult` (last sync summary) and
-    // `pendingMirror` (the tri-state Mirror confirmation gate) persist via
-    // the store so they survive navigation like the rest of the folder tab.
+    // Folder sync. Mirror overwrites and deletes for good, so it asks every
+    // time, naming both folders.
     let syncing = $derived($diffSyncing);
     let syncResult = $derived($diffSyncResult);
-    let pendingMirror = $state(get(diffPendingMirror));
-    $effect(() => { diffPendingMirror.set(pendingMirror); });
 
     async function runSync(mode: SyncMode) {
         if (!leftDir || !rightDir || get(diffSyncing) || get(diffBusy)) return;
-        if (mode === 'mirror_left_to_right' && !pendingMirror) {
-            pendingMirror = true;
-            diffPendingMirror.set(true);
-            return;
+        if (mode === 'mirror_left_to_right') {
+            const ok = await confirm(
+                `Make “${rightDir}” an exact copy of “${leftDir}”? Files that differ are overwritten, and files that are only in “${rightDir}” are deleted permanently.`,
+                { title: 'Mirror folders', kind: 'warning', confirmLabel: 'Mirror', danger: true },
+            );
+            if (!ok || get(diffSyncing) || get(diffBusy)) return;
         }
-        pendingMirror = false;
-        diffPendingMirror.set(false);
         diffSyncing.set(true);
         diffBusy.set(true);
         diffSyncResult.set(null);
@@ -473,10 +466,8 @@
                     </div>
                 </div>
 
-                <!-- Quality Pass Wave 1 / DM-4 (2026-05-29): folder sync
-                     actions. Copy-only modes are safe; Mirror is
-                     destructive (deletes extras on the target) and
-                     needs a 2-click confirmation. -->
+                <!-- Folder sync. Copy-only modes add what's missing; Mirror
+                     overwrites and deletes, and asks first. -->
                 <div class="dm-sync-row">
                     <span class="dm-step" aria-hidden="true">3</span>
                     <span class="dm-sync-label">Choose a sync action</span>
@@ -493,13 +484,11 @@
                         onclick={() => runSync('copy_right_to_left')}
                     >Copy missing R→L</Button>
                     <Button
-                        variant={pendingMirror ? 'danger' : 'ghost'}
+                        variant="ghost"
                         size="sm"
                         disabled={syncing || busy}
                         onclick={() => runSync('mirror_left_to_right')}
-                    >
-                        {pendingMirror ? 'Click again to confirm — Mirror L→R (deletes extras!)' : 'Mirror L→R…'}
-                    </Button>
+                    >Mirror L→R…</Button>
                     {#if syncing}
                         <span class="dm-sync-label">Working…</span>
                     {:else if syncResult}

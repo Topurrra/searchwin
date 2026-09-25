@@ -11,6 +11,7 @@
     import { ToolPage, Toggle, Button, ErrorState, LoadingState } from '$lib/ui';
     import { save } from '@tauri-apps/plugin-dialog';
     import { toast } from '$lib/stores/toasts';
+    import { confirm } from '$lib/stores/confirmDialog';
     import {
         ShieldCheck,
         RefreshCw,
@@ -78,7 +79,20 @@
         return open[cat] ?? true;
     }
 
+    /** Bumped when a change is declined, so the switches redraw as they are. */
+    let toggleEpoch = $state(0);
+
+    /** Every change to Windows is asked for, one setting at a time. */
     async function onToggle(t: HardeningTweak, value: boolean) {
+        const ok = await confirm(`${t.title}. ${t.detail}`, {
+            title: value ? 'Change this Windows setting?' : 'Put this Windows setting back?',
+            kind: 'question',
+            confirmLabel: value ? 'Change it' : 'Put it back',
+        });
+        if (!ok) {
+            toggleEpoch += 1;
+            return;
+        }
         try {
             await setTweakApplied(t.id, value);
         } catch {
@@ -251,12 +265,14 @@
                                     </div>
                                     {#if t.tier === 'apply'}
                                         <div class="wh-row-ctl">
-                                            <Toggle
-                                                checked={t.applied}
-                                                onchange={(v) => onToggle(t, v)}
-                                                ariaLabel={t.title}
-                                                disabled={!!$busy[t.id]}
-                                            />
+                                            {#key toggleEpoch}
+                                                <Toggle
+                                                    checked={t.applied}
+                                                    onchange={(v) => onToggle(t, v)}
+                                                    ariaLabel={t.title}
+                                                    disabled={!!$busy[t.id]}
+                                                />
+                                            {/key}
                                         </div>
                                     {/if}
                                 </div>

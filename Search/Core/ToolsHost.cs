@@ -29,21 +29,39 @@ public static class ToolsHost
     private static bool IsTools(string? url) => Uri.TryCreate(url, UriKind.Absolute, out var u) && IsTools(u);
 
     /// `search://tools` and `search://tools/<id>` → the page.
+    /// `search://play?path=<encoded>` → the media player, for one file.
     public static Uri? Resolve(string typed)
     {
-        if (!Uri.TryCreate(typed.Trim(), UriKind.Absolute, out var url) || url.Host != "tools") return null;
+        if (!Uri.TryCreate(typed.Trim(), UriKind.Absolute, out var url)) return null;
+        if (url.Host == "play")
+        {
+            var path = QueryValue(url, "path");
+            return path == null ? null : new Uri($"https://{Host}/index.html#/play?path={Uri.EscapeDataString(path)}");
+        }
+        if (url.Host != "tools") return null;
         // A folder mapping serves files, never a folder's index: the page is
         // always named.
         var id = url.AbsolutePath.Trim('/');
         return new Uri(id.Length == 0 ? $"https://{Host}/index.html" : $"https://{Host}/index.html#/tool/{Uri.EscapeDataString(id)}");
     }
 
-    /// What the field shows for a tool page.
+    private static string? QueryValue(Uri url, string key)
+    {
+        var pair = url.Query.TrimStart('?').Split('&')
+            .Select(p => p.Split('=', 2))
+            .FirstOrDefault(p => p[0] == key);
+        return pair is { Length: 2 } ? Uri.UnescapeDataString(pair[1]) : null;
+    }
+
+    /// What the field shows for a tool page, or the player.
     public static string Pretty(Uri url)
     {
         const string tool = "#/tool/";
+        const string play = "#/play?path=";
         var fragment = url.Fragment;
-        return fragment.StartsWith(tool) ? "search://tools/" + Uri.UnescapeDataString(fragment[tool.Length..]) : "search://tools";
+        if (fragment.StartsWith(tool)) return "search://tools/" + Uri.UnescapeDataString(fragment[tool.Length..]);
+        if (fragment.StartsWith(play)) return "search://play?path=" + Uri.UnescapeDataString(fragment[play.Length..]);
+        return "search://tools";
     }
 
     /// The built pages: beside Search.exe, or (a test run out of the repo)

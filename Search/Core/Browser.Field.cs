@@ -171,8 +171,11 @@ public sealed partial class Browser
                 Copy(row.Target);
                 Announce(row.Target.Length <= 32 && !row.Target.Contains('\n') ? $"Copied {row.Target}" : "Copied");
                 break;
-            case RowAction.OpenInTab or RowAction.Play:
+            case RowAction.OpenInTab:
                 OpenFile(row.Target);
+                break;
+            case RowAction.Play:
+                OpenPlayer(row.Target);
                 break;
             case RowAction.OpenWithApp:
                 Send("open_search_result_path", new JsonObject { ["path"] = row.Target }, "Couldn't open that");
@@ -198,8 +201,7 @@ public sealed partial class Browser
     }
 
     /// A file in a tab: the blank one you're on, or a new one beside it.
-    /// Chromium shows PDFs, pictures and text itself, and plays audio and
-    /// video in its own player.
+    /// Chromium shows PDFs, pictures and text itself.
     private void OpenFile(string path)
     {
         if (!File.Exists(path))
@@ -208,6 +210,21 @@ public sealed partial class Browser
             return;
         }
         var url = new Uri(path);
+        if (Active is { IsBlank: true } blank && Floating != blank.Id) Go(blank, url);
+        else Open(url, foreground: true);
+    }
+
+    /// Audio and video, in the media player tab (Tools/#/play), not the bare
+    /// file:// URL: it gets a playlist of the folder's other media, next/
+    /// previous and a remembered position.
+    private void OpenPlayer(string path)
+    {
+        if (!File.Exists(path))
+        {
+            Announce("That file isn't there any more");
+            return;
+        }
+        if (ToolsHost.Resolve($"search://play?path={Uri.EscapeDataString(path)}") is not { } url) return;
         if (Active is { IsBlank: true } blank && Floating != blank.Id) Go(blank, url);
         else Open(url, foreground: true);
     }

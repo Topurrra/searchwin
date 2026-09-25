@@ -36,11 +36,11 @@ public sealed partial class Preferences : Model
         glyph = store.String("glyph") == "icons" ? Glyph.Icons : Glyph.Letters;
         sleepsTabs = store.OptionalBool("tabs.sleep") ?? true;
         shielded = store.OptionalBool("shield") ?? true;
-        shieldLists = store.Bool("shield.lists");
+        shieldLists = store.OptionalBool("shield.lists") ?? true;
         tidiesLinks = store.OptionalBool("shield.links") ?? true;
         rejectsCookies = store.OptionalBool("shield.cookies") ?? true;
         warnsOfScams = store.OptionalBool("fishcatcher") ?? true;
-        scamFeed = store.Bool("fishcatcher.feed");
+        scamFeed = store.OptionalBool("fishcatcher.feed") ?? true;
         // WebView2 does passkeys through Windows Hello out of the box, so a
         // build here can always offer them.
         passkeys = store.OptionalBool("passkeys") ?? true;
@@ -92,9 +92,10 @@ public sealed partial class Preferences : Model
     public bool Shielded { get => shielded; set { if (Set(ref shielded, value)) store.Set("shield", value); } }
 
     private bool shieldLists;
-    /// EasyList and EasyPrivacy in place of the short built-in list. They
-    /// are downloads — the one network call the blocker makes, once a day —
-    /// so they are off unless asked for (see Decisions D28).
+    /// EasyList and EasyPrivacy in place of the short built-in list. They are
+    /// a download — the one network call the blocker makes, once a day, from
+    /// easylist.to — but a full, current list is worth more than a 44-domain
+    /// fallback, so this is on unless turned off (superseding Decisions D28).
     public bool ShieldLists { get => shieldLists; set { if (Set(ref shieldLists, value)) store.Set("shield.lists", value); } }
 
     private bool tidiesLinks;
@@ -115,8 +116,10 @@ public sealed partial class Preferences : Model
     public bool WarnsOfScams { get => warnsOfScams; set { if (Set(ref warnsOfScams, value)) store.Set("fishcatcher", value); } }
 
     private bool scamFeed;
-    /// FishCatcher's daily list of newly reported scam sites. It is the one
-    /// network call FishCatcher makes, so it is off unless asked for.
+    /// FishCatcher's daily list of newly reported scam sites. It is a
+    /// download — the one network call FishCatcher makes, once a day, from
+    /// the registry — verified by its signature before anything in it is
+    /// used, and it is on unless turned off.
     public bool ScamFeed { get => scamFeed; set { if (Set(ref scamFeed, value)) store.Set("fishcatcher.feed", value); } }
 
     private bool passkeys;

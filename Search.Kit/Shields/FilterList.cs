@@ -455,7 +455,7 @@ public sealed class FilterList
         return false;
     }
 
-    private const int FormatVersion = 3;
+    private const int FormatVersion = 4;
 
     /// The compact binary form: every compiled rule, with no re-parsing of
     /// list text needed to use it again — `Load` rebuilds the same indices

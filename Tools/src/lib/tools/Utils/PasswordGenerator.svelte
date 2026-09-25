@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { copySecret } from '$lib/utils/secretCopy';
     import { Copy, Eye, EyeOff, RefreshCw, ShieldCheck, KeyRound } from '@lucide/svelte';
     import { toast } from '$lib/stores/toasts';
     import { _ } from 'svelte-i18n';
@@ -212,12 +213,12 @@
 
     function copyAll() {
         const list = mode === 'secret' ? secretOutputs : passwords;
-        void navigator.clipboard.writeText(list.join('\n'));
+        void copySecret(list.join('\n'));
         toast($_('tool.passwordGenerator.copiedValues', { values: { count: list.length } }), 'success');
     }
 
     async function copyOne(value: string, label: string) {
-        await navigator.clipboard.writeText(value);
+        await copySecret(value);
         toast($_('tool.passwordGenerator.copiedLabel', { values: { label } }), 'success');
     }
 

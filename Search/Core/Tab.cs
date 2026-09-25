@@ -166,6 +166,7 @@ public sealed partial class Tab : Model
             var ours = ourNavigation;
             ourNavigation = false;
             if (!ToolsHost.MayOpen(Address, e, ours)) { e.Cancel = true; return; }
+            Documents++;
             Loading = true;
             Progress = 0.1;
         };
@@ -253,6 +254,10 @@ public sealed partial class Tab : Model
     /// The site's icon, for tabs set to wear one. From the cache the moment
     /// the tab has an address, and from the page a moment after it loads.
     public ImageSource? Icon { get => icon; set => Set(ref icon, value); }
+
+    /// How many navigations the page has started: a paste aimed at the page
+    /// as it was can tell it's since become another document.
+    public long Documents { get; private set; }
 
     private bool typing;
     /// True while the caret is in something on the page that takes typing.

@@ -245,7 +245,8 @@ public sealed class Bench
                 // narrow, down/up, enter (paste) or go (Shift+Enter), close.
                 // `secret TEXT` copies the way Search copies a password, which
                 // no clipboard history may keep. Only on a SEARCH_PROBE run:
-                // it pastes into pages and writes the clipboard.
+                // it pastes into pages and writes the clipboard. What was
+                // copied before this run began is never reported.
                 if (!Store.Testing) { answer(Error("clip only works on a --test run — it pastes into your pages")); return; }
                 var popup = App.Window?.Clips;
                 switch (Str(request, "act"))
@@ -271,14 +272,15 @@ public sealed class Bench
                         ["paused"] = ClipHistory.Paused,
                         ["open"] = b.Clipping,
                         ["aim"] = b.ClipAim,
-                        ["kept"] = ClipHistory.Last.Count,
+                        ["kept"] = SearchKit.Field.ClipList.Since(ClipHistory.Last, RunStartedMs).Count,
                         ["announced"] = b.Announcement,
                         ["typed"] = b.Typed,
                     };
                     if (now != null)
                     {
                         var (rows, picked) = now.Seen;
-                        reply["rows"] = new JsonArray([.. rows.Select(r => (JsonNode)r)]);
+                        // Rows from before the run show as their place only.
+                        reply["rows"] = new JsonArray([.. rows.Select(r => (JsonNode)(r.CapturedMs >= RunStartedMs ? r.Row : "(from before this run)"))]);
                         reply["picked"] = picked;
                         reply["drawMs"] = Math.Round(now.DrawMs, 2);
                     }
@@ -565,6 +567,10 @@ public sealed class Bench
     /// Each keystroke's time on the UI thread (the field's own work and its
     /// list redrawn), the rows once every engine source has answered, and
     /// what Enter did.
+    /// When this run of Search began: clipboard entries from before it are
+    /// never reported (a test world may keep what was copied last time).
+    private static readonly long RunStartedMs = new DateTimeOffset(System.Diagnostics.Process.GetCurrentProcess().StartTime).ToUnixTimeMilliseconds();
+
     private static async Task Field(Browser b, JsonObject request, Action<JsonObject> answer)
     {
         var text = Str(request, "text") ?? "";
@@ -584,11 +590,19 @@ public sealed class Bench
         var settled = clock.Elapsed.TotalMilliseconds;
         // The last rows are posted to this thread as they land.
         await Task.Delay(50);
+        // What was copied before this run began is never reported.
+        var before = (await ClipHistory.List()).Where(e => e.CapturedMs < RunStartedMs).Select(e => e.Id.ToString(System.Globalization.CultureInfo.InvariantCulture)).ToHashSet();
         var reply = new JsonObject
         {
             ["keystrokes"] = times,
             ["settledMs"] = Math.Round(settled, 1),
-            ["rows"] = new JsonArray([.. b.Offers.Select((o, i) => (JsonNode)new JsonObject
+            ["rows"] = new JsonArray([.. b.Offers.Select((o, i) => (o, i))
+                .Where(x => x.o.Row is not { Action: SearchKit.Field.RowAction.CopyClip } clip || !before.Contains(clip.Target))
+                .Select(x => (JsonNode)Offered(x.o, x.i))]),
+            ["picked"] = b.Picked,
+            ["ending"] = b.Ending,
+        };
+        static JsonObject Offered(Suggestion o, int i) => new()
             {
                 ["i"] = i,
                 ["kind"] = o.Kind.ToString(),
@@ -597,10 +611,7 @@ public sealed class Bench
                 ["group"] = o.Row?.Origin.ToString(),
                 ["action"] = o.Row?.Action.ToString(),
                 ["top"] = o.Row?.Group == SearchKit.Field.Group.TopHit,
-            })]),
-            ["picked"] = b.Picked,
-            ["ending"] = b.Ending,
-        };
+            };
         var pick = Int(request, "pick");
         if (pick != null || Bool(request, "enter") == true)
         {

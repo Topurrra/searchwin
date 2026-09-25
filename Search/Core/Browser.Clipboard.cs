@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -13,6 +14,11 @@ namespace Search;
 // also Windows' "paste without formatting". A picture goes in as a picture,
 // through a real paste. With the caret nowhere, the entry goes back on the
 // clipboard for a Ctrl+V wherever it's wanted.
+//
+// A paste goes only into the page the list was opened over: if that tab has
+// since gone to another site or another document, the entry is copied
+// instead, and the line says so. A secret goes only into the page itself,
+// never into a frame inside it, and is never searched for.
 public sealed partial class Browser
 {
     private bool clipping;
@@ -20,9 +26,10 @@ public sealed partial class Browser
     public bool Clipping { get => clipping; private set => Set(ref clipping, value); }
 
     /// Where Enter puts it, decided as the list opens: the box with the
-    /// caret, or the page.
+    /// caret, or the page — and which page it was then.
     private TextBox? clipBox;
     private Tab? clipPage;
+    private ClipGuard.Page clipMark;
 
     /// Where a paste goes now: "field", "page", or "clipboard" (nowhere to
     /// type, so it's copied). For the list's foot and the bench.
@@ -38,13 +45,21 @@ public sealed partial class Browser
         }
         clipBox = null;
         clipPage = null;
+        clipMark = default;
         var focused = App.Root?.XamlRoot is { } root ? FocusManager.GetFocusedElement(root) : null;
         if (focused is TextBox box) clipBox = box;
         // A page's keys never reach this process, so with nothing of ours
         // focused the caret is in the page, if anywhere.
-        else if (focused is null or WebView2 && Active is { IsBlank: false, Built: not null } tab) clipPage = tab;
+        else if (focused is null or WebView2 && Active is { IsBlank: false, Built: not null } tab)
+        {
+            clipPage = tab;
+            clipMark = MarkOf(tab);
+        }
         Clipping = true;
     }
+
+    /// The page as a paste aimed at it knows it: its site, and its document.
+    private static ClipGuard.Page MarkOf(Tab tab) => new(ClipGuard.Origin(tab.Address), tab.Documents);
 
     /// The list put away; `handBack` returns the caret to where it was.
     public void HideClipboard(bool handBack = true)
@@ -57,47 +72,65 @@ public sealed partial class Browser
     }
 
     /// Enter on an entry. `go` (Shift+Enter) takes its text as the field
-    /// would — a place, or a search — instead of pasting it.
+    /// would — a place, or a search — instead of pasting it; never a secret,
+    /// unless the secret is itself an address.
     public async void PasteClip(ClipEntry entry, bool go = false)
     {
         var box = clipBox;
         var page = clipPage;
+        var mark = clipMark;
+        if (go && entry.Sensitive && !ClipGuard.MayGo(entry, text => Address.Url(text) != null))
+        {
+            HideClipboard();
+            Announce("A secret isn't searched for — Enter pastes it");
+            LastPaste = new("secret", "refused");
+            return;
+        }
         HideClipboard(handBack: !go);
         if (go)
         {
             GoWith(entry.Image ? null : entry.Text);
             return;
         }
+        var kind = entry.Image ? "picture" : entry.Sensitive ? "secret" : "text";
         try
         {
             if (entry.Image)
             {
                 // Only a real paste carries a picture: it goes on the
-                // clipboard, and the page is handed Ctrl+V.
-                if (!await ClipHistory.CopyBack(entry.Id)) { Announce("Couldn't copy that"); return; }
-                if (page != null && page == Active) UI.After(0.05, () => Keystroke(page, paste: true));
-                else Announce("Picture copied — Ctrl+V to paste it");
-                LastPaste = new("picture", AimOf(box, page));
+                // clipboard, and the page is handed Ctrl+V — if it's still
+                // the page the list was opened over.
+                if (!await ClipHistory.CopyBack(entry)) { Announce("Couldn't copy that"); return; }
+                if (page != null && page == Active && ClipGuard.IntoPage(mark, MarkOf(page), false, true) == ClipGuard.Paste.Insert)
+                {
+                    UI.After(0.05, () => Keystroke(page, paste: true));
+                    LastPaste = new(kind, "page");
+                }
+                else
+                {
+                    Announce(page != null ? "The page changed — the picture is copied, Ctrl+V to paste it" : "Picture copied — Ctrl+V to paste it");
+                    LastPaste = new(kind, page != null ? "moved" : AimOf(box, null));
+                }
                 return;
             }
-            // A secret isn't put back on the clipboard as a side effect: it
-            // goes where it was asked for and nowhere else.
-            var typing = box != null || page?.Typing == true;
-            if (!entry.Sensitive || !typing) _ = ClipHistory.CopyBack(entry.Id);
             if (box != null)
             {
+                // A secret isn't put back on the clipboard as a side effect:
+                // it goes where it was asked for and nowhere else.
+                if (!entry.Sensitive) _ = ClipHistory.CopyBack(entry);
                 UI.Soon(() => Insert(box, entry.Text));
+                LastPaste = new(kind, "field");
             }
             else if (page != null && page == Active)
             {
-                UI.After(0.05, () => Keystroke(page, text: entry.Text));
-                if (!page.Typing) Announce("Copied");
+                UI.After(0.05, () => IntoPage(page, mark, entry));
             }
             else
             {
+                _ = ClipHistory.CopyBack(entry);
                 Announce("Copied — Ctrl+V puts it where you want it");
+                LastPaste = new(kind, "clipboard");
             }
-            LastPaste = new(entry.Sensitive ? "secret" : "text", AimOf(box, page));
         }
         catch (Exception error)
         {
@@ -105,7 +138,77 @@ public sealed partial class Browser
         }
     }
 
-    /// What the last paste was and where it went, for the bench.
+    /// Into the page the list was opened over, if it still is that page;
+    /// otherwise onto the clipboard, and the line says why.
+    private async void IntoPage(Tab page, ClipGuard.Page opened, ClipEntry entry)
+    {
+        var kind = entry.Sensitive ? "secret" : "text";
+        var caret = entry.Sensitive ? await CaretOf(page) : "";
+        // Decided after the page was asked: it may have moved on meanwhile.
+        var verdict = page == Active
+            ? ClipGuard.IntoPage(opened, MarkOf(page), entry.Sensitive, caret != "frame")
+            : ClipGuard.Paste.Moved;
+        switch (verdict)
+        {
+            case ClipGuard.Paste.Moved:
+                _ = ClipHistory.CopyBack(entry);
+                Announce("The page changed — copied instead, Ctrl+V to paste it");
+                LastPaste = new(kind, "moved");
+                return;
+            case ClipGuard.Paste.Framed:
+                _ = ClipHistory.CopyBack(entry);
+                Announce("Copied, not pasted — a secret goes only into the page itself, not a frame in it");
+                LastPaste = new(kind, "framed");
+                return;
+        }
+        // A secret isn't put back on the clipboard as a side effect: with a
+        // box to type into it goes there and nowhere else; without one it's
+        // copied (quietly).
+        var typing = entry.Sensitive ? caret == "field" : page.Typing;
+        if (!entry.Sensitive || !typing) _ = ClipHistory.CopyBack(entry);
+        if (!entry.Sensitive || typing) Keystroke(page, text: entry.Text, copied: !entry.Sensitive);
+        if (!typing) Announce("Copied");
+        LastPaste = new(kind, typing ? "page" : "clipboard");
+    }
+
+    /// Where the page's caret is, asked of the page itself (its main frame):
+    /// "field" (something that takes typing, in the page itself), "frame"
+    /// (inside a frame in it — maybe another site's), or "none".
+    private static async Task<string> CaretOf(Tab page)
+    {
+        if (page.Core is not { } core) return "none";
+        try
+        {
+            using var said = JsonDocument.Parse(await core.ExecuteScriptAsync(CaretScript));
+            return said.RootElement is { ValueKind: JsonValueKind.String } s ? s.GetString() ?? "none" : "none";
+        }
+        catch (Exception error)
+        {
+            Log.Write($"clipboard: caret: {error.Message}");
+            return "none";
+        }
+    }
+
+    private const string CaretScript = """
+        (() => {
+          let a = document.activeElement;
+          while (a && a.shadowRoot && a.shadowRoot.activeElement) a = a.shadowRoot.activeElement;
+          if (!a) return 'none';
+          const tag = a.tagName;
+          if (/^(IFRAME|FRAME|OBJECT|EMBED|FENCEDFRAME|PORTAL)$/.test(tag)) return 'frame';
+          if (a.isContentEditable || document.designMode === 'on') return 'field';
+          if (tag === 'TEXTAREA') return a.readOnly || a.disabled ? 'none' : 'field';
+          if (tag === 'INPUT') {
+            if (a.readOnly || a.disabled) return 'none';
+            return /^(button|checkbox|color|file|hidden|image|radio|range|reset|submit)$/i.test(a.type) ? 'none' : 'field';
+          }
+          return 'none';
+        })()
+        """;
+
+    /// What the last paste was and where it went, for the bench: "field",
+    /// "page", "clipboard"; "moved" or "framed" when it was copied instead;
+    /// "refused" for a secret's Shift+Enter.
     public (string Kind, string Aim)? LastPaste { get; private set; }
 
     private static string AimOf(TextBox? box, Tab? page) => box != null ? "field" : page != null ? "page" : "clipboard";
@@ -124,7 +227,7 @@ public sealed partial class Browser
     /// Into the page, as input the page can't tell from a person's: the text
     /// as typed (Chromium's own insertText, into whichever frame has the
     /// caret, with undo and every input event), or Ctrl+V for a picture.
-    private async void Keystroke(Tab page, string? text = null, bool paste = false)
+    private async void Keystroke(Tab page, string? text = null, bool paste = false, bool copied = true)
     {
         if (page.Core is not { } core) return;
         try
@@ -152,7 +255,7 @@ public sealed partial class Browser
         catch (Exception error)
         {
             Log.Write($"clipboard: paste into page: {error.Message}");
-            Announce("Couldn't paste there — it's on the clipboard");
+            Announce(copied ? "Couldn't paste there — it's on the clipboard" : "Couldn't paste there");
         }
     }
 }

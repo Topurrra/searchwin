@@ -437,6 +437,8 @@ public sealed partial class SettingsPanel : Grid
                 {
                     prefs.ClipboardHistory = on;
                     Show();
+                    // Off stops the keeping; what was kept is offered to go too.
+                    if (!on) OfferToClear();
                 }))));
         if (!prefs.ClipboardHistory) return;
         _ = AskClipboard();
@@ -522,6 +524,27 @@ public sealed partial class SettingsPanel : Grid
         Show();
     }
 
+    /// History just turned off: clear what it kept too? Pinned entries stay.
+    private async void OfferToClear()
+    {
+        if (App.Root?.XamlRoot is not { } root) return;
+        var dialog = new ContentDialog
+        {
+            XamlRoot = root,
+            RequestedTheme = App.Root.RequestedTheme,
+            Title = "Also clear what's kept?",
+            Content = "Nothing new will be kept. What was kept before is still on this PC, encrypted, until it expires. Clearing it keeps what you pinned.",
+            PrimaryButtonText = "Clear",
+            CloseButtonText = "Keep it",
+            DefaultButton = ContentDialogButton.Primary,
+        };
+        bool sure;
+        try { sure = await dialog.ShowAsync() == ContentDialogResult.Primary; }
+        catch { sure = false; }
+        if (!sure) return;
+        browser.Announce(await ClipHistory.Clear() ? "Clipboard history cleared" : "Couldn't clear clipboard history");
+    }
+
     private async void ClearClipboard()
     {
         if (App.Root?.XamlRoot is not { } root) return;
@@ -539,8 +562,7 @@ public sealed partial class SettingsPanel : Grid
         try { sure = await dialog.ShowAsync() == ContentDialogResult.Primary; }
         catch { sure = false; }
         if (!sure) return;
-        ClipHistory.Clear();
-        browser.Announce("Clipboard history cleared");
+        browser.Announce(await ClipHistory.Clear() ? "Clipboard history cleared" : "Couldn't clear clipboard history");
     }
 
     // MARK: - passwords

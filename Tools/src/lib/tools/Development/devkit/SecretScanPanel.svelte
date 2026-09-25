@@ -21,6 +21,7 @@
           dismisses a false positive forever; the same string is never
           re-flagged anywhere in the app.
     */
+    import { copySecret } from '$lib/utils/secretCopy';
     import { invoke } from '@tauri-apps/api/core';
     import {
         AlertCircle,
@@ -245,7 +246,7 @@
     async function copyText(value: string, label: string) {
         if (!value) return;
         try {
-            await navigator.clipboard.writeText(value);
+            await copySecret(value);
             toast(`Copied ${label}`, 'success');
         } catch {
             toast('Clipboard copy failed', 'error');

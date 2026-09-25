@@ -84,6 +84,12 @@ static FORMAT_WEBP: OnceLock<u32> = OnceLock::new();
 #[cfg(windows)]
 static FORMAT_EXCLUDE_MONITOR: OnceLock<u32> = OnceLock::new();
 
+/// `CanIncludeInClipboardHistory`: a DWORD Windows' own history (Win+V)
+/// honours, 0 meaning "don't keep this". Password managers and Search's
+/// QuietCopy set it; the history here honours it too.
+#[cfg(windows)]
+static FORMAT_HISTORY_MARKER: OnceLock<u32> = OnceLock::new();
+
 /// Hard ceiling on retained entries. Older entries fall off the back when this
 /// is exceeded. Pinned entries are never auto-evicted regardless of position.
 const MAX_ENTRIES: usize = 200;
@@ -324,10 +330,12 @@ struct State {
     /// User-toggled global pause. When true, the listener still fires but we
     /// drop captures on the floor without indexing or persisting.
     paused: bool,
-    /// Set true while we're writing our own value to the clipboard so the
+    /// Set while we're writing our own value to the clipboard so the
     /// listener can skip the resulting WM_CLIPBOARDUPDATE — otherwise picking
-    /// a past entry would re-capture it as a brand-new copy.
-    suppress_next: bool,
+    /// a past entry would re-capture it as a brand-new copy. A deadline (ms
+    /// since 1970), not a flag: a write whose update never came must not
+    /// swallow the user's next real copy minutes later.
+    suppress_until_ms: i64,
     /// Max age of non-pinned entries before they're swept by the cleanup
     /// pass. `0` disables time-based expiry (the MAX_ENTRIES cap still
     /// applies). Persisted alongside the entries file.
@@ -365,7 +373,7 @@ impl Default for State {
                 .map(|s| s.to_lowercase())
                 .collect(),
             paused: false,
-            suppress_next: false,
+            suppress_until_ms: 0,
             retention_days: DEFAULT_RETENTION_DAYS,
             // Fresh installs: images on, migration already applied (the
             // migration only exists for installs that predate the flip).
@@ -968,19 +976,31 @@ fn default_image_retention_days_serde() -> u32 {
 /// At-rest encryption for the clipboard history file. On Windows the bytes
 /// are DPAPI-protected — the same per-user envelope `local_db` uses, so a copy
 /// of the file is opaque to another account / machine. Other platforms pass
-/// through unchanged until a platform keystore is wired up. A failed encrypt
-/// degrades to writing plaintext rather than losing the save.
+/// through unchanged until a platform keystore is wired up.
+///
+/// Search: a failed encrypt is None, and the save is skipped — what you
+/// copied never lands on disk in the clear. The history stays in memory and
+/// the next save tries again.
 #[cfg(windows)]
-fn protect_at_rest(plaintext: &[u8]) -> Vec<u8> {
-    crate::core::dpapi::protect(plaintext).unwrap_or_else(|error| {
-        eprintln!("clipboard_history: at-rest encrypt failed ({error}); writing plaintext");
-        plaintext.to_vec()
-    })
+fn protect_at_rest(plaintext: &[u8]) -> Option<Vec<u8>> {
+    seal_or_skip(plaintext, crate::core::dpapi::protect)
 }
 
 #[cfg(not(windows))]
-fn protect_at_rest(plaintext: &[u8]) -> Vec<u8> {
-    plaintext.to_vec()
+fn protect_at_rest(plaintext: &[u8]) -> Option<Vec<u8>> {
+    Some(plaintext.to_vec())
+}
+
+/// The sealed bytes, or None (logged) when sealing failed — never the
+/// plaintext in their place.
+fn seal_or_skip(plaintext: &[u8], seal: impl FnOnce(&[u8]) -> Result<Vec<u8>, String>) -> Option<Vec<u8>> {
+    match seal(plaintext) {
+        Ok(sealed) => Some(sealed),
+        Err(error) => {
+            eprintln!("clipboard_history: at-rest encrypt failed ({error}); not saving");
+            None
+        }
+    }
 }
 
 /// Inverse of `protect_at_rest`. `dpapi::unprotect` already passes a legacy
@@ -1023,7 +1043,9 @@ fn flush_to_disk(app: &AppHandle) {
             return;
         }
     };
-    let encrypted = protect_at_rest(&json);
+    let Some(encrypted) = protect_at_rest(&json) else {
+        return;
+    };
     let tmp = path.with_extension("json.tmp");
     if let Err(error) = std::fs::write(&tmp, &encrypted) {
         eprintln!("clipboard_history: write tmp failed: {error}");
@@ -1221,44 +1243,147 @@ fn sweep_orphan_image_files(app: &AppHandle) {
 
 // ─── Entry management ────────────────────────────────────────────────────
 
+/// Search: what's known about a copy the instant Windows announces it
+/// (WM_CLIPBOARDUPDATE), before the settle delay. Who copied and whether it
+/// asked not to be kept are decided from this, not from what's true 60 ms
+/// later — a password manager that hides itself right after copying has
+/// handed the foreground to someone else by then.
+#[derive(Debug, Clone, Default, PartialEq)]
+struct CopySnapshot {
+    /// Our own write coming back (`arm_self_write_suppression`).
+    ours: bool,
+    source_app: Option<String>,
+    source_app_path: Option<String>,
+    /// `ExcludeClipboardContentFromMonitorProcessing` was on the clipboard.
+    excluded: bool,
+    /// `CanIncludeInClipboardHistory` was on the clipboard; its value is read
+    /// with the data.
+    history_marker: bool,
+    /// GetClipboardSequenceNumber at the time: data read under a different
+    /// number belongs to a later copy, which has its own snapshot coming.
+    sequence: u32,
+}
+
+/// The latest copy's snapshot, waiting for the settle timer. A burst of
+/// updates keeps only the last: that's the copy whose data will be read.
+static PENDING_COPY: Mutex<Option<CopySnapshot>> = Mutex::new(None);
+
+/// Whether a copy described by `snapshot` may be kept, given the app
+/// exclusions and the value of `CanIncludeInClipboardHistory` read with the
+/// data (`None`: absent or unreadable).
+fn snapshot_allows_capture(snapshot: &CopySnapshot, exclusions: &[String], history_value: Option<&[u8]>) -> bool {
+    if snapshot.ours || snapshot.excluded {
+        return false;
+    }
+    if app_matches_exclusion(snapshot.source_app.as_deref(), exclusions) {
+        return false;
+    }
+    !history_marker_forbids(snapshot.history_marker, history_value)
+}
+
+/// `CanIncludeInClipboardHistory` is a DWORD: 0 asks every history (Windows'
+/// own, and ours) to leave the copy alone. A marker that was there but can't
+/// be read is taken as that too.
+fn history_marker_forbids(present: bool, value: Option<&[u8]>) -> bool {
+    if !present {
+        return false;
+    }
+    match value {
+        Some(bytes) if bytes.len() >= 4 => u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]) == 0,
+        _ => true,
+    }
+}
+
+/// Taken on WM_CLIPBOARDUPDATE itself: presence checks and the owner's
+/// process only — nothing that opens the clipboard, which the copying app
+/// may still need.
+#[cfg(windows)]
+fn snapshot_copy() -> CopySnapshot {
+    use windows::Win32::System::DataExchange::GetClipboardSequenceNumber;
+    let sequence = unsafe { GetClipboardSequenceNumber() };
+    let ours = {
+        let mut guard = locked_state();
+        take_self_write(&mut guard.suppress_until_ms, now_ms())
+    };
+    if ours {
+        return CopySnapshot { ours, sequence, ..Default::default() };
+    }
+    let (source_app, source_app_path) = clipboard_source_process();
+    CopySnapshot {
+        ours,
+        source_app,
+        source_app_path,
+        excluded: clipboard_marked_no_capture(),
+        history_marker: format_present(registered_format(&FORMAT_HISTORY_MARKER, "CanIncludeInClipboardHistory")),
+        sequence,
+    }
+}
+
+#[cfg(windows)]
+fn format_present(format_id: u32) -> bool {
+    use windows::Win32::System::DataExchange::IsClipboardFormatAvailable;
+    format_id != 0 && unsafe { IsClipboardFormatAvailable(format_id) }.is_ok()
+}
+
+/// Whether the clipboard still holds the copy `snapshot` describes.
+#[cfg(windows)]
+fn same_copy(snapshot: &CopySnapshot) -> bool {
+    use windows::Win32::System::DataExchange::GetClipboardSequenceNumber;
+    unsafe { GetClipboardSequenceNumber() == snapshot.sequence }
+}
+
+/// The settle timer fired: read the copy the last update announced.
+#[cfg(windows)]
+fn on_settled() {
+    let snapshot = PENDING_COPY.lock().unwrap_or_else(|p| p.into_inner()).take();
+    if let Some(snapshot) = snapshot {
+        on_clipboard_change(snapshot);
+    }
+}
+
 /// Core "we saw a new clipboard event" path. Tries text first (most copies
 /// are text); falls through to image capture if images are enabled and no
 /// text was found. Writes the entry, schedules a save, emits the change
-/// event. Called from the Win32 WindowProc on WM_CLIPBOARDUPDATE.
+/// event. Called from the Win32 WindowProc once the copy has settled, with
+/// what was known about it when it was announced.
 #[cfg(windows)]
-fn on_clipboard_change() {
-    // If a previous copy_back-to-clipboard set suppress_next, consume it and
-    // bail. Otherwise we'd re-capture our own write as a brand-new entry.
-    let (paused, images_enabled) = {
-        let mut guard = locked_state();
-        if guard.suppress_next {
-            guard.suppress_next = false;
-            return;
-        }
+fn on_clipboard_change(snapshot: CopySnapshot) {
+    // Our own write back to the clipboard is never a new entry.
+    if snapshot.ours {
+        return;
+    }
+    let (images_enabled, exclusions) = {
+        let guard = locked_state();
         if guard.paused {
             return;
         }
-        (guard.paused, guard.images_enabled)
+        (guard.images_enabled, guard.exclusions.clone())
     };
-
-    let source_app = get_foreground_process_name();
-    if is_excluded(source_app.as_deref()) {
+    // A later copy has already replaced this one: its own update reads it.
+    if !same_copy(&snapshot) {
         return;
     }
-    // Full exe path of the same foreground app, so the UI can show its icon.
-    let source_app_path = get_foreground_process_path();
-    // Honour the OS "exclude from clipboard monitors" marker — password
-    // fields and secure inputs set it even when the source process itself
-    // is not on the exclusion list.
-    if clipboard_marked_no_capture() {
+    // Honour the OS "exclude from clipboard monitors" marker (password fields
+    // and secure inputs set it even when the source process itself is not on
+    // the exclusion list), CanIncludeInClipboardHistory=0, and the list of
+    // apps whose copies are never kept.
+    let history_value = if snapshot.history_marker {
+        read_clipboard_raw_bytes(registered_format(&FORMAT_HISTORY_MARKER, "CanIncludeInClipboardHistory"))
+    } else {
+        None
+    };
+    if !snapshot_allows_capture(&snapshot, &exclusions, history_value.as_deref()) {
         return;
     }
-    let _ = paused; // already short-circuited above
+    let CopySnapshot { source_app, source_app_path, .. } = snapshot.clone();
 
     // Text path — most clipboard events. If text is present we take it and
     // don't also check for image data (even if the source app put both
     // formats on the clipboard, e.g. screenshots-with-alt-text).
     if let Some(mut text) = read_clipboard_text() {
+        if !same_copy(&snapshot) {
+            return;
+        }
         if !text.trim().is_empty() {
             if text.len() > MAX_ENTRY_BYTES {
                 text.truncate(floor_char_boundary(&text, MAX_ENTRY_BYTES));
@@ -1305,6 +1430,9 @@ fn on_clipboard_change() {
 
         for &(fmt_id, ext) in candidates {
             if let Some(bytes) = read_clipboard_raw_bytes(fmt_id) {
+                if !same_copy(&snapshot) {
+                    return;
+                }
                 let (bytes, ext) = fit_captured_image(bytes, ext);
                 push_image_entry(bytes, source_app.clone(), source_app_path.clone(), &ext);
                 schedule_save();
@@ -1345,6 +1473,9 @@ fn on_clipboard_change() {
         // CF_DIB and into image/png, so we get a static snapshot. The
         // animated bytes were never on the clipboard to begin with.
         if let Some(png_bytes) = read_clipboard_image_as_png() {
+            if !same_copy(&snapshot) {
+                return;
+            }
             let (png_bytes, format) = fit_captured_image(png_bytes, "png");
             push_image_entry(png_bytes, source_app, source_app_path, &format);
             schedule_save();
@@ -1370,19 +1501,14 @@ fn image_format_from_path(path: &std::path::Path) -> Option<&'static str> {
 }
 
 /// Pure exclusion check — `true` if `app_name` (matched case-insensitively)
-/// is on the `exclusions` list, which is stored already-lowercased. Extracted
-/// from `is_excluded` so the matching is unit-testable without global state.
+/// is on the `exclusions` list, which is stored already-lowercased. Pure, so
+/// the matching is unit-testable without global state.
 fn app_matches_exclusion(app_name: Option<&str>, exclusions: &[String]) -> bool {
     let Some(name) = app_name else {
         return false;
     };
     let lower = name.to_lowercase();
     exclusions.iter().any(|e| e == &lower)
-}
-
-fn is_excluded(app_name: Option<&str>) -> bool {
-    let guard = locked_state();
-    app_matches_exclusion(app_name, &guard.exclusions)
 }
 
 /// True when the app that owns the current clipboard contents asked monitors
@@ -1889,12 +2015,18 @@ pub fn pin_clipboard_entries(ids: Vec<u64>, pinned: bool) -> Result<(), String> 
 /// Dispatches on entry kind: text entries write CF_UNICODETEXT, image
 /// entries decode the on-disk PNG and write CF_DIB so the target app sees
 /// it as a regular image paste.
+///
+/// Search: `quiet` marks a text copy the way password managers mark theirs
+/// (`ExcludeClipboardContentFromMonitorProcessing`,
+/// `CanIncludeInClipboardHistory=0`, `CanUploadToCloudClipboard=0`), so a
+/// secret put back isn't kept by Windows' history, its cloud clipboard or
+/// any other clipboard manager.
 #[tauri::command]
-pub fn copy_clipboard_entry_to_clipboard(id: u64) -> Result<(), String> {
+pub fn copy_clipboard_entry_to_clipboard(id: u64, quiet: Option<bool>) -> Result<(), String> {
     let snapshot = entry_snapshot(id)?;
     arm_self_write_suppression();
     let result = match snapshot.kind {
-        EntryKind::Text => write_text_to_clipboard(&snapshot.text),
+        EntryKind::Text => write_text_to_clipboard_marked(&snapshot.text, quiet.unwrap_or(false)),
         EntryKind::Image => match snapshot.image_path.as_ref() {
             Some(path) => write_image_to_clipboard(path, snapshot.image_format.as_deref()),
             None => Err("Image entry has no on-disk file".to_string()),
@@ -2144,12 +2276,23 @@ fn entry_snapshot(id: u64) -> Result<EntrySnapshot, String> {
         .ok_or_else(|| format!("clipboard entry {id} not found"))
 }
 
+/// How long our own write may take to come back as a WM_CLIPBOARDUPDATE.
+const SELF_WRITE_WINDOW_MS: i64 = 500;
+
 fn arm_self_write_suppression() {
-    locked_state().suppress_next = true;
+    locked_state().suppress_until_ms = now_ms() + SELF_WRITE_WINDOW_MS;
 }
 
 fn clear_self_write_suppression() {
-    locked_state().suppress_next = false;
+    locked_state().suppress_until_ms = 0;
+}
+
+/// Whether the update seen at `now` is our own write: true once, while the
+/// deadline hasn't passed; a passed deadline is cleared either way.
+fn take_self_write(until_ms: &mut i64, now: i64) -> bool {
+    let ours = *until_ms != 0 && now <= *until_ms;
+    *until_ms = 0;
+    ours
 }
 
 #[tauri::command]
@@ -2273,6 +2416,37 @@ pub fn set_clipboard_retention_days(days: u32) -> Result<(), String> {
 
 // ─── Win32 listener (event-driven) ──────────────────────────────────────
 
+/// Which listener window has a settle timer armed (0: none). Keyed by the
+/// window rather than a plain flag, so a listener rebuilt after its thread
+/// died mid-timer isn't left waiting forever for a timer that went with the
+/// old window.
+struct SettleGate(AtomicIsize);
+
+impl SettleGate {
+    const fn new() -> Self {
+        Self(AtomicIsize::new(0))
+    }
+
+    /// A new listener window: nothing is armed any more.
+    fn reset(&self) {
+        self.0.store(0, Ordering::SeqCst);
+    }
+
+    /// An update arrived on `hwnd`: true when a timer must be armed for it,
+    /// false while one already is.
+    fn arm(&self, hwnd: isize) -> bool {
+        self.0.swap(hwnd, Ordering::SeqCst) != hwnd
+    }
+
+    /// `hwnd`'s timer fired, or couldn't be set.
+    fn done(&self, hwnd: isize) {
+        let _ = self.0.compare_exchange(hwnd, 0, Ordering::SeqCst, Ordering::SeqCst);
+    }
+}
+
+#[cfg(windows)]
+static SETTLE: SettleGate = SettleGate::new();
+
 /// Module-level identifier for the message-only window class. Must be unique
 /// per process and stable across calls. The "v1" suffix lets us version the
 /// listener if its semantics ever change.
@@ -2297,9 +2471,10 @@ fn run_listener_thread(_app: AppHandle) {
     // fifty fail in the copying app while history was on. One timer, armed by
     // the first update and not re-armed by the ones behind it, so a burst
     // still settles after SETTLE_MS.
+    // Who copied, and whether it asked not to be kept, are taken at once
+    // (snapshot_copy); only the reading of the data waits.
     const SETTLE_TIMER: usize = 1;
     const SETTLE_MS: u32 = 60;
-    static SETTLING: AtomicBool = AtomicBool::new(false);
 
     // Window procedure — receives messages from Windows. C calling convention,
     // no closures with captures. WindowProc reaches our state via the STATE
@@ -2311,17 +2486,19 @@ fn run_listener_thread(_app: AppHandle) {
         lparam: LPARAM,
     ) -> LRESULT {
         if msg == WM_CLIPBOARDUPDATE {
-            if !SETTLING.swap(true, Ordering::SeqCst) && SetTimer(hwnd, SETTLE_TIMER, SETTLE_MS, None) == 0 {
+            let snapshot = snapshot_copy();
+            *PENDING_COPY.lock().unwrap_or_else(|p| p.into_inner()) = Some(snapshot);
+            if SETTLE.arm(hwnd.0) && SetTimer(hwnd, SETTLE_TIMER, SETTLE_MS, None) == 0 {
                 // No timer to be had: read it now, as before.
-                SETTLING.store(false, Ordering::SeqCst);
-                on_clipboard_change();
+                SETTLE.done(hwnd.0);
+                on_settled();
             }
             return LRESULT(0);
         }
         if msg == WM_TIMER && wparam.0 == SETTLE_TIMER {
             let _ = KillTimer(hwnd, SETTLE_TIMER);
-            SETTLING.store(false, Ordering::SeqCst);
-            on_clipboard_change();
+            SETTLE.done(hwnd.0);
+            on_settled();
             return LRESULT(0);
         }
         DefWindowProcW(hwnd, msg, wparam, lparam)
@@ -2363,6 +2540,10 @@ fn run_listener_thread(_app: AppHandle) {
             eprintln!("clipboard_history: CreateWindowExW failed");
             return;
         }
+        // A window of our own: a timer the last one had armed died with it,
+        // and so did the copy it was waiting on.
+        SETTLE.reset();
+        *PENDING_COPY.lock().unwrap_or_else(|p| p.into_inner()) = None;
 
         if AddClipboardFormatListener(hwnd).is_err() {
             eprintln!("clipboard_history: AddClipboardFormatListener failed");
@@ -2518,6 +2699,49 @@ fn read_clipboard_text() -> Option<String> {
 
 #[cfg(windows)]
 fn write_text_to_clipboard(text: &str) -> Result<(), String> {
+    write_text_to_clipboard_marked(text, false)
+}
+
+/// The formats a quiet copy carries besides its text, each a DWORD 0 (the
+/// first is read by presence alone).
+#[cfg(windows)]
+const QUIET_MARKERS: [&str; 3] = [
+    "ExcludeClipboardContentFromMonitorProcessing",
+    "CanIncludeInClipboardHistory",
+    "CanUploadToCloudClipboard",
+];
+
+/// Set one marker format on the open clipboard. Best effort: the text is
+/// already there, and a monitor that sees one marker skips the copy.
+#[cfg(windows)]
+unsafe fn put_quiet_marker(name: &str) {
+    use windows::core::PCWSTR;
+    use windows::Win32::Foundation::{GlobalFree, HANDLE};
+    use windows::Win32::System::DataExchange::{RegisterClipboardFormatW, SetClipboardData};
+    use windows::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE};
+    let wide: Vec<u16> = name.encode_utf16().chain(std::iter::once(0)).collect();
+    let format = RegisterClipboardFormatW(PCWSTR(wide.as_ptr()));
+    if format == 0 {
+        return;
+    }
+    let Ok(hglobal) = GlobalAlloc(GMEM_MOVEABLE, 4) else { return };
+    if hglobal.0.is_null() {
+        return;
+    }
+    let ptr = GlobalLock(hglobal) as *mut u8;
+    if ptr.is_null() {
+        let _ = GlobalFree(hglobal);
+        return;
+    }
+    std::ptr::write_bytes(ptr, 0, 4);
+    let _ = GlobalUnlock(hglobal);
+    if SetClipboardData(format, HANDLE(hglobal.0 as isize)).is_err() {
+        let _ = GlobalFree(hglobal);
+    }
+}
+
+#[cfg(windows)]
+fn write_text_to_clipboard_marked(text: &str, quiet: bool) -> Result<(), String> {
     use windows::Win32::Foundation::HANDLE;
     use windows::Win32::System::DataExchange::{CloseClipboard, EmptyClipboard, SetClipboardData};
     use windows::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE};
@@ -2555,24 +2779,36 @@ fn write_text_to_clipboard(text: &str) -> Result<(), String> {
             let _ = CloseClipboard();
             return Err("SetClipboardData failed".to_string());
         }
+        if quiet {
+            for name in QUIET_MARKERS {
+                put_quiet_marker(name);
+            }
+        }
         let _ = CloseClipboard();
     }
     Ok(())
 }
 
+/// Who put the copy on the clipboard: the process owning the clipboard
+/// (GetClipboardOwner), or — when the copier opened it without a window —
+/// whoever has the foreground.
 #[cfg(windows)]
-fn get_foreground_process_name() -> Option<String> {
-    use windows::Win32::Foundation::{CloseHandle, HANDLE};
-    use windows::Win32::System::ProcessStatus::GetModuleBaseNameW;
+fn clipboard_source_process() -> (Option<String>, Option<String>) {
+    use windows::Win32::System::DataExchange::GetClipboardOwner;
+    use windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow;
+    let owner = unsafe { GetClipboardOwner() };
+    let hwnd = if owner.0 != 0 { owner } else { unsafe { GetForegroundWindow() } };
+    (process_name_of(hwnd), process_path_of(hwnd))
+}
+
+/// The process behind a window, opened for querying; None for no window.
+#[cfg(windows)]
+fn process_of(hwnd: windows::Win32::Foundation::HWND) -> Option<windows::Win32::Foundation::HANDLE> {
     use windows::Win32::System::Threading::{
         OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_VM_READ,
     };
-    use windows::Win32::UI::WindowsAndMessaging::{
-        GetForegroundWindow, GetWindowThreadProcessId,
-    };
-
+    use windows::Win32::UI::WindowsAndMessaging::GetWindowThreadProcessId;
     unsafe {
-        let hwnd = GetForegroundWindow();
         if hwnd.0 == 0 {
             return None;
         }
@@ -2581,12 +2817,17 @@ fn get_foreground_process_name() -> Option<String> {
         if pid == 0 {
             return None;
         }
-        let handle: HANDLE = OpenProcess(
-            PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_VM_READ,
-            false,
-            pid,
-        )
-        .ok()?;
+        OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_VM_READ, false, pid).ok()
+    }
+}
+
+#[cfg(windows)]
+fn process_name_of(hwnd: windows::Win32::Foundation::HWND) -> Option<String> {
+    use windows::Win32::Foundation::CloseHandle;
+    use windows::Win32::System::ProcessStatus::GetModuleBaseNameW;
+
+    unsafe {
+        let handle = process_of(hwnd)?;
         let mut buf = [0u16; 260];
         let len = GetModuleBaseNameW(handle, None, &mut buf);
         let _ = CloseHandle(handle);
@@ -2612,26 +2853,12 @@ fn get_foreground_process_name() -> Option<String> {
 }
 
 #[cfg(windows)]
-fn get_foreground_process_path() -> Option<String> {
-    use windows::Win32::Foundation::{CloseHandle, HANDLE};
+fn process_path_of(hwnd: windows::Win32::Foundation::HWND) -> Option<String> {
+    use windows::Win32::Foundation::CloseHandle;
     use windows::Win32::System::ProcessStatus::GetModuleFileNameExW;
-    use windows::Win32::System::Threading::{
-        OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_VM_READ,
-    };
-    use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId};
 
     unsafe {
-        let hwnd = GetForegroundWindow();
-        if hwnd.0 == 0 {
-            return None;
-        }
-        let mut pid: u32 = 0;
-        GetWindowThreadProcessId(hwnd, Some(&mut pid));
-        if pid == 0 {
-            return None;
-        }
-        let handle: HANDLE =
-            OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_VM_READ, false, pid).ok()?;
+        let handle = process_of(hwnd)?;
         let mut buf = [0u16; 260];
         let len = GetModuleFileNameExW(handle, None, &mut buf);
         let _ = CloseHandle(handle);
@@ -3377,6 +3604,11 @@ fn write_text_to_clipboard(_text: &str) -> Result<(), String> {
 }
 
 #[cfg(not(windows))]
+fn write_text_to_clipboard_marked(_text: &str, _quiet: bool) -> Result<(), String> {
+    Err("Clipboard write is Windows-only for now".to_string())
+}
+
+#[cfg(not(windows))]
 fn get_foreground_process_name() -> Option<String> {
     None
 }
@@ -3667,10 +3899,83 @@ mod tests {
         // DPAPI-wrapped). Assumes a real Windows user context, as `cargo test`
         // always has.
         let plain = br#"{"entries":[],"retentionDays":14}"#.to_vec();
-        let blob = protect_at_rest(&plain);
+        let blob = protect_at_rest(&plain).expect("DPAPI works for this user");
         assert_ne!(blob, plain, "protect_at_rest should DPAPI-encrypt, not pass plaintext through");
         assert_eq!(unprotect_at_rest(&blob), plain);
         // An empty payload round-trips too.
-        assert_eq!(unprotect_at_rest(&protect_at_rest(b"")), b"".to_vec());
+        assert_eq!(unprotect_at_rest(&protect_at_rest(b"").unwrap()), b"".to_vec());
+    }
+
+    // ─── Search: capture decisions taken when the copy is announced ──────
+
+    #[test]
+    fn self_write_is_ours_only_until_its_deadline() {
+        let mut until = 1_500;
+        assert!(take_self_write(&mut until, 1_200), "an update inside the window is our own write");
+        assert_eq!(until, 0, "and it's consumed");
+        assert!(!take_self_write(&mut until, 1_300), "the next update is the user's");
+
+        // A write whose update never came doesn't swallow a copy minutes later.
+        let mut stale = 1_500;
+        assert!(!take_self_write(&mut stale, 60_000));
+        assert_eq!(stale, 0);
+
+        let mut none = 0;
+        assert!(!take_self_write(&mut none, 0));
+    }
+
+    #[test]
+    fn settle_gate_arms_once_per_window_and_survives_a_new_window() {
+        let gate = SettleGate::new();
+        assert!(gate.arm(10), "first update arms a timer");
+        assert!(!gate.arm(10), "a burst behind it doesn't");
+        gate.done(10);
+        assert!(gate.arm(10), "after the timer fired, the next update arms again");
+
+        // The listener thread died with its timer armed; the rebuilt window
+        // (a new hwnd) must still get timers.
+        assert!(gate.arm(20), "a new window isn't blocked by the old one's timer");
+        gate.done(10);
+        assert!(!gate.arm(20), "the old window's late 'done' doesn't disarm the new one");
+        gate.reset();
+        assert!(gate.arm(20), "reset on (re)creation clears it");
+    }
+
+    #[test]
+    fn history_marker_zero_or_unreadable_forbids_capture() {
+        assert!(!history_marker_forbids(false, None));
+        assert!(history_marker_forbids(true, Some(&[0, 0, 0, 0])));
+        assert!(!history_marker_forbids(true, Some(&[1, 0, 0, 0])));
+        assert!(history_marker_forbids(true, None), "present but unreadable: not kept");
+        assert!(history_marker_forbids(true, Some(&[0])), "short: not kept");
+    }
+
+    #[test]
+    fn snapshot_decides_capture() {
+        let exclusions = vec!["keepassxc".to_string()];
+        let plain = CopySnapshot { source_app: Some("notepad".into()), ..Default::default() };
+        assert!(snapshot_allows_capture(&plain, &exclusions, None));
+
+        let ours = CopySnapshot { ours: true, ..plain.clone() };
+        assert!(!snapshot_allows_capture(&ours, &exclusions, None));
+
+        let marked = CopySnapshot { excluded: true, ..plain.clone() };
+        assert!(!snapshot_allows_capture(&marked, &exclusions, None));
+
+        // Taken from the app that owned the clipboard when it was announced,
+        // whatever has the foreground by the time the data is read.
+        let manager = CopySnapshot { source_app: Some("KeePassXC".into()), ..Default::default() };
+        assert!(!snapshot_allows_capture(&manager, &exclusions, None));
+
+        let no_history = CopySnapshot { history_marker: true, ..plain.clone() };
+        assert!(!snapshot_allows_capture(&no_history, &exclusions, Some(&0u32.to_le_bytes())));
+        assert!(snapshot_allows_capture(&no_history, &exclusions, Some(&1u32.to_le_bytes())));
+    }
+
+    #[test]
+    fn a_failed_encrypt_skips_the_save_instead_of_writing_plaintext() {
+        let plain = b"hunter2 is not a real secret";
+        assert_eq!(seal_or_skip(plain, |_| Err("no DPAPI".to_string())), None);
+        assert_eq!(seal_or_skip(plain, |b| Ok(b.iter().rev().copied().collect())), Some(plain.iter().rev().copied().collect()));
     }
 }

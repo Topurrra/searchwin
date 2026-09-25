@@ -182,7 +182,8 @@ public sealed partial class Browser
                 Announce($"Opening {row.Title}");
                 break;
             case RowAction.CopyClip when long.TryParse(row.Target, out var id):
-                Send("copy_clipboard_entry_to_clipboard", new JsonObject { ["id"] = id }, "Couldn't copy that");
+                // A secret goes back marked, so no clipboard history keeps it.
+                Send("copy_clipboard_entry_to_clipboard", new JsonObject { ["id"] = id, ["quiet"] = row.Sensitive }, "Couldn't copy that");
                 Announce("Copied");
                 break;
             case RowAction.Go when Uri.TryCreate(row.Target, UriKind.Absolute, out var url):

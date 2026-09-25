@@ -50,7 +50,8 @@ The file index has two parts: a filename index (fast, word-based search in file 
 - `watcherEnabled: boolean` — watch folders for changes and re-index incrementally (saves a rebuild on file changes)
 - `watcherPaused: boolean` — temporarily pause the watcher (keeps watching but doesn't update the index)
 - `commitEvery: number | null` — commit index changes every N file changes (null = no limit; incremental indexing uses this)
-- `excludeFolders: [string]` — folder names to skip (e.g., ["temp", "build", "node_modules"]; the engine has defaults)
+- `excludeFolders: [string]` — folder names to skip, ordered with last-match-wins semantics (e.g., ["temp", "build", "node_modules"]; the engine has defaults including `.git`, `node_modules`, `build`, `.vscode`, `appdata/local`). A `!` prefix (e.g., `"!build"`) acts as a keep: it un-excludes a folder and everything below it. Repeated rules keep the last one; an outer keep can be overridden by an inner exclude. Pattern ending in a name ends at a folder boundary (e.g., `build` matches `build/` and all its contents, but `appdata/local` only matches folders literally named `local` inside folders named `appdata`). Also match `*` patterns in folder names (e.g., `*cache*` matches any folder with "cache" in its name).
+- `includeHidden: boolean` — when true, index `.dotfiles` and Windows-hidden entries (FILE_ATTRIBUTE_HIDDEN flag). When false, also excludes `AppData` below the chosen folder (AppData/Roaming is a privacy boundary). A dot-folder chosen explicitly as its own folder stays hidden until includeHidden is on; a nested chosen root inside a dot-folder turns includeHidden on (phase 4 A1 fix).
 - `excludeExtensions: [string]` — extensions to skip (e.g., ["exe", "dll", "so"])
 - `performanceMode: boolean` — (advanced) skip some analyses
 - `ocr*` fields — OCR settings (phase 3+)
@@ -129,7 +130,10 @@ Safe to poll repeatedly; internally ensures the engine is loaded.
 
 Searches the filename index for file names matching the query. Results are scored and sorted. `entryType` is "file" or "folder". `sensitiveKinds` lists flagged secrets found in the path.
 
-**Note:** the filename-search classifier has a quirk (phase 2 finding, not yet fixed): a single common word like "notes" alone may miss "notes.txt", but "notes.txt" (with extension) or "notes 2024" (multi-word) work. Worth a follow-up in search.rs's build_natural_query_plan.
+**Notes on single-word search (phase 2 findings):**
+- A single common word like "notes" alone may rank a "notes" folder first (BM25 sees "notes" in both path and filename), pushing "notes.txt" out of view. Multi-word queries or "notes.txt" work reliably.
+- The always-on prefix pass (phase 4) runs on `file_name` only, skips words under 3 letters, reads ahead page*2 documents (not 8x), and includes extension/entry-type filters as query clauses. It is skipped when a page of name-matches already exists.
+- The field's live query path may differ from the direct `search_local_files` call. Phase 2 review found related-term-only admission failing in the field's natural-language path. Before shipping, verify `build_result_item` / `typed_keyword_hits` counting from the field's query path (not just the unit test).
 
 ### search_file_contents
 **Request:** `{options: {query: string, limit?: number, offset?: number, extensionFilter?: [string], pathFilter?: string, naturalLanguage?: boolean}}`
@@ -144,6 +148,13 @@ Searches the content index for text inside files. `snippet` is an HTML excerpt w
 **Response:** null
 
 Stops the file watcher (incremental re-indexing). Call when removing all folders.
+
+### clear_file_search_index
+**Request:** `{mode?: "content" | "all"}`
+
+**Response:** null
+
+Clears the file search indexes. `mode: "content"` clears only the content index (keeps the filename index); `mode: "all"` or omitted clears both. Emits a `file-search-index-progress` event with `current: 0`. Used when folders are removed or a rebuild is needed. **Important:** options must be saved via `save_file_search_index_options` before clearing, or the watcher loses its configuration.
 
 ### read_file_preview
 **Request:** `{path: string, maxBytes?: number}`

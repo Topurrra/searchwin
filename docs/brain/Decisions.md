@@ -198,6 +198,25 @@ Newest at the bottom.
   handed over once per tab and adopted by the page) plus a small per-site one
   swapped in at each navigation. Pausing a site turns all of it off there.
 
+### D32 · Tests follow SKILL.md (test-audit) (2026-09-26)
+- **Decision:** every new or changed test passes its authoring gate (the four
+  questions in SKILL.md, test-audit skill: does it test production or only
+  test code? Is it a known regression? Does it cover the boundary? Would it
+  catch a break?). A bug's regression test must fail on the pre-fix code. Dead
+  tests (no production caller exists) are removed. Adopted test commands map to
+  the repo's own: `dotnet test Search.Kit.Tests`, `node --test Search/Assets/js/tests/`,
+  `pnpm vitest run` in `Tools/`, `cargo test --no-default-features` in `Engine/`.
+- **Why:** the round 4–5 audit removed 226 test rows that tested dead code paths
+  (LocalSources, FieldLayout.Build, FieldBoard.Walk, etc.). The browser's
+  FieldModel constructor never passed `local: []` in production, so entire
+  families of tests never exercised live paths. A test that only tests test
+  scaffolding has no contract to own. **Consequence:** every test survives as
+  long as its owner does, and a failing test failure must be real.
+- **$autoreview** in CLAUDE.md means a pass over the diff that verifies: every
+  added/changed test fails on pre-fix code (git checkout before each run),
+  tests never import test-only mock code that production doesn't call, and
+  `git diff --check` shows no tab/trailing-space issues.
+
 ### D29 · Protection updates on by default (2026-09-25)
 - **Decision:** after phase 1's security hardening, the two protection updates
   now ship **on by default** instead of opt-in:

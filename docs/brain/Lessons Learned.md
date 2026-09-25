@@ -312,6 +312,26 @@ the fix lives. *(uncertain)* marks things that weren't proven.
   (`<img>`/`<video>` don't). A suffix range (`bytes=-100`) isn't CORS-safelisted, so answer the `OPTIONS` preflight.
 - Chromium refuses some ports outright (9, 25…) as unsafe. That's a "Broken" page, not "Refused".
 
+## Round 4–5: Engine index and Kit dedup (2026-09-26)
+
+### redb whole-file locks
+- **Symptom:** phase 2's state DB migration left the file locked for the process's lifetime. Worker processes couldn't open it. **Cause:** `get_db` caches the handle, and a migration that uses `get_db` keeps it cached and locked. **Fix:** Normalize the config once, write it with `write_search_config_for_state` (which uses write_json_shared), and track shared opens in a registry so `get_db` refuses a path already held elsewhere. `local_db.rs` now has a SHARED_DBS map and a guard on `get_db` in release builds too.
+
+### ignore::WalkBuilder and hidden filters
+- **Symptom:** `hidden(false)` turned off both dot-name filtering AND FILE_ATTRIBUTE_HIDDEN checking on Windows. **Cause:** the ignore crate's hidden filter combines both checks. **Fix:** keep `hidden(false)` for dot-folders (still controlled by include_hidden), and add a filter_entry that skips entries with FILE_ATTRIBUTE_HIDDEN. This also makes excluded folders a real Skip, not a Continue. Nested chosen roots below exclusions are now re-walked from themselves via `walked_roots`, which dedupes against the outer walk only if it actually reaches the nested root.
+
+### Tantivy RangeQuery scoring and word order
+- **Symptom:** regression tests for prefix pass read-ahead relied on doc order after scoring, but RangeQuery scores are flat. **Cause:** without a total order on ties, tests would pass or fail depending on internal doc numbering. **Fix:** set `writer_with_num_threads(1, ...)` in the test so docs are inserted in order and later docs lose ties naturally. A test depending on read-ahead truncation must count on this determinism.
+
+### Windows default exclusions and scope
+- **Lesson:** Default exclusion patterns like `desktop.ini` and `Thumbs.db` must be added to both the engine's defaults and Search.Kit's IndexPlan.DefaultExcludes. The Kit sends its own list, so SearchKil reads config from the engine or legacy JSON, normalizes once per startup, and the watcher events do not re-check the hidden attribute — watcher-updated entries must be covered by rules too.
+
+### test.rs: walker tests and %TEMP%
+- **Lesson:** %TEMP% is a default exclusion (appdata/local), so a test that wants the defaults must be aware that the test folder itself might match. Walker tests need to drop entries that match the test folder's own path. Nested roots in reconcile walks must use walked_roots to reopen excluded ancestors only when they're actually traversed.
+
+### PowerShell 7 and UTF-8 BOM
+- **Symptom:** `[IO.File]::ReadAllText / WriteAllText` in PowerShell 7 silently drops a UTF-8 BOM. A file with a BOM (like search.rs) read with these functions and then written back loses the BOM, and the diff gains a first-line change. **Fix:** write with `New-Object System.Text.UTF8Encoding($true)` + `[IO.File]::WriteAllText($file, $content, $encoding)` to preserve the BOM, or use the Edit tool for bulk edits.
+
 ### GitHub push protection (2026-09-25)
 - **A test fixture that looks like a secret blocks the push.** A fake Slack
   webhook in `sensitive_scan.rs`'s tests stopped a push with GH013. Fix:

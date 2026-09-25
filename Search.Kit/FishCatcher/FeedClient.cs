@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text.Json;
@@ -22,7 +23,8 @@ public sealed record FeedResult(FeedOutcome Outcome, FeedBundle? Bundle = null, 
 /// Downloads the registry's daily signed feed, like the extension's
 /// loadRemoteLists: only downloads, never uploads anything; ETag-cached; the
 /// network is skipped while the last download is under a day old; a feed that
-/// isn't signed by the registry key is refused; and any failure keeps the
+/// isn't signed by the registry key, or is older than the one saved, is
+/// refused; and any failure keeps the
 /// last good feed (fail open). The last good feed is kept on disk in `folder`
 /// and read back on the next start.
 ///
@@ -120,11 +122,14 @@ public sealed class FeedClient
             // Signed by the registry's key, or refused: the bundled lists stay in force.
             var bundle = FeedBundle.Verify(body, spki);
             if (bundle is null) return new FeedResult(FeedOutcome.Failed);
+            // An older feed replayed is still signed; its date gives it away.
+            // It would take back sites reported since, so the newer one stays.
+            if (Older(bundle.Generated, SavedGenerated())) return new FeedResult(FeedOutcome.Failed);
 
             var stamp = now();
             Directory.CreateDirectory(folder);
             WriteAtomic(Path.Combine(folder, FeedFile), body);
-            WriteAtomic(Path.Combine(folder, StateFile), StateJson(stamp, bundle.Count, response.Headers.ETag?.ToString()));
+            WriteAtomic(Path.Combine(folder, StateFile), StateJson(stamp, bundle.Count, response.Headers.ETag?.ToString(), bundle.Generated));
             return new FeedResult(FeedOutcome.Updated, bundle, bundle.Count, stamp);
         }
         catch (Exception e) when (e is HttpRequestException or IOException or UnauthorizedAccessException or TaskCanceledException or InvalidOperationException)
@@ -158,7 +163,31 @@ public sealed class FeedClient
         return buffer.ToArray();
     }
 
-    private static byte[] StateJson(DateTimeOffset updatedAt, long? count, string? etag)
+    /// The signed date of the feed in force: from the state file, or from
+    /// the saved feed itself (state written before the date was kept).
+    private string? SavedGenerated()
+    {
+        try
+        {
+            var path = Path.Combine(folder, StateFile);
+            if (File.Exists(path))
+            {
+                using var doc = JsonDocument.Parse(File.ReadAllBytes(path));
+                if (doc.RootElement.TryGetProperty("generated", out var g) && g.ValueKind == JsonValueKind.String) return g.GetString();
+            }
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException) { }
+        return LoadSaved()?.Generated;
+    }
+
+    /// Both dates read, and the candidate is the earlier.
+    internal static bool Older(string? candidate, string? saved) =>
+        Date(candidate) is { } a && Date(saved) is { } b && a < b;
+
+    private static DateTimeOffset? Date(string? text) =>
+        DateTimeOffset.TryParse(text, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var when) ? when : null;
+
+    private static byte[] StateJson(DateTimeOffset updatedAt, long? count, string? etag, string? generated)
     {
         using var buffer = new MemoryStream();
         using (var w = new Utf8JsonWriter(buffer))
@@ -167,6 +196,7 @@ public sealed class FeedClient
             w.WriteNumber("updatedAt", updatedAt.ToUnixTimeMilliseconds());
             if (count is { } n) w.WriteNumber("count", n);
             if (etag is not null) w.WriteString("etag", etag);
+            if (generated is not null) w.WriteString("generated", generated);
             w.WriteEndObject();
         }
         return buffer.ToArray();

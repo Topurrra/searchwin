@@ -39,7 +39,8 @@ public class FeedTests : IDisposable
         Assert.Equal(8, bundle.Count);
         Assert.NotNull(bundle.Bloom);
         Assert.True(bundle.Bloom.Has("evil-bank-login.com"));
-        Assert.Equal(["feed-blocked.example", "another-bad.test", "paypa1-secure.net"], bundle.BlockList);
+        // Its blocklist isn't covered by the signature (see below).
+        Assert.Null(bundle.BlockList);
     }
 
     [Fact]
@@ -59,20 +60,112 @@ public class FeedTests : IDisposable
     }
 
     [Fact]
-    public void Fields_outside_the_signature_cannot_change_the_verdict_data_silently()
+    public void A_blocklist_outside_the_signature_is_ignored()
     {
-        // blocklist isn't signed (remote.js signs version, generated, sources,
-        // count, bloom), as in the extension; what matters is that a verified
-        // bundle can only replace the blocklist and the Bloom filter, never the
-        // safe list, brands or keywords.
+        // The fixture is signed the way remote.js signs (version, generated,
+        // sources, count, bloom): its blocklist rides along unsigned, so anyone
+        // who can change the bytes could add a warning for any site, or empty
+        // the known-bad list. Only the signed Bloom filter is taken.
         var data = ParityTests.Data.Value;
         var fed = data.WithFeed(FeedBundle.Verify(BundleBytes, TestKey)!);
         Assert.Same(data.SafeList, fed.SafeList);
         Assert.Same(data.Brands, fed.Brands);
         Assert.Same(data.Keywords, fed.Keywords);
-        Assert.Contains("feed-blocked.example", fed.BlockList);
-        Assert.DoesNotContain("feed-blocked.example", fed.WithoutFeed().BlockList);
+        Assert.DoesNotContain("feed-blocked.example", fed.BlockList);
+        Assert.Equal(data.BlockList.Order(), fed.BlockList.Order());
+        Assert.NotNull(fed.FeedBloom);
         Assert.Null(fed.WithoutFeed().FeedBloom);
+
+        var v = Analyzer.Analyze("https://feed-blocked.example/", fed)!;
+        Assert.DoesNotContain(v.Signals, s => s.Key == "reasonBlocklist");
+    }
+
+    [Fact]
+    public async Task An_older_signed_feed_does_not_replace_a_newer_one()
+    {
+        // A replayed feed is still signed; only its date gives it away.
+        using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var spki = Convert.ToBase64String(key.ExportSubjectPublicKeyInfo());
+        var now = new DateTimeOffset(2026, 9, 25, 8, 0, 0, TimeSpan.Zero);
+        var server = new FakeServer(_ => Ok(Signed(key, "2026-09-25T06:00:00Z", 8), null));
+        var client = new FeedClient(new HttpClient(server), folder, spki, "https://feed.test/list.json", () => now);
+        Assert.Equal(FeedOutcome.Updated, (await client.RefreshAsync()).Outcome);
+
+        server.Answer = _ => Ok(Signed(key, "2026-09-18T06:00:00Z", 5), null);
+        Assert.Equal(FeedOutcome.Failed, (await client.RefreshAsync(force: true)).Outcome);
+        Assert.Equal("2026-09-25T06:00:00Z", client.LoadSaved()!.Generated);
+        Assert.Equal(8, client.State().Count);
+
+        // The same feed again, or a newer one, is fine.
+        server.Answer = _ => Ok(Signed(key, "2026-09-25T06:00:00Z", 8), null);
+        Assert.Equal(FeedOutcome.Updated, (await client.RefreshAsync(force: true)).Outcome);
+        server.Answer = _ => Ok(Signed(key, "2026-09-26T06:00:00Z", 9), null);
+        Assert.Equal(FeedOutcome.Updated, (await client.RefreshAsync(force: true)).Outcome);
+        Assert.Equal("2026-09-26T06:00:00Z", client.LoadSaved()!.Generated);
+    }
+
+    [Fact]
+    public void A_blocklist_inside_the_signature_adds_to_the_bundled_one()
+    {
+        using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var spki = Convert.ToBase64String(key.ExportSubjectPublicKeyInfo());
+        var data = ParityTests.Data.Value;
+        var bundledOne = data.BlockList.First();
+
+        var bundle = FeedBundle.Verify(Signed(key, "2026-09-25T06:00:00Z", 1, ["feed-blocked.example"], signBlockList: true), spki);
+        Assert.NotNull(bundle);
+        Assert.Equal(["feed-blocked.example"], bundle.BlockList);
+        var fed = data.WithFeed(bundle);
+        Assert.Contains("feed-blocked.example", fed.BlockList);
+        Assert.Contains(bundledOne, fed.BlockList);
+        Assert.Contains(Analyzer.Analyze("https://feed-blocked.example/", fed)!.Signals, s => s.Key == "reasonBlocklist");
+        Assert.DoesNotContain("feed-blocked.example", fed.WithoutFeed().BlockList);
+
+        // A signed empty list can't empty the bundled one either.
+        var empty = FeedBundle.Verify(Signed(key, "2026-09-25T06:00:00Z", 1, [], signBlockList: true), spki)!;
+        Assert.Equal(data.BlockList.Order(), data.WithFeed(empty).BlockList.Order());
+
+        // The same list added after signing (the remote.js way) is dropped, the Bloom filter kept.
+        var unsigned = FeedBundle.Verify(Signed(key, "2026-09-25T06:00:00Z", 1, ["feed-blocked.example"], signBlockList: false), spki)!;
+        Assert.Null(unsigned.BlockList);
+        Assert.NotNull(unsigned.Bloom);
+
+        // And a list swapped after signing breaks the signature that covered it.
+        var swapped = Encoding.UTF8.GetString(Signed(key, "2026-09-25T06:00:00Z", 1, ["feed-blocked.example"], signBlockList: true))
+            .Replace("feed-blocked.example", "your-bank.example");
+        Assert.Null(FeedBundle.Verify(Encoding.UTF8.GetBytes(swapped), spki));
+    }
+
+    [Theory]
+    [InlineData("2026-09-18T06:00:00Z", "2026-09-25T06:00:00Z", true)]
+    [InlineData("2026-09-25T06:00:00Z", "2026-09-25T06:00:00Z", false)]
+    [InlineData("2026-09-26T06:00:00Z", "2026-09-25T06:00:00Z", false)]
+    [InlineData("2026-09-25T08:00:00+03:00", "2026-09-25T06:00:00Z", true)]
+    [InlineData(null, "2026-09-25T06:00:00Z", false)]
+    [InlineData("2026-09-18T06:00:00Z", null, false)]
+    [InlineData("yesterday", "2026-09-25T06:00:00Z", false)]
+    public void Older_compares_the_signed_dates(string? candidate, string? saved, bool older) =>
+        Assert.Equal(older, FeedClient.Older(candidate, saved));
+
+    /// A bundle signed as the registry signs it, by a key made for the test;
+    /// with a blocklist, signed with it or (as remote.js) without.
+    private static byte[] Signed(ECDsa key, string generated, int count, string[]? blocklist = null, bool signBlockList = false)
+    {
+        var bundle = new System.Text.Json.Nodes.JsonObject
+        {
+            ["version"] = 3,
+            ["generated"] = generated,
+            ["sources"] = new System.Text.Json.Nodes.JsonArray("test"),
+            ["count"] = count,
+            ["bloom"] = System.Text.Json.Nodes.JsonNode.Parse(Bundle.GetProperty("bloom").GetRawText()),
+        };
+        if (blocklist is not null) bundle["blocklist"] = new System.Text.Json.Nodes.JsonArray([.. blocklist.Select(d => (System.Text.Json.Nodes.JsonNode?)d)]);
+        using (var doc = JsonDocument.Parse(bundle.ToJsonString()))
+        {
+            var payload = Encoding.UTF8.GetBytes(FeedBundle.Payload(doc.RootElement, signBlockList));
+            bundle["sig"] = Convert.ToBase64String(key.SignData(payload, HashAlgorithmName.SHA256, DSASignatureFormat.IeeeP1363FixedFieldConcatenation));
+        }
+        return Encoding.UTF8.GetBytes(bundle.ToJsonString());
     }
 
     [Fact]

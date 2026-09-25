@@ -17,7 +17,7 @@ public sealed record FishData
     public required IReadOnlyDictionary<string, int> Tlds { get; init; }
     public required IReadOnlyList<string> Keywords { get; init; }
     public required Psl Psl { get; init; }
-    /// Known-bad domains: the bundled seed list, or the feed's when it has one.
+    /// Known-bad domains: the bundled seed list, plus a feed's when its signature covers one.
     public required HashSet<string> BlockList { get; init; }
     /// Identity providers an attacker can't own (okta.com, microsoftonline.com…).
     public required HashSet<string> AitmIdp { get; init; }
@@ -36,9 +36,13 @@ public sealed record FishData
     /// Applies a verified feed. Only the blocklist and the Bloom filter may
     /// change: the safe list, brands, endings and keywords ship with the code,
     /// and a feed must never be able to widen them (remote.js applyBundle).
+    /// A feed's blocklist (only ever a signed one, see FeedBundle) adds to
+    /// the bundled list; remote.js replaced it, so a feed could empty it.
     public FishData WithFeed(FeedBundle bundle) => this with
     {
-        BlockList = bundle.BlockList is { } list ? new HashSet<string>(list, StringComparer.Ordinal) : BlockList,
+        BlockList = bundle.BlockList is { } list
+            ? new HashSet<string>((BundledBlockList ?? BlockList).Concat(list), StringComparer.Ordinal)
+            : BlockList,
         FeedBloom = bundle.Bloom ?? FeedBloom,
     };
 

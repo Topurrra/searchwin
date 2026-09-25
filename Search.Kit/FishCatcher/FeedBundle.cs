@@ -9,15 +9,24 @@ namespace SearchKit.FishCatcher;
 ///
 /// The registry signs, with ECDSA P-256 / SHA-256 (signature as raw r||s,
 /// base64 in `sig`), the JSON.stringify of exactly these fields in this order:
-/// version, generated, sources, count, bloom. Only the Bloom filter and the
-/// blocklist are used; nothing in a feed can widen the safe list or the brands.
+/// version, generated, sources, count, bloom. Only the Bloom filter is used
+/// from such a feed. remote.js also took the feed's blocklist, which that
+/// signature doesn't cover, so anyone who could change the bytes could warn
+/// about any site; here a blocklist counts only when the signature covers it
+/// too (the same fields, then blocklist), and even then it adds to the
+/// bundled list rather than replacing it. Nothing in a feed can widen the
+/// safe list or the brands.
 public sealed class FeedBundle
 {
+    private static readonly string[] Signed = ["version", "generated", "sources", "count", "bloom"];
+    private static readonly string[] SignedWithBlockList = [.. Signed, "blocklist"];
+
     /// The version field as JSON text.
     public string? Version { get; private init; }
     public string? Generated { get; private init; }
     public long? Count { get; private init; }
     public Bloom? Bloom { get; private init; }
+    /// The feed's known-bad domains, only when the signature covers them.
     public IReadOnlyList<string>? BlockList { get; private init; }
 
     /// Parses and verifies a downloaded feed. Null when it isn't JSON, isn't
@@ -29,8 +38,10 @@ public sealed class FeedBundle
         {
             using var doc = JsonDocument.Parse(json.ToArray());
             var root = doc.RootElement;
-            if (root.ValueKind != JsonValueKind.Object || !VerifySignature(root, spki)) return null;
-            return From(root);
+            if (root.ValueKind != JsonValueKind.Object) return null;
+            if (root.TryGetProperty("blocklist", out _) && VerifySignature(root, spki, withBlockList: true))
+                return From(root, blockListSigned: true);
+            return VerifySignature(root, spki) ? From(root, blockListSigned: false) : null;
         }
         catch (Exception e) when (e is JsonException or FormatException or CryptographicException or InvalidOperationException or ArgumentException)
         {
@@ -38,12 +49,13 @@ public sealed class FeedBundle
         }
     }
 
-    /// The exact bytes the registry signs (remote.js bundlePayload).
-    public static string Payload(JsonElement bundle)
+    /// The exact bytes the registry signs (remote.js bundlePayload), or, with
+    /// `withBlockList`, the same followed by the blocklist.
+    public static string Payload(JsonElement bundle, bool withBlockList = false)
     {
         var sb = new StringBuilder("{");
         bool first = true;
-        foreach (var name in (string[])["version", "generated", "sources", "count", "bloom"])
+        foreach (var name in withBlockList ? SignedWithBlockList : Signed)
         {
             // JSON.stringify leaves out a property whose value is undefined.
             if (!bundle.TryGetProperty(name, out var value)) continue;
@@ -56,7 +68,7 @@ public sealed class FeedBundle
         return sb.Append('}').ToString();
     }
 
-    public static bool VerifySignature(JsonElement bundle, string spki)
+    public static bool VerifySignature(JsonElement bundle, string spki, bool withBlockList = false)
     {
         if (bundle.ValueKind != JsonValueKind.Object || string.IsNullOrEmpty(spki)) return false;
         if (!bundle.TryGetProperty("sig", out var sig) || sig.ValueKind != JsonValueKind.String) return false;
@@ -65,7 +77,7 @@ public sealed class FeedBundle
             using var key = ECDsa.Create();
             key.ImportSubjectPublicKeyInfo(ForgivingBase64(spki), out _);
             if (key.KeySize != 256) return false; // WebCrypto imported it as P-256
-            var data = Encoding.UTF8.GetBytes(Payload(bundle));
+            var data = Encoding.UTF8.GetBytes(Payload(bundle, withBlockList));
             return key.VerifyData(data, ForgivingBase64(sig.GetString()!), HashAlgorithmName.SHA256, DSASignatureFormat.IeeeP1363FixedFieldConcatenation);
         }
         catch (Exception e) when (e is CryptographicException or FormatException or JsonException or InvalidOperationException or ArgumentException)
@@ -74,8 +86,9 @@ public sealed class FeedBundle
         }
     }
 
-    /// What applyBundle takes from a verified bundle.
-    public static FeedBundle From(JsonElement root)
+    /// What applyBundle takes from a verified bundle: the blocklist only when
+    /// `blockListSigned` says the signature covered it.
+    internal static FeedBundle From(JsonElement root, bool blockListSigned)
     {
         Bloom? bloom = null;
         if (root.TryGetProperty("bloom", out var b) && b.ValueKind == JsonValueKind.Object &&
@@ -87,7 +100,7 @@ public sealed class FeedBundle
             bloom = new Bloom(mv, k, seed, ForgivingBase64(bits.GetString()!));
         }
         List<string>? list = null;
-        if (root.TryGetProperty("blocklist", out var bl) && bl.ValueKind == JsonValueKind.Array)
+        if (blockListSigned && root.TryGetProperty("blocklist", out var bl) && bl.ValueKind == JsonValueKind.Array)
         {
             list = [];
             foreach (var x in bl.EnumerateArray())

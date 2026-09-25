@@ -50,8 +50,13 @@ public class ParityTests
     [Fact]
     public void A_feed_scores_as_in_the_extension()
     {
+        // The one intended difference: remote.js let a feed's blocklist replace
+        // the bundled one, Search adds it to the bundled one (and takes it only
+        // when signed; the corpus bundle isn't). With no bundled list the two
+        // are the same, so that is what's compared; FeedTests covers the rest.
         var feed = G("feed");
-        var fed = Data.Value.WithFeed(FeedBundle.From(feed.GetProperty("bundle")));
+        var bare = Data.Value with { BlockList = [], BundledBlockList = [] };
+        var fed = bare.WithFeed(FeedBundle.From(feed.GetProperty("bundle"), blockListSigned: true));
         var failures = new List<string>();
         foreach (var item in feed.GetProperty("urls").EnumerateArray())
         {

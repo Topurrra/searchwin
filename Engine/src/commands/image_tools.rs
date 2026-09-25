@@ -2830,9 +2830,11 @@ mod tests {
 
         assert_eq!(
             output,
-            dir.canonicalize()
-                .expect("canonical fixture directory")
-                .join("photo_edited.png")
+            dunce::simplified(
+                &dir.canonicalize()
+                    .expect("canonical fixture directory")
+            )
+            .join("photo_edited.png")
         );
 
         fs::remove_file(&source).expect("remove source fixture");
@@ -2864,7 +2866,8 @@ mod tests {
 
         assert_eq!(
             canonical,
-            source.canonicalize().expect("canonical source fixture")
+            dunce::simplified(&source.canonicalize().expect("canonical source fixture"))
+                .to_path_buf()
         );
 
         fs::remove_file(&source).expect("remove source fixture");

@@ -159,8 +159,9 @@ public static class Player
         }
     }
 
-    private static JsonObject Track(Subtitle sub, string file) =>
-        new() { ["file"] = file, ["label"] = sub.Label, ["language"] = sub.Language };
+    // A JsonNode, so JsonArray.Add takes it as a node (its generic Add isn't AOT-safe).
+    private static JsonNode Track(Subtitle sub, string file) =>
+        new JsonObject { ["file"] = file, ["label"] = sub.Label, ["language"] = sub.Language };
 
     private static long lastSaid;
 

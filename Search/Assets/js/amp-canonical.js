@@ -82,8 +82,13 @@
     return canonical;
   }
 
-  function buildMessage(canonicalUrl) {
-    return { name: 'shield.amp', body: { canonical: canonicalUrl } };
+  // `href` is the sending document's own address at the moment it posts —
+  // not the canonical, the AMP page itself. The browser only acts on this
+  // message while its tab is still showing that exact page, so a message
+  // from a page that has since navigated away can't leave its stale
+  // location.replace() to land on whatever loaded after it.
+  function buildMessage(canonicalUrl, href) {
+    return { name: 'shield.amp', body: { canonical: canonicalUrl, href: href } };
   }
 
   /** Posts the message to the browser; returns whether it could. Never throws. */
@@ -91,7 +96,7 @@
     try {
       var bridge = win && win.chrome && win.chrome.webview;
       if (bridge && typeof bridge.postMessage === 'function') {
-        bridge.postMessage(buildMessage(canonicalUrl));
+        bridge.postMessage(buildMessage(canonicalUrl, win && win.location && win.location.href));
         return true;
       }
     } catch (e) { /* never throw into the page */ }
@@ -165,7 +170,8 @@
   if (typeof module !== 'undefined' && module.exports) {
     module.exports = api;
   } else {
-    root.__searchAmpCanonical = api;
+    // In a real page, nothing of this is left where the page can find it —
+    // no named global to check for, no fingerprint to read.
     init(root);
   }
 })(typeof window !== 'undefined' ? window : this);

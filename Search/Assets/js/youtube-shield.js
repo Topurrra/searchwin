@@ -290,7 +290,6 @@
     var apply = function () {
       if (!doc.head) return false;
       var style = doc.createElement('style');
-      style.setAttribute('data-search-shield', 'youtube');
       style.textContent = css;
       doc.head.appendChild(style);
       return true;
@@ -339,7 +338,8 @@
   if (typeof module !== 'undefined' && module.exports) {
     module.exports = api;
   } else {
-    root.__searchYouTubeShield = api;
+    // In a real page, nothing of this is left where the page can find it —
+    // no named global to check for, no fingerprint to read.
     init(root);
   }
 })(typeof window !== 'undefined' ? window : this);

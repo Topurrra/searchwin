@@ -1,5 +1,7 @@
 using Microsoft.Web.WebView2.Core;
 using SearchKit.Shields;
+using Catcher = SearchKit.FishCatcher.FishCatcher;
+using FishLevel = SearchKit.FishCatcher.Level;
 
 namespace Search;
 
@@ -163,7 +165,9 @@ public sealed partial class Shield : Model
         core.WebResourceRequested += ward.Requested;
         core.NavigationStarting += ward.Starting;
         core.ContentLoading += ward.Loading;
+        core.WebResourceResponseReceived += ward.ResponseReceived;
         ward.Dress(tab.Address);
+        ArmWorkers(core);
     }
 
     /// Switched on or off for a page that is already open: the engine's own
@@ -186,7 +190,8 @@ public sealed partial class Shield : Model
         if (ward.Filtered == want) return;
         // One filter for everything the page and its frames ask for. Only the
         // page's own requests: a service worker's are raised on every page
-        // with a filter that matches them, so they'd be heard once per tab.
+        // with a filter that matches them, so they'd be heard once per tab
+        // (see ArmWorkers below for those).
         try
         {
             if (want) core.AddWebResourceRequestedFilter("*", CoreWebView2WebResourceContext.All, CoreWebView2WebResourceRequestSourceKinds.Document);
@@ -206,6 +211,51 @@ public sealed partial class Shield : Model
 #pragma warning restore CS0618
         }
         ward.Filtered = want;
+    }
+
+    /// A service worker's (or a shared worker's) own requests never cross
+    /// the Document-only filter above, so ads and trackers a site fetches
+    /// from inside one went unblocked (a worker only registers once, in a
+    /// site's first tab, and every page on that site shares the same one).
+    /// Registered on a single page rather than every open one — a worker's
+    /// requests are raised once per page with a matching filter, so putting
+    /// it everywhere would decide the very same request once per open tab.
+    /// Moved to another page only once the one holding it turns out to be
+    /// gone: checked the cheap way, by touching it and seeing whether it
+    /// throws, whenever a fresh page starts.
+    private CoreWebView2? workerCore;
+
+    private void ArmWorkers(CoreWebView2 core)
+    {
+        if (workerCore != null)
+        {
+            try { _ = workerCore.Source; return; } catch { workerCore = null; }
+        }
+        try
+        {
+            core.AddWebResourceRequestedFilter("*", CoreWebView2WebResourceContext.All,
+                CoreWebView2WebResourceRequestSourceKinds.ServiceWorker | CoreWebView2WebResourceRequestSourceKinds.SharedWorker);
+        }
+        catch { return; }
+        core.WebResourceRequested += WorkerRequested;
+        workerCore = core;
+    }
+
+    /// A worker's own request, decided against the same list — but with no
+    /// page to call first-party, since a worker isn't one page's alone.
+    private void WorkerRequested(object? sender, CoreWebView2WebResourceRequestedEventArgs e)
+    {
+        if (!Enabled || Trouble != null) return;
+        string raw;
+        CoreWebView2WebResourceContext context;
+        try { context = e.ResourceContext; raw = e.Request.Uri; }
+        catch { return; }
+        if (!raw.StartsWith("http", StringComparison.OrdinalIgnoreCase) || !Uri.TryCreate(raw, UriKind.Absolute, out var url)) return;
+        bool refused;
+        try { refused = Refuses(url, null, context); }
+        catch { return; }
+        if (!refused || sender is not CoreWebView2 core) return;
+        e.Response = core.Environment.CreateWebResourceResponse(null, 403, "Blocked", "");
     }
 
     /// Whether a request from a page on `pageHost` should be refused.
@@ -236,6 +286,10 @@ public sealed partial class Shield : Model
 
     private bool IsUnwanted(string host)
     {
+        // A trailing dot ("ads.doubleclick.net.") is the same host to DNS and
+        // to every browser, but would otherwise shift every label in the walk
+        // below by one and never match — a bypass free for the taking.
+        host = host.TrimEnd('.');
         // The host, then each parent in turn: ads.doubleclick.net, then
         // doubleclick.net. A handful of lookups, never a scan of the list.
         for (var at = host; ;)
@@ -265,7 +319,7 @@ public sealed partial class Shield : Model
         if (!Address.IsWeb(url) || Own(url) || IsPaused(Curtain.Host(url))) return null;
         var target = url;
         var changed = false;
-        if (Redirects.Unwrap(url) is { } inner && Address.IsWeb(inner) && !Own(inner))
+        if (Redirects.Unwrap(url) is { } inner && Address.IsWeb(inner) && !Own(inner) && Vouched(inner))
         {
             target = inner;
             changed = true;
@@ -283,6 +337,17 @@ public sealed partial class Shield : Model
     /// tidied address may lead: going there as Search's own navigation is a
     /// door a web page must not be able to open.
     private static bool Own(Uri url) => url.Host.EndsWith(".search", StringComparison.OrdinalIgnoreCase);
+
+    /// Whether unwrapping a redirect notice (Google's "Redirect Notice",
+    /// Steam's phishing warning, YouTube's own) is safe. Those pages exist
+    /// because phishers abuse exactly these open redirects, so silently
+    /// skipping straight to the target throws that warning away; only do it
+    /// when FishCatcher can vouch for the target itself. Off, or no
+    /// verdict yet, or nothing to be concerned about (fail open, same as
+    /// everywhere else FishCatcher is asked) is what "vouched" means here —
+    /// anything Elevated or worse leaves the site's own warning standing.
+    private static bool Vouched(Uri target) =>
+        Browser.Shared is { Prefs.WarnsOfScams: true } && Catcher.Check(target)?.Level is null or FishLevel.Low;
 
     // MARK: - what goes into pages
 
@@ -368,10 +433,15 @@ public sealed partial class Shield : Model
 
     /// The per-site stylesheet as a page script, for that host only: a page
     /// on another site that inherits it before it is swapped leaves it be.
+    /// The applied-already flag lives behind a Symbol, not a plain
+    /// `__search…` name — one string a page can just ask
+    /// `window.__searchShieldSite` for — so telling Search's stylesheet
+    /// apart from anyone else's costs enumerating symbols, not a lookup.
     private static string SiteScript(string host, string css) => $$"""
     (function () {
-      if (location.hostname !== {{Bridge.Literal(host)}} || window.__searchShieldSite) return;
-      Object.defineProperty(window, '__searchShieldSite', { value: true });
+      var mark = Symbol.for('search:shield-site');
+      if (location.hostname !== {{Bridge.Literal(host)}} || window[mark]) return;
+      Object.defineProperty(window, mark, { value: true });
       try {
         var sheet = new CSSStyleSheet();
         sheet.replaceSync({{Bridge.Literal(css)}});
@@ -404,6 +474,13 @@ public sealed partial class Shield : Model
 
         private string? tidied;
         private long tidiedAt;
+
+        /// The status of a redirect this Ward has just watched go by, keyed
+        /// by where it leads — filled in from WebResourceResponseReceived,
+        /// read back when NavigationStarting says this navigation followed a
+        /// redirect. WebView2 doesn't hand NavigationStarting the status
+        /// itself, only IsRedirected.
+        private readonly Dictionary<string, int> redirectStatus = new(StringComparer.Ordinal);
 
         public void Requested(object? sender, CoreWebView2WebResourceRequestedEventArgs e)
         {
@@ -472,7 +549,7 @@ public sealed partial class Shield : Model
             // A cleaner address means this navigation gives way to one to
             // it. Only a new document: going back, or reloading, goes where
             // it went before.
-            if (e.NavigationKind == CoreWebView2NavigationKind.NewDocument && Tidied(url) is { } clean)
+            if (e.NavigationKind == CoreWebView2NavigationKind.NewDocument && Tidied(url, e) is { } clean)
             {
                 e.Cancel = true;
                 UI.Soon(() => Browser.Shared?.Go(tab, clean));
@@ -486,13 +563,39 @@ public sealed partial class Shield : Model
             tab.Blocked = 0;
             tab.ShieldSeen = 0;
             tab.ShieldMs = 0;
+            if (redirectStatus.Count > 0) redirectStatus.Clear();
             Dress(url);
         }
 
+        /// Watches redirect responses go by so Starting can tell a 307/308
+        /// apart from an ordinary one — NavigationStarting itself is only
+        /// told IsRedirected, never the status.
+        public void ResponseReceived(object? sender, CoreWebView2WebResourceResponseReceivedEventArgs e)
+        {
+            try
+            {
+                var status = e.Response.StatusCode;
+                if (status is not (307 or 308)) return;
+                var location = e.Response.Headers.GetHeader("Location");
+                if (location == null || !Uri.TryCreate(e.Request.Uri, UriKind.Absolute, out var from)) return;
+                if (!Uri.TryCreate(from, location, out var to)) return;
+                if (redirectStatus.Count > 50) redirectStatus.Clear();
+                redirectStatus[to.AbsoluteUri] = status;
+            }
+            catch { }
+        }
+
         /// The address this navigation should have had instead, if any.
-        private Uri? Tidied(Uri url)
+        /// Never for a navigation that isn't a plain GET — a form's POST, or
+        /// a 307/308 redirect that must replay one — since Browser.Go always
+        /// starts a fresh, bodyless GET (SearchKit.Shields.TidyDecision).
+        private Uri? Tidied(Uri url, CoreWebView2NavigationStartingEventArgs e)
         {
             if (Browser.Shared is not { Prefs.TidiesLinks: true }) return null;
+            bool hasBody;
+            try { hasBody = e.RequestHeaders.Contains("Content-Type"); } catch { hasBody = false; }
+            var status = e.IsRedirected && redirectStatus.TryGetValue(url.AbsoluteUri, out var s) ? s : 0;
+            if (!TidyDecision.CanTidy(hasBody, status)) return null;
             Uri.TryCreate(core.Source, UriKind.Absolute, out var from);
             if (shield.Tidy(url, Address.IsWeb(from) ? from : null) is not { } clean) return null;
             // A site that sends the clean address straight back to the
@@ -648,6 +751,13 @@ public sealed partial class Browser
         if (!body.TryGetProperty("canonical", out var said) || said.ValueKind != System.Text.Json.JsonValueKind.String) return;
         if (!Uri.TryCreate(said.GetString(), UriKind.Absolute, out var canonical) || !Address.IsWeb(canonical)) return;
         if (!Uri.TryCreate(tab.Core?.Source, UriKind.Absolute, out var here) || !Address.IsWeb(here)) return;
+        // The message names the page that sent it (its own address, not the
+        // canonical). A page that posted this and has since navigated away —
+        // this tab may already be showing something else by the time the
+        // message is handled — must not get to replace() whatever loaded
+        // after it with its own idea of where it should have gone.
+        if (!body.TryGetProperty("href", out var sender) || sender.ValueKind != System.Text.Json.JsonValueKind.String) return;
+        if (!string.Equals(sender.GetString(), here.AbsoluteUri, StringComparison.Ordinal)) return;
         if (Shield.Shared.IsPaused(Curtain.Host(here)) || canonical.Host.EndsWith(".search", StringComparison.OrdinalIgnoreCase)) return;
         if (tab.LeftAmp == here.AbsoluteUri) return;
         tab.LeftAmp = here.AbsoluteUri;

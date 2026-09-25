@@ -94,29 +94,42 @@
   // only" and their equivalents in a handful of languages. A button's text
   // must be one of these (give or take a trailing "cookies" and
   // punctuation), not merely contain one.
+  // 'deny' and 'deny all' are deliberately not here: on an OAuth or
+  // permissions screen ("This app wants access to your contacts") "Deny" is
+  // never a cookie answer, and there is no wrapper check that rules that
+  // screen out reliably enough to risk it. 'no thanks' is gone for the same
+  // reason: it's a generic dismissal, not specific to cookies, and shows up
+  // on plenty of banners ("no thanks" to a newsletter, an app install, an
+  // insurance add-on) that have nothing to do with consent.
   var REJECT_PHRASES = [
     // English
     'reject all', 'reject', 'decline', 'decline all', 'necessary only', 'only necessary',
     'essential only', 'only essential', 'strictly necessary only', 'use necessary only',
-    'deny', 'deny all', 'disagree', 'i disagree', 'refuse all', 'refuse', 'reject and close',
-    'continue without accepting', 'no thanks',
+    'use necessary cookies only', 'use essential cookies only', 'disagree', 'i disagree',
+    'refuse all', 'refuse', 'reject and close', 'continue without accepting',
+    'continue without agreeing',
     // German
     'ablehnen', 'alle ablehnen', 'nur notwendige', 'nur erforderliche', 'nur essenzielle',
+    'weiter ohne zuzustimmen',
     // French
     'refuser', 'tout refuser', 'refuser tout', 'nécessaire uniquement',
-    'uniquement nécessaire', 'continuer sans accepter',
+    'uniquement nécessaire', 'continuer sans accepter', 'poursuivre sans accepter',
     // Spanish
     'rechazar', 'rechazar todo', 'rechazar todas', 'solo necesarias', 'solo esenciales',
+    'continuar sin aceptar',
     // Italian
     'rifiuta', 'rifiuta tutto', 'solo necessari', 'solo essenziali', 'continua senza accettare',
     // Portuguese
     'rejeitar', 'rejeitar tudo', 'apenas necessários', 'somente necessários',
+    'continuar sem aceitar',
     // Dutch
     'weigeren', 'alles weigeren', 'alleen noodzakelijk', 'alleen noodzakelijke',
+    'doorgaan zonder te accepteren',
     // Polish
-    'odrzuć', 'odrzuć wszystkie', 'tylko niezbędne',
+    'odrzuć', 'odrzuć wszystkie', 'tylko niezbędne', 'kontynuuj bez akceptacji',
     // Swedish / Danish / Norwegian
     'avvisa', 'avvisa alla', 'endast nödvändiga', 'kun nødvendige', 'afvis alle', 'avvis alle',
+    'fortsätt utan att acceptera', 'fortsæt uden at acceptere', 'fortsett uten å godta',
   ];
 
   // Safety net: never click something that also reads as "accept", even if a
@@ -124,6 +137,33 @@
   var ACCEPT_PHRASES = [
     'accept', 'agree', 'allow all', 'akzeptieren', 'zustimmen', 'accepter',
     'accetta', 'aceptar', 'aceitar', 'accepteren', 'akceptuj', 'godkänn',
+  ];
+
+  // Read as "accept" — the veto above would otherwise catch every one of
+  // these — but narrow enough ("only essential", "only necessary") that they
+  // can never mean "agree to everything", let alone start a subscription or
+  // a payment. Kept short and literal on purpose: a phrase that also reads as
+  // subscribing or paying (a real one seen in the wild: "Refuse and
+  // subscribe") must never be added here or to REJECT_PHRASES, whatever else
+  // it says about cookies.
+  var NARROW_ACCEPT_PHRASES = [
+    // English
+    'accept only essential', 'accept only necessary', 'accept essential only',
+    'accept necessary only',
+    // German
+    'nur essenzielle akzeptieren', 'nur notwendige akzeptieren',
+    // French
+    'accepter uniquement les nécessaires', "n'accepter que les nécessaires",
+    // Spanish
+    'aceptar solo las esenciales', 'aceptar solo las necesarias',
+    // Italian
+    'accetta solo i necessari', 'accetta solo gli essenziali',
+    // Portuguese
+    'aceitar apenas os necessários',
+    // Dutch
+    'alleen noodzakelijke accepteren',
+    // Swedish
+    'acceptera endast nödvändiga',
   ];
 
   // A button longer than this isn't a button's worth of words.
@@ -168,8 +208,13 @@
   function isRejectText(text) {
     var normalized = normalizeText(text);
     if (!normalized || normalized.length > MAX_BUTTON_TEXT) return false;
+    var bare = bareText(normalized);
+    // Checked before the accept veto, and only by an exact match against the
+    // short literal list above: "accept only essential" is safe by name, but
+    // nothing merely containing "accept" gets a pass.
+    if (NARROW_ACCEPT_PHRASES.indexOf(bare) !== -1) return true;
     if (containsAny(normalized, ACCEPT_PHRASES)) return false;
-    return REJECT_PHRASES.indexOf(bareText(normalized)) !== -1;
+    return REJECT_PHRASES.indexOf(bare) !== -1;
   }
 
   // textContent before innerText: reading innerText lays the page out, and
@@ -183,10 +228,35 @@
     return '';
   }
 
-  // What a consent banner calls itself: its id, class, label or role, or the
-  // CMP's own container names.
-  var CONSENT_NAME = /cookie|consent|gdpr|privacy|cmp|onetrust|didomi|usercentrics|cookiebot|truste|sp_message|qc-cmp|tarteaucitron|klaro|cc-window|cc_banner/i;
+  // What a consent banner calls itself: "cookie" or "consent" as a whole
+  // word, or a specific CMP's own container name — never the bare "cmp" or
+  // "privacy" that used to be here. Adobe Experience Manager gives ordinary
+  // page chrome classes like "cmp-container" and "cmp-button" to every
+  // button on the page; a bare "cmp" (even word-bounded: the hyphen already
+  // makes "cmp" its own word) turned every one of them into "a consent
+  // banner" on any AEM site. "privacy" alone catches privacy-policy links
+  // and settings pages that have nothing to do with a banner.
+  var CONSENT_NAME = /\b(cookie|consent|gdpr|onetrust|didomi|usercentrics|cookiebot|truste|sp_message|qc-cmp2?|tarteaucitron|klaro|cc-window|cc_banner)\b/i;
   var MAX_ANCESTORS = 12;
+
+  /** Whether `el` is a dialog by shape: a <dialog>, or role="dialog"/"alertdialog". */
+  function isDialogLike(el) {
+    try {
+      if (String(el.tagName || '').toLowerCase() === 'dialog') return true;
+      var role = (typeof el.getAttribute === 'function' && el.getAttribute('role')) || '';
+      return /^(dialog|alertdialog)$/i.test(String(role));
+    } catch (e) { return false; }
+  }
+
+  /** Whether `el` is pinned to the viewport — fixed or sticky — the way a real banner is. */
+  function isFixedOrSticky(el, win) {
+    try {
+      var getComputed = (win && win.getComputedStyle) || (typeof getComputedStyle === 'function' ? getComputedStyle : null);
+      if (!getComputed) return false;
+      var position = getComputed(el).position;
+      return position === 'fixed' || position === 'sticky';
+    } catch (e) { return false; }
+  }
 
   function nameOf(el) {
     var parts = [];
@@ -202,11 +272,18 @@
     return parts.join(' ');
   }
 
-  /** Whether `el` sits inside something that names itself a cookie or consent banner. Pure. */
-  function inConsentContainer(el) {
+  /**
+   * Whether `el` sits inside something that both names itself a cookie or
+   * consent banner AND looks like one: a dialog, or fixed/sticky to the
+   * viewport. A name match alone isn't enough — a privacy-policy paragraph
+   * or an AEM "cmp-" component sits in ordinary page flow, not pinned over
+   * it. Pure but for the optional `win` (for getComputedStyle); with none,
+   * only the dialog-shape check applies.
+   */
+  function inConsentContainer(el, win) {
     var at = el;
     for (var depth = 0; at && depth <= MAX_ANCESTORS; depth++) {
-      if (CONSENT_NAME.test(nameOf(at))) return true;
+      if (CONSENT_NAME.test(nameOf(at)) && (isDialogLike(at) || isFixedOrSticky(at, win))) return true;
       at = at.parentElement;
     }
     return false;
@@ -231,12 +308,12 @@
    * it's directly unit-testable with plain fixture objects. `wholeFrame`
    * says the frame itself is the consent dialog, so no container is needed.
    */
-  function findRejectButton(elements, wholeFrame) {
+  function findRejectButton(elements, wholeFrame, win) {
     if (!elements) return null;
     for (var i = 0; i < elements.length; i++) {
       var el = elements[i];
       if (!isRejectText(elementText(el))) continue;
-      if (!wholeFrame && !inConsentContainer(el)) continue;
+      if (!wholeFrame && !inConsentContainer(el, win)) continue;
       if (!isVisible(el)) continue;
       return el;
     }
@@ -284,13 +361,37 @@
     if (!doc.head) return false;
     try {
       var style = doc.createElement('style');
-      style.setAttribute('data-search-shield', 'cookie-reject');
       style.textContent = css;
       doc.head.appendChild(style);
       return true;
     } catch (e) {
       return false;
     }
+  }
+
+  // ---- Places this must never act at all ---------------------------------
+  // An OAuth or account-permissions screen: "Deny" or "Reject" there answers
+  // a login or an app's requested access, never a cookie banner, even when
+  // the page also happens to use the word "consent" or "privacy" somewhere.
+  var OAUTH_HOST = /(^|\.)(accounts\.google|login\.microsoftonline|appleid\.apple|login\.live|www\.facebook|github|auth0|okta|onelogin)\.com$/i;
+  var OAUTH_PATH = /\/(oauth2?|authorize|authorization|sso|saml)(\/|$)/i;
+
+  function isOAuthLike(win) {
+    try {
+      var loc = win && win.location;
+      if (!loc) return false;
+      return OAUTH_HOST.test(String(loc.hostname || '')) || OAUTH_PATH.test(String(loc.pathname || ''));
+    } catch (e) { return false; }
+  }
+
+  /** A password field actually on screen — a sign-in form in use, not a hidden login-modal template. */
+  function hasVisiblePasswordField(doc) {
+    try {
+      if (!doc || typeof doc.querySelectorAll !== 'function') return false;
+      var fields = doc.querySelectorAll('input[type="password"]');
+      for (var i = 0; i < fields.length; i++) if (isVisible(fields[i])) return true;
+    } catch (e) { /* fall through */ }
+    return false;
   }
 
   // ---- Orchestration: bounded, throttled, never an infinite loop ---------
@@ -300,6 +401,7 @@
   function init(win) {
     win = win || (typeof window !== 'undefined' ? window : undefined);
     if (!win || !win.document) return;
+    if (isOAuthLike(win)) return;
     var doc = win.document;
 
     // In a frame, only one that is a consent dialog of its own.
@@ -314,10 +416,14 @@
     var settled = false;
     function attempt() {
       if (settled) return true;
+      // A sign-in form on screen: a "Deny"-shaped click here could be
+      // answering that instead of a cookie banner. Leave the whole page
+      // alone rather than guess which is which.
+      if (hasVisiblePasswordField(doc)) { settled = true; return true; }
       try {
         if (!framed && runCmpHandlers(win)) { settled = true; return true; }
       } catch (e) { /* never throw into the page */ }
-      var target = findRejectButton(collectClickable(doc), wholeFrame);
+      var target = findRejectButton(collectClickable(doc), wholeFrame, win);
       if (target) {
         settled = clickElement(target);
         return settled;
@@ -360,9 +466,14 @@
     runCmpHandlers: runCmpHandlers,
     REJECT_PHRASES: REJECT_PHRASES,
     ACCEPT_PHRASES: ACCEPT_PHRASES,
+    NARROW_ACCEPT_PHRASES: NARROW_ACCEPT_PHRASES,
     isRejectText: isRejectText,
+    isDialogLike: isDialogLike,
+    isFixedOrSticky: isFixedOrSticky,
     inConsentContainer: inConsentContainer,
     isConsentFrame: isConsentFrame,
+    isOAuthLike: isOAuthLike,
+    hasVisiblePasswordField: hasVisiblePasswordField,
     findRejectButton: findRejectButton,
     clickElement: clickElement,
     LEFTOVER_BANNER_CSS: LEFTOVER_BANNER_CSS,
@@ -373,7 +484,8 @@
   if (typeof module !== 'undefined' && module.exports) {
     module.exports = api;
   } else {
-    root.__searchCookieReject = api;
+    // In a real page, nothing of this is left where the page can find it —
+    // no named global to check for, no fingerprint to read.
     init(root);
   }
 })(typeof window !== 'undefined' ? window : this);

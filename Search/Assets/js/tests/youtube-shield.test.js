@@ -2,6 +2,9 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const vm = require('node:vm');
 const shield = require('../youtube-shield.js');
 
 // ---- pruneAdFields -------------------------------------------------------
@@ -237,4 +240,27 @@ test('init wires the traps on a youtube.com hostname without throwing', () => {
   assert.doesNotThrow(() => shield.init(fakeWindow));
   fakeWindow.ytInitialData = { adSlots: [1] };
   assert.equal(fakeWindow.ytInitialData.adSlots, undefined);
+});
+
+// ---- injectStyle marks nothing a page could search for --------------------
+
+test('injectStyle leaves the <style> with no data-search-shield attribute', () => {
+  const appended = [];
+  const doc = {
+    head: { appendChild: (el) => appended.push(el) },
+    createElement: () => ({ attrs: {}, setAttribute(name, value) { this.attrs[name] = value; } }),
+  };
+  shield.injectStyle(doc, '.ad{display:none!important}');
+  assert.deepEqual(appended[0].attrs, {});
+});
+
+// ---- run as a real page script: nothing left on the global for a page to find ---
+
+test('evaluated in a page (no module), it puts no __search* global on window', () => {
+  const src = fs.readFileSync(path.join(__dirname, '..', 'youtube-shield.js'), 'utf8');
+  const sandbox = {};
+  vm.createContext(sandbox);
+  assert.doesNotThrow(() => vm.runInContext(src, sandbox));
+  assert.equal('__searchYouTubeShield' in sandbox, false);
+  assert.equal(Object.getOwnPropertyNames(sandbox).some((n) => n.indexOf('__search') !== -1), false);
 });

@@ -380,9 +380,10 @@ public sealed partial class SettingsPanel : Grid
         if (shield.Trouble is { } trouble)
             card.Add(new Line(trouble, "Nothing is being blocked until this clears — try again, or restart Search",
                 new Pill("Try again", shield.Compile)));
-        // The lists are a download, so they're asked for, not assumed (D28).
+        // The lists are a download, but a background one that says nothing
+        // about your browsing to reach easylist.to, so they're on (superseding D28).
         card.Add(new Line("Full ad and tracker lists",
-            (shield.List != null ? ShieldLists.Said() : null) ?? "EasyList and EasyPrivacy, downloaded from easylist.to and checked once a day",
+            (shield.List != null ? ShieldLists.Said() : null) ?? "EasyList and EasyPrivacy, updated in the background from easylist.to — nothing about your browsing is sent",
             new Switch(prefs.ShieldLists, on => prefs.ShieldLists = on)));
         card.Add(new Line("Remove tracking from links", "Tags like utm_ and fbclid, redirect wrappers, and AMP pages",
             new Switch(prefs.TidiesLinks, on => prefs.TidiesLinks = on)));
@@ -410,12 +411,13 @@ public sealed partial class SettingsPanel : Grid
             new Pill("Forget choices", browser.ForgetCaptureChoices)));
         body.Children.Add(card);
 
-        // FishCatcher. The address check is all on this computer, so it's on;
-        // the daily list is a download, so it's yours to ask for.
+        // FishCatcher. The address check is all on this computer, and the
+        // daily list is a background download that says nothing about your
+        // browsing either, so both are on.
         body.Children.Add(Parts.Card(
             new Line("Warn about scam and phishing sites", "Look-alike addresses and fake sign-in pages, checked on this computer before they load",
                 new Switch(prefs.WarnsOfScams, on => prefs.WarnsOfScams = on)),
-            new Line("Daily list of reported scam sites", FishFeed.Said() ?? "Downloaded once a day from FishCatcher's registry, and only used if its signature checks out",
+            new Line("Daily list of reported scam sites", FishFeed.Said() ?? "Updated in the background from FishCatcher's registry — nothing about your browsing is sent, and only the signed parts of what comes back are ever used",
                 new Switch(prefs.ScamFeed, on => prefs.ScamFeed = on))));
 
         body.Children.Add(Parts.Card(

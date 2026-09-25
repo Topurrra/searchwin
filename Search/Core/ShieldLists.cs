@@ -27,7 +27,13 @@ public static class ShieldLists
     private static HttpClient? http;
     private static bool loaded;
     private static int running;
+    private static int queuedForce;
     private static Microsoft.UI.Dispatching.DispatcherQueueTimer? hourly;
+
+    /// Bumped by Forget, so a worker already in flight can tell it has been
+    /// overtaken and undo whatever it was about to write instead of quietly
+    /// bringing back what Forget just deleted.
+    private static int generation;
 
     /// The saved list soon after the first window; the daily check a little
     /// after that, out of the first pages' way, and then every hour (it only
@@ -43,16 +49,26 @@ public static class ShieldLists
     }
 
     /// Loads the saved list once, then downloads new ones if they're due (or
-    /// `force`), compiles and saves them, and hands the result to Shield.
+    /// `force`), compiles and saves them, and hands the result to Shield. A
+    /// `force` that arrives while a worker is already running is not
+    /// dropped: it is picked up the moment that one finishes.
     public static void Refresh(bool force, bool download = true)
     {
         if (Browser.Shared is not { Prefs.ShieldLists: true }) return;
-        if (Interlocked.Exchange(ref running, 1) == 1) return;
+        if (Interlocked.Exchange(ref running, 1) == 1)
+        {
+            if (force) Volatile.Write(ref queuedForce, 1);
+            return;
+        }
         var worker = new Thread(() =>
         {
             try { Run(force, download).GetAwaiter().GetResult(); }
             catch (Exception e) { Log.Write($"shield lists: {e.Message}"); }
-            finally { Volatile.Write(ref running, 0); }
+            finally
+            {
+                Volatile.Write(ref running, 0);
+                if (Interlocked.Exchange(ref queuedForce, 0) == 1) Refresh(force: true);
+            }
         })
         {
             IsBackground = true,
@@ -64,6 +80,11 @@ public static class ShieldLists
 
     private static async Task Run(bool force, bool download)
     {
+        // Forget can run on the UI thread at any moment this worker is out
+        // here on its own — between reading this and every write below —
+        // and delete what it's about to write right back into existence.
+        // Overtaken is Cleanup's job to notice and undo.
+        var gen = Volatile.Read(ref generation);
         Directory.CreateDirectory(Folder);
         var state = Saved.Read(Path.Combine(Folder, State));
         if (!loaded && LoadSaved() is { } saved)
@@ -78,6 +99,7 @@ public static class ShieldLists
         foreach (var source in ListSource.BuiltIn)
         {
             if (Browser.Shared is not { Prefs.ShieldLists: true }) return;
+            if (Volatile.Read(ref generation) != gen) { Cleanup(); return; }
             var entry = state.Lists.GetValueOrDefault(source.Name) ?? new Saved.Entry();
             try
             {
@@ -91,6 +113,12 @@ public static class ShieldLists
         }
         state.Checked = DateTime.UtcNow;
 
+        if (Volatile.Read(ref generation) != gen)
+        {
+            if (changed) Cleanup();
+            return;
+        }
+
         if (changed || !loaded)
         {
             var paths = ListSource.BuiltIn.Select(s => Path.Combine(Folder, FileOf(s))).Where(File.Exists).ToArray();
@@ -99,6 +127,7 @@ public static class ShieldLists
                 var started = System.Diagnostics.Stopwatch.GetTimestamp();
                 var list = FilterList.Compile(paths.Select(File.ReadLines));
                 var took = System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds;
+                if (Volatile.Read(ref generation) != gen) { Cleanup(); return; }
                 Save(list);
                 state.Rules = Rules(list);
                 loaded = true;
@@ -106,28 +135,48 @@ public static class ShieldLists
                 Log.Write($"shield lists: compiled {state.Rules} rules in {took:F0} ms");
             }
         }
-        if (Browser.Shared is { Prefs.ShieldLists: true }) state.Write(Path.Combine(Folder, State));
+        if (Volatile.Read(ref generation) == gen && Browser.Shared is { Prefs.ShieldLists: true })
+            state.Write(Path.Combine(Folder, State));
     }
 
     /// One list, if it has changed since last time. The publisher is asked
-    /// with the tag it gave last time, so an unchanged list costs a "304".
+    /// with the tag it gave last time, so an unchanged list costs a "304" —
+    /// but only when the file the tag describes is still here. A tag left
+    /// over after the file was deleted by hand, by antivirus, or by a race
+    /// with Forget would otherwise draw a 304 forever, with nothing to serve
+    /// it from and no way to ask for the file itself again.
     private static async Task<bool> Fetch(ListSource source, Saved.Entry entry)
     {
         http ??= Client();
-        using var request = new HttpRequestMessage(HttpMethod.Get, source.Url);
-        if (entry.ETag is { Length: > 0 } tag && EntityTagHeaderValue.TryParse(tag, out var etag))
-            request.Headers.IfNoneMatch.Add(etag);
-        if (entry.Modified is { } modified) request.Headers.IfModifiedSince = modified;
-        using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead).ConfigureAwait(false);
         var path = Path.Combine(Folder, FileOf(source));
-        if (response.StatusCode == HttpStatusCode.NotModified && File.Exists(path)) return false;
+        var hasFile = File.Exists(path);
+        using var request = new HttpRequestMessage(HttpMethod.Get, source.Url);
+        if (hasFile && entry.ETag is { Length: > 0 } tag && EntityTagHeaderValue.TryParse(tag, out var etag))
+            request.Headers.IfNoneMatch.Add(etag);
+        if (hasFile && entry.Modified is { } modified) request.Headers.IfModifiedSince = modified;
+        using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead).ConfigureAwait(false);
+        if (response.StatusCode == HttpStatusCode.NotModified)
+        {
+            if (hasFile) return false;
+            // Asked unconditionally (no file, so no condition was sent) and
+            // still told "not modified": the tag lied. Drop it so the next
+            // try, if this one fails too, asks with nothing to go stale.
+            entry.ETag = null;
+            entry.Modified = null;
+            return false;
+        }
         response.EnsureSuccessStatusCode();
         if (response.Content.Headers.ContentLength is > MaxBytes) throw new InvalidDataException("too big");
-        var text = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+        // Read through a capped stream rather than buffering the whole body
+        // first: with compression the server rarely sends a Content-Length,
+        // so that check alone doesn't stop a large or decompression-bomb
+        // response from being fully read into memory before anyone notices.
+        var text = await ReadCapped(response.Content).ConfigureAwait(false);
         // What a filter list looks like: its header, and a good many lines.
         // Anything else — a captive portal's page, an error page served as
-        // 200 — is not a list, and the last good one stays.
-        if (text.Length > MaxBytes || !text.StartsWith("[Adblock", StringComparison.Ordinal) || text.Count(c => c == '\n') < 1000)
+        // 200, or a response that ran past the cap — is not a list, and the
+        // last good one stays.
+        if (text == null || !text.StartsWith("[Adblock", StringComparison.Ordinal) || text.Count(c => c == '\n') < 1000)
             throw new InvalidDataException("not a filter list");
         var partial = path + ".part";
         await File.WriteAllTextAsync(partial, text).ConfigureAwait(false);
@@ -140,6 +189,25 @@ public static class ShieldLists
     }
 
     private const int MaxBytes = 30 * 1024 * 1024;
+
+    /// Reads `content` into text, aborting the moment it runs past
+    /// `MaxBytes` instead of buffering the whole thing first — the same
+    /// shape as FeedClient.ReadCapped, for the same reason.
+    private static async Task<string?> ReadCapped(HttpContent content)
+    {
+        await using var stream = await content.ReadAsStreamAsync().ConfigureAwait(false);
+        using var buffer = new MemoryStream();
+        var chunk = new byte[81920];
+        int read;
+        while ((read = await stream.ReadAsync(chunk).ConfigureAwait(false)) > 0)
+        {
+            buffer.Write(chunk, 0, read);
+            if (buffer.Length > MaxBytes) return null;
+        }
+        buffer.Position = 0;
+        using var reader = new StreamReader(buffer);
+        return await reader.ReadToEndAsync().ConfigureAwait(false);
+    }
 
     private static HttpClient Client()
     {
@@ -202,8 +270,20 @@ public static class ShieldLists
     /// Turned off: back to the built-in list, and the downloads deleted.
     public static void Forget()
     {
+        // Bumped before the deletion itself: a worker already past this
+        // point in a download checks it before its next write and, finding
+        // itself overtaken, takes back out whatever it wrote rather than
+        // silently undoing what Forget is about to do.
+        Interlocked.Increment(ref generation);
         loaded = false;
         Shield.Shared.Use(null, null);
+        Cleanup();
+    }
+
+    /// Every file this feature owns, gone. Shared by Forget and by a worker
+    /// that finds Forget ran while it was still downloading.
+    private static void Cleanup()
+    {
         try
         {
             foreach (var name in (string[])[Blob, State, .. ListSource.BuiltIn.Select(FileOf)])

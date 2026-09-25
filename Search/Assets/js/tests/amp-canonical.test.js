@@ -2,6 +2,9 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const vm = require('node:vm');
 const amp = require('../amp-canonical.js');
 
 function makeElement(attrs) {
@@ -93,19 +96,25 @@ test('shouldNotify is null when there is no canonical link at all', () => {
 
 // ---- buildMessage / postCanonical ----------------------------------------
 
-test('buildMessage matches the documented shape', () => {
-  assert.deepEqual(amp.buildMessage('https://example.com/real'), {
+test('buildMessage matches the documented shape, with the sending page\'s own address', () => {
+  assert.deepEqual(amp.buildMessage('https://example.com/real', 'https://amp.example.com/amp/page'), {
     name: 'shield.amp',
-    body: { canonical: 'https://example.com/real' },
+    body: { canonical: 'https://example.com/real', href: 'https://amp.example.com/amp/page' },
   });
 });
 
-test('postCanonical posts through window.chrome.webview.postMessage', () => {
+test('postCanonical posts through window.chrome.webview.postMessage, with its own location.href', () => {
   const calls = [];
-  const fakeWindow = { chrome: { webview: { postMessage: (msg) => calls.push(msg) } } };
+  const fakeWindow = {
+    location: { href: 'https://amp.example.com/amp/page' },
+    chrome: { webview: { postMessage: (msg) => calls.push(msg) } },
+  };
   const posted = amp.postCanonical(fakeWindow, 'https://example.com/real');
   assert.equal(posted, true);
-  assert.deepEqual(calls, [{ name: 'shield.amp', body: { canonical: 'https://example.com/real' } }]);
+  assert.deepEqual(calls, [{
+    name: 'shield.amp',
+    body: { canonical: 'https://example.com/real', href: 'https://amp.example.com/amp/page' },
+  }]);
 });
 
 test('postCanonical never throws when the bridge is missing', () => {
@@ -127,4 +136,15 @@ test('init never throws when handed nothing at all', () => {
 test('init never throws when document has no documentElement yet', () => {
   const fakeWindow = { document: {}, location: { href: 'https://example.com/' } };
   assert.doesNotThrow(() => amp.init(fakeWindow));
+});
+
+// ---- run as a real page script: nothing left on the global for a page to find ---
+
+test('evaluated in a page (no module), it puts no __search* global on window', () => {
+  const src = fs.readFileSync(path.join(__dirname, '..', 'amp-canonical.js'), 'utf8');
+  const sandbox = {};
+  vm.createContext(sandbox);
+  assert.doesNotThrow(() => vm.runInContext(src, sandbox));
+  assert.equal('__searchAmpCanonical' in sandbox, false);
+  assert.equal(Object.getOwnPropertyNames(sandbox).some((n) => n.indexOf('__search') !== -1), false);
 });

@@ -121,19 +121,12 @@ public sealed partial class ExtensionsPage : StackPanel
     /// The folder, chosen in Windows' own picker.
     public static async void ChooseFolder()
     {
-        if (App.Window is not { } window) return;
-        var picker = new Windows.Storage.Pickers.FolderPicker
-        {
-            SuggestedStartLocation = Windows.Storage.Pickers.PickerLocationId.DocumentsLibrary,
-            CommitButtonText = "Load Extension",
-        };
-        picker.FileTypeFilter.Add("*");
-        WinRT.Interop.InitializeWithWindow.Initialize(picker, WinRT.Interop.WindowNative.GetWindowHandle(window));
         try
         {
-            if (await picker.PickSingleFolderAsync() is { } folder) Extensions.Shared.InstallFolder(folder.Path);
+            if (await Pick.Folder("Load Extension", Microsoft.Windows.Storage.Pickers.PickerLocationId.DocumentsLibrary) is { } folder)
+                Extensions.Shared.InstallFolder(folder);
         }
-        catch { }
+        catch (Exception e) { Log.Write("folder picker: " + e.Message); }
     }
 
     /// One extension: its icon, name, where it came from; what can be done

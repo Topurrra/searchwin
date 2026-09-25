@@ -235,18 +235,8 @@ public sealed partial class Browser
         string text;
         try
         {
-            var picker = new Windows.Storage.Pickers.FileOpenPicker
-            {
-                SuggestedStartLocation = Windows.Storage.Pickers.PickerLocationId.Downloads,
-                CommitButtonText = "Import",
-            };
-            picker.FileTypeFilter.Add(".csv");
-            picker.FileTypeFilter.Add(".txt");
-            if (App.Window is { } window)
-                WinRT.Interop.InitializeWithWindow.Initialize(picker, WinRT.Interop.WindowNative.GetWindowHandle(window));
-            var file = await picker.PickSingleFileAsync();
-            if (file == null) return;
-            text = await File.ReadAllTextAsync(file.Path);
+            if (await Pick.File([".csv", ".txt"], "Import", Microsoft.Windows.Storage.Pickers.PickerLocationId.Downloads) is not { } file) return;
+            text = await File.ReadAllTextAsync(file);
         }
         catch
         {

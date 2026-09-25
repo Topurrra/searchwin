@@ -386,19 +386,10 @@ public sealed partial class SettingsPanel : Grid
     {
         try
         {
-            var picker = new Windows.Storage.Pickers.FolderPicker
-            {
-                SuggestedStartLocation = Windows.Storage.Pickers.PickerLocationId.DocumentsLibrary,
-                CommitButtonText = "Search this folder",
-            };
-            picker.FileTypeFilter.Add("*");
-            if (App.Window is { } window)
-                WinRT.Interop.InitializeWithWindow.Initialize(picker, WinRT.Interop.WindowNative.GetWindowHandle(window));
-            var folder = await picker.PickSingleFolderAsync();
-            if (folder == null) return;
-            AddSearchFolder(folder.Path);
+            if (await Pick.Folder("Search this folder", Microsoft.Windows.Storage.Pickers.PickerLocationId.DocumentsLibrary) is { } folder)
+                AddSearchFolder(folder);
         }
-        catch { }
+        catch (Exception e) { Log.Write("folder picker: " + e.Message); }
     }
 
     /// A folder, unless one already chosen searches it, or it's one where
@@ -640,20 +631,11 @@ public sealed partial class SettingsPanel : Grid
     {
         try
         {
-            var picker = new Windows.Storage.Pickers.FolderPicker
-            {
-                SuggestedStartLocation = Windows.Storage.Pickers.PickerLocationId.Downloads,
-                CommitButtonText = "Use this folder",
-            };
-            picker.FileTypeFilter.Add("*");
-            if (App.Window is { } window)
-                WinRT.Interop.InitializeWithWindow.Initialize(picker, WinRT.Interop.WindowNative.GetWindowHandle(window));
-            var folder = await picker.PickSingleFolderAsync();
-            if (folder == null) return;
-            prefs.Downloads = folder.Path;
+            if (await Pick.Folder("Use this folder", Microsoft.Windows.Storage.Pickers.PickerLocationId.Downloads) is not { } folder) return;
+            prefs.Downloads = folder;
             if (page == Page.Downloads) Show();
         }
-        catch { }
+        catch (Exception e) { Log.Write("folder picker: " + e.Message); }
     }
 
     // MARK: - privacy

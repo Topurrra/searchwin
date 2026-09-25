@@ -314,45 +314,29 @@ public static class ToolsHost
             .Select(ext => "." + ext.TrimStart('.'))
             .Distinct();
 
-    private static nint Handle() => App.Window is { } window ? WinRT.Interop.WindowNative.GetWindowHandle(window) : 0;
-
     private static async Task<JsonNode?> PickOpen(JsonObject args)
     {
+        var multiple = args["multiple"]?.GetValue<bool>() == true;
         if (args["directory"]?.GetValue<bool>() == true)
         {
-            var folders = new Windows.Storage.Pickers.FolderPicker();
-            folders.FileTypeFilter.Add("*");
-            WinRT.Interop.InitializeWithWindow.Initialize(folders, Handle());
-            var folder = await folders.PickSingleFolderAsync();
-            if (folder == null) return null;
-            return args["multiple"]?.GetValue<bool>() == true ? new JsonArray(folder.Path) : folder.Path;
+            if (await Pick.Folder() is not { } folder) return null;
+            return multiple ? new JsonArray(folder) : folder;
         }
-        var picker = new Windows.Storage.Pickers.FileOpenPicker();
-        var types = Extensions(args).ToList();
-        if (types.Count == 0) picker.FileTypeFilter.Add("*");
-        foreach (var type in types) picker.FileTypeFilter.Add(type);
-        WinRT.Interop.InitializeWithWindow.Initialize(picker, Handle());
-        if (args["multiple"]?.GetValue<bool>() == true)
+        if (multiple)
         {
-            var files = await picker.PickMultipleFilesAsync();
-            return files.Count == 0 ? null : new JsonArray([.. files.Select(f => (JsonNode)f.Path)]);
+            var files = await Pick.Files(Extensions(args));
+            return files.Count == 0 ? null : new JsonArray([.. files.Select(f => (JsonNode)f)]);
         }
-        var file = await picker.PickSingleFileAsync();
-        return file?.Path;
+        return await Pick.File(Extensions(args));
     }
 
     private static async Task<JsonNode?> PickSave(JsonObject args)
     {
-        var picker = new Windows.Storage.Pickers.FileSavePicker();
         var suggested = Text(args, "defaultPath");
         var types = Extensions(args).ToList();
         if (types.Count == 0 && Path.GetExtension(suggested) is { Length: > 1 } ext) types.Add(ext);
         if (types.Count == 0) types.Add(".txt");
-        picker.FileTypeChoices.Add("File", types);
-        if (suggested.Length > 0) picker.SuggestedFileName = Path.GetFileName(suggested);
-        WinRT.Interop.InitializeWithWindow.Initialize(picker, Handle());
-        var file = await picker.PickSaveFileAsync();
-        return file?.Path;
+        return await Pick.Save(types, Path.GetFileName(suggested));
     }
 
     private static async Task<bool> Confirm(JsonObject args, bool withCancel)

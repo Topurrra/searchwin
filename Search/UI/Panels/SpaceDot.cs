@@ -249,19 +249,11 @@ public static class SpaceAsk
     /// A folder for this space's downloads. Cancel keeps the folder it has.
     public static async void Folder(Action<string> then)
     {
-        if (App.Window is not { } window) return;
         try
         {
-            var picker = new Windows.Storage.Pickers.FolderPicker
-            {
-                CommitButtonText = "Use for This Space",
-                SuggestedStartLocation = Windows.Storage.Pickers.PickerLocationId.Downloads,
-            };
-            picker.FileTypeFilter.Add("*");
-            WinRT.Interop.InitializeWithWindow.Initialize(picker, WinRT.Interop.WindowNative.GetWindowHandle(window));
-            if (await picker.PickSingleFolderAsync() is { } folder) then(folder.Path);
+            if (await Pick.Folder("Use for This Space", Microsoft.Windows.Storage.Pickers.PickerLocationId.Downloads) is { } folder) then(folder);
         }
-        catch { }
+        catch (Exception e) { Log.Write("folder picker: " + e.Message); }
     }
 
     /// Only one dialog can be up at a time; asking while one is up is

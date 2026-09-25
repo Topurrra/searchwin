@@ -301,9 +301,11 @@ public sealed partial class Shield : Model
         }
     }
 
-    /// The part of a host a person would call the site: the last two labels,
-    /// or three under a country's own second level (bbc.co.uk, abc.net.au).
-    private static string? Site(string? host) => host == null ? null : SimpleRegistrableDomain.Instance.Of(host);
+    /// The part of a host a person would call the site: FishCatcher's Public
+    /// Suffix List once it has loaded (alice.github.io and bob.github.io are
+    /// two sites; one.com.cn and two.com.cn are two sites), the last-two-
+    /// labels guess until then.
+    private static string? Site(string? host) => host == null ? null : LiveRegistrableDomain.Instance.Of(host);
 
     // MARK: - addresses
 

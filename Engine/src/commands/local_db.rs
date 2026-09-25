@@ -3,7 +3,7 @@ use serde::{de::DeserializeOwned, Serialize};
 use std::fs;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, LazyLock, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -33,6 +33,13 @@ const JSON_TABLE: TableDefinition<&str, &[u8]> = TableDefinition::new("json");
 /// reader no longer blocks behind an unrelated write's fsync.
 static DB_CACHE: LazyLock<Mutex<HashMap<PathBuf, Arc<Database>>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
+
+/// Databases other processes open too (the file index's state, which its
+/// worker processes write), as the `_shared` calls met them. Those open and
+/// close them each time; `get_db` refuses them, since its cached handle
+/// would keep the file locked for the life of the process and every other
+/// process's open would fail.
+static SHARED_DBS: LazyLock<Mutex<HashSet<PathBuf>>> = LazyLock::new(|| Mutex::new(HashSet::new()));
 
 /// Set to `true` by `quarantine_corrupt_db` when it has to move the
 /// corrupt database aside and create a fresh one. The flag is
@@ -86,23 +93,27 @@ pub fn database_path_for_dir(dir: &Path) -> PathBuf {
     dir.join(LOCAL_DB_FILE)
 }
 
-/// How long an open waits for another process to let go of a database.
-const BUSY_WAIT: Duration = Duration::from_secs(5);
+/// How long a database the engine needs (settings, the index's state) is
+/// waited for while another process has it.
+pub const BUSY_WAIT: Duration = Duration::from_secs(5);
+/// How long a cache is: a busy cache is a miss, not a stalled search.
+pub const CACHE_WAIT: Duration = Duration::from_millis(100);
 
 /// Open a redb file, creating it when it's missing (or empty: a process that
 /// stopped right after creating it). redb locks the whole file while a
 /// `Database` is open, and the engine's index workers are other processes
-/// using the same files, so a file another process holds is waited for — it
-/// is busy, not damaged. Only a file redb can't read is corrupt: graceful
-/// recovery moves it aside as `<name>.corrupt-<timestamp>.redb` and starts a
-/// fresh one (its data is lost, the app keeps working: "service degraded"
-/// over "service down"). Returns the database and whether it was recovered.
-pub fn open_redb(path: &Path) -> Result<(Database, bool), String> {
+/// using the same files, so a file another process holds is waited for, up
+/// to `wait` — it is busy, not damaged. Only a file redb can't read is
+/// corrupt: graceful recovery moves it aside as
+/// `<name>.corrupt-<timestamp>.redb` and starts a fresh one (its data is
+/// lost, the app keeps working: "service degraded" over "service down").
+/// Returns the database and whether it was recovered.
+pub fn open_redb(path: &Path, wait: Duration) -> Result<(Database, bool), String> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)
             .map_err(|error| format!("Cannot create database directory: {error}"))?;
     }
-    let deadline = Instant::now() + BUSY_WAIT;
+    let deadline = Instant::now() + wait;
     loop {
         let has_data = fs::metadata(path).map(|meta| meta.len() > 0).unwrap_or(false);
         let opened = if has_data { Database::open(path) } else { Database::create(path) };
@@ -139,7 +150,7 @@ fn is_corruption(error: &DatabaseError) -> bool {
 }
 
 fn open_db(path: &Path) -> Result<Database, String> {
-    let (db, recovered) = open_redb(path)?;
+    let (db, recovered) = open_redb(path, BUSY_WAIT)?;
     if recovered {
         // Signal the frontend that a corruption recovery happened. The flag
         // is consumed by `take_db_corruption_notice` (lib.rs) once the main
@@ -170,8 +181,11 @@ fn open_db(path: &Path) -> Result<Database, String> {
 /// WITHOUT any app-level lock, so a reader never blocks behind an unrelated
 /// writer's fsync. A cached handle keeps the file locked for the life of the
 /// process, so a database other processes use goes through the `_shared`
-/// functions instead.
+/// functions instead, and is refused here.
 fn get_db(path: &Path) -> Result<Arc<Database>, String> {
+    if is_shared(path)? {
+        return Err(format!("{} is shared with other processes: use the _shared calls", path.display()));
+    }
     let mut cache = DB_CACHE
         .lock()
         .map_err(|_| "Local database cache lock was poisoned".to_string())?;
@@ -282,10 +296,11 @@ pub fn read_json_shared<T>(db_path: &Path, key: &str) -> Result<Option<T>, Strin
 where
     T: DeserializeOwned,
 {
+    mark_shared(db_path)?;
     if !db_path.exists() {
         return Ok(None);
     }
-    let (db, _) = open_redb(db_path)?;
+    let (db, _) = open_redb(db_path, BUSY_WAIT)?;
     let read_txn = db
         .begin_read()
         .map_err(|error| format!("Cannot read local database: {error}"))?;
@@ -311,10 +326,35 @@ pub fn write_json_shared<T>(db_path: &Path, key: &str, value: &T) -> Result<(), 
 where
     T: Serialize,
 {
+    mark_shared(db_path)?;
     let data = serde_json::to_vec_pretty(value)
         .map_err(|error| format!("Cannot serialize local database value: {error}"))?;
-    let (db, _) = open_redb(db_path)?;
+    let (db, _) = open_redb(db_path, BUSY_WAIT)?;
     write_json_bytes_to_db(&db, key, &data)
+}
+
+/// Record `path` as shared with other processes. One this process already
+/// holds open (`get_db`'s cache) is an error, not a 5 s wait for itself.
+fn mark_shared(path: &Path) -> Result<(), String> {
+    SHARED_DBS
+        .lock()
+        .map_err(|_| "Local database cache lock was poisoned".to_string())?
+        .insert(path.to_path_buf());
+    let held = DB_CACHE
+        .lock()
+        .map_err(|_| "Local database cache lock was poisoned".to_string())?
+        .contains_key(path);
+    if held {
+        return Err(format!("{} is shared with other processes but held open here", path.display()));
+    }
+    Ok(())
+}
+
+fn is_shared(path: &Path) -> Result<bool, String> {
+    Ok(SHARED_DBS
+        .lock()
+        .map_err(|_| "Local database cache lock was poisoned".to_string())?
+        .contains(path))
 }
 
 pub fn write_json_bytes(db_path: &Path, key: &str, data: &[u8]) -> Result<(), String> {
@@ -397,5 +437,23 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
         assert_eq!(read, Some(7));
         assert_eq!(set_aside, 1);
+    }
+
+    /// A database the `_shared` calls use (other processes open it too) is
+    /// refused by the cached calls, whose handle would hold it for good.
+    #[test]
+    fn a_shared_database_is_never_held_open() {
+        let dir = std::env::temp_dir().join(format!(
+            "kil-local-db-shared-{}",
+            SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()
+        ));
+        let path = database_path_for_dir(&dir);
+        write_json_shared(&path, "k", &1u32).unwrap();
+
+        let cached = write_json(&path, "k", &2u32);
+        let other_process = Database::open(&path).map(drop);
+        let _ = fs::remove_dir_all(&dir);
+        assert!(cached.is_err());
+        assert!(other_process.is_ok(), "{other_process:?}");
     }
 }

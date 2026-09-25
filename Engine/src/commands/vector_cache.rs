@@ -117,7 +117,7 @@ fn unpack(bytes: &[u8]) -> Option<Vec<Vec<i8>>> {
 }
 
 fn open_db(path: &Path) -> Result<Database, String> {
-    let (db, _) = super::local_db::open_redb(path)?;
+    let (db, _) = super::local_db::open_redb(path, super::local_db::CACHE_WAIT)?;
     let write_txn = db
         .begin_write()
         .map_err(|e| format!("Cannot initialize vector cache: {e}"))?;
@@ -314,5 +314,27 @@ mod tests {
         // Zero-norm and mismatched length are safe (→ 0), never NaN/panic.
         assert_eq!(cosine_f32_i8(&q, &[0i8, 0, 0]), 0.0);
         assert_eq!(cosine_f32_i8(&q, &[1i8, 0]), 0.0);
+    }
+
+    /// A store another process has open (the content worker; another handle
+    /// stands in for it) is a miss at once: a search doesn't wait for it.
+    #[test]
+    fn a_busy_store_is_a_quick_miss() {
+        let dir = std::env::temp_dir().join(format!(
+            "kil-vector-test-{}",
+            SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_nanos()
+        ));
+        let db_path = cache_path_for_dir(&dir);
+        store(&db_path, "C:\\a.txt", &[vec![1.0, 0.0]]);
+        let worker = Database::open(&db_path).expect("the worker has the store");
+
+        let started = std::time::Instant::now();
+        let hits = top_k(&db_path, &[1.0, 0.0], 5);
+        let waited = started.elapsed();
+        drop(worker);
+        let _ = fs::remove_dir_all(&dir);
+
+        assert!(hits.is_empty());
+        assert!(waited < std::time::Duration::from_secs(1), "waited {waited:?}");
     }
 }

@@ -73,16 +73,16 @@ public sealed partial class Browser
 
     /// Enter on an entry. `go` (Shift+Enter) takes its text as the field
     /// would — a place, or a search — instead of pasting it; never a secret,
-    /// unless the secret is itself an address.
+    /// not even one that is an address (see ClipGuard.MayGo).
     public async void PasteClip(ClipEntry entry, bool go = false)
     {
         var box = clipBox;
         var page = clipPage;
         var mark = clipMark;
-        if (go && entry.Sensitive && !ClipGuard.MayGo(entry, text => Address.Url(text) != null))
+        if (go && entry.Sensitive && !ClipGuard.MayGo(entry))
         {
             HideClipboard();
-            Announce("A secret isn't searched for — Enter pastes it");
+            Announce("A secret isn't opened or searched for — Enter pastes it");
             LastPaste = new("secret", "refused");
             return;
         }

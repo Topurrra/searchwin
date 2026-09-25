@@ -92,15 +92,14 @@ public static class ClipList
 public static class ClipGuard
 {
     /// Shift+Enter takes an entry as the field would — a place, or a search.
-    /// A secret is never searched for (the search engine, History and the
-    /// address field would all see it); it may only be opened when it is
-    /// itself an address.
-    public static bool MayGo(ClipEntry entry, Func<string, bool> isAddress)
+    /// A secret never goes anywhere: searched for, the search engine,
+    /// History and the address field would all see it; opened, an address
+    /// that is itself the secret (a webhook, a link with a token in it)
+    /// would be sent to its site and kept in History. Enter pastes it.
+    public static bool MayGo(ClipEntry entry)
     {
-        if (entry.Image) return false;
-        var text = entry.Text.Trim();
-        if (text.Length == 0) return false;
-        return !entry.Sensitive || isAddress(text);
+        if (entry.Image || entry.Sensitive) return false;
+        return entry.Text.Trim().Length > 0;
     }
 
     /// A secret put back on the clipboard is marked so no clipboard history

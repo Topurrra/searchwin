@@ -12,32 +12,35 @@ public class ClipGuardTests
 
     private static ClipEntry Picture(long id) => new(id, true, "", [], "", "snip", false, 0, 800, 600, "");
 
-    /// A stand-in for Address.Url: a scheme, or a dotted name without spaces.
-    private static bool IsAddress(string text) =>
-        text.Contains("://") || (!text.Contains(' ') && text.Contains('.'));
-
     [Fact]
     public void Shift_Enter_on_a_secret_is_never_a_search()
     {
         var token = Text(1, "ghp_notARealTokenButShapedLikeOne1234567890", secret: true);
-        Assert.False(ClipGuard.MayGo(token, IsAddress));
+        Assert.False(ClipGuard.MayGo(token));
         var phrase = Text(2, "hunter2 is my password", secret: true);
-        Assert.False(ClipGuard.MayGo(phrase, IsAddress));
+        Assert.False(ClipGuard.MayGo(phrase));
     }
 
+    // The address is the secret: opening it hands it to the site and to
+    // History. Refused like any other secret.
     [Fact]
-    public void Shift_Enter_on_a_secret_that_is_an_address_goes_there()
+    public void Shift_Enter_on_a_secret_that_is_an_address_is_refused_too()
     {
-        Assert.True(ClipGuard.MayGo(Text(1, "  https://example.com/reset  ", secret: true), IsAddress));
+        // Built at run time: a literal webhook here trips GitHub push protection.
+        var webhook = $"https://hooks.slack.com/services/T{new string('0', 8)}/B{new string('0', 8)}/{new string('X', 24)}";
+        Assert.False(ClipGuard.MayGo(Text(1, webhook, secret: true)));
+        Assert.False(ClipGuard.MayGo(Text(2, "  " + webhook + "  ", secret: true)));
+        Assert.False(ClipGuard.MayGo(Text(3, "https://example.com/reset?token=notARealResetToken", secret: true)));
     }
 
     [Fact]
     public void Shift_Enter_on_plain_text_searches_or_goes_as_before()
     {
-        Assert.True(ClipGuard.MayGo(Text(1, "rust ownership"), IsAddress));
-        Assert.True(ClipGuard.MayGo(Text(2, "example.com"), IsAddress));
-        Assert.False(ClipGuard.MayGo(Text(3, "   "), IsAddress));
-        Assert.False(ClipGuard.MayGo(Picture(4), IsAddress));
+        Assert.True(ClipGuard.MayGo(Text(1, "rust ownership")));
+        Assert.True(ClipGuard.MayGo(Text(2, "example.com")));
+        Assert.True(ClipGuard.MayGo(Text(3, "https://example.com/page")));
+        Assert.False(ClipGuard.MayGo(Text(4, "   ")));
+        Assert.False(ClipGuard.MayGo(Picture(5)));
     }
 
     [Fact]

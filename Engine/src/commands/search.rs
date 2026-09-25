@@ -714,6 +714,8 @@ struct SearchEngine {
 struct NaturalQueryPlan {
     query_text: String,
     query_keywords: Vec<String>,
+    /// How many of `query_keywords` were typed; the rest are related terms.
+    typed_keywords: usize,
     extension_filters: Vec<String>,
     entry_type_filter: Option<String>,
     date_filter: Option<DateFilter>,
@@ -9085,6 +9087,7 @@ fn build_natural_query_plan(input: &str) -> NaturalQueryPlan {
     let (input_without_phrases, exact_phrases) = extract_quoted_phrases(input);
     let tokens = tokenize_search_input(&input_without_phrases);
     let mut query_words = Vec::new();
+    let mut typed_words = 0usize;
     let mut inferred_extension_filters = Vec::new();
     let mut explicit_extension_filters = Vec::new();
     let mut entry_type_filter: Option<String> = None;
@@ -9179,7 +9182,7 @@ fn build_natural_query_plan(input: &str) -> NaturalQueryPlan {
             {
                 date_filter = exact_year_filter(date_field_hint, year);
             } else {
-                push_expanded_query_word(&mut query_words, bare.clone());
+                push_expanded_query_word(&mut query_words, &mut typed_words, bare.clone());
             }
             previous_token = Some(bare);
             index += 1;
@@ -9219,7 +9222,7 @@ fn build_natural_query_plan(input: &str) -> NaturalQueryPlan {
             index += 1;
             continue;
         }
-        push_expanded_query_word(&mut query_words, bare.clone());
+        push_expanded_query_word(&mut query_words, &mut typed_words, bare.clone());
         previous_token = Some(bare);
         index += 1;
     }
@@ -9230,7 +9233,7 @@ fn build_natural_query_plan(input: &str) -> NaturalQueryPlan {
             if bare.is_empty() || is_natural_stopword(&bare) {
                 continue;
             }
-            push_expanded_query_word(&mut query_words, bare);
+            push_expanded_query_word(&mut query_words, &mut typed_words, bare);
         }
     }
 
@@ -9243,6 +9246,7 @@ fn build_natural_query_plan(input: &str) -> NaturalQueryPlan {
     NaturalQueryPlan {
         query_text: query_words.join(" "),
         query_keywords: query_words,
+        typed_keywords: typed_words,
         extension_filters,
         entry_type_filter,
         date_filter,
@@ -9337,7 +9341,10 @@ fn tokenize_search_input(input: &str) -> Vec<String> {
         .collect()
 }
 
-fn push_expanded_query_word(query_words: &mut Vec<String>, word: String) {
+/// A word the person typed, then its related terms. `typed` counts only the
+/// former: the related terms widen the net, they aren't more words to match.
+fn push_expanded_query_word(query_words: &mut Vec<String>, typed: &mut usize, word: String) {
+    *typed += 1;
     push_unique(query_words, word.clone());
     for related in related_natural_terms(&word) {
         push_unique(query_words, related.to_string());
@@ -10363,8 +10370,15 @@ fn build_result_item(
 
     // For queries with 3+ keywords require at least half to match lexically or by fuzzy.
     // Single and two-keyword queries keep the existing pass-any-one behaviour.
-    if natural_language && query_keywords.len() >= 3 {
-        let required = (query_keywords.len() + 1) / 2; // ceil(N/2)
+    // Counted in words typed: "invoice" expands to five terms (invoices, bill,
+    // receipt…), and demanding three of those dropped invoice-2024.txt.
+    let typed_keywords = if natural_plan.typed_keywords > 0 {
+        natural_plan.typed_keywords.min(query_keywords.len())
+    } else {
+        query_keywords.len()
+    };
+    if natural_language && typed_keywords >= 3 {
+        let required = (typed_keywords + 1) / 2; // ceil(N/2)
         if effective_keyword_hits < required && phrase_hits == 0 && phrase_path_hits == 0 {
             return Ok(None);
         }

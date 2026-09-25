@@ -539,6 +539,7 @@ pub fn run() {
             start_file_search_index,
             start_content_search_index,
             start_filename_search_index,
+            start_search_services,
             update_notes_index,
             read_file_preview,
             list_folder_children,

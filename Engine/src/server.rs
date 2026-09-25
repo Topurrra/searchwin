@@ -68,12 +68,18 @@ async fn listen(app: AppHandle, handler: Handler, options: Options) -> std::io::
     })?;
     eprintln!("kil-engine: listening on {path} ({} commands)", handler.names.len());
 
+    // When the last client left. The wait for `linger` is a branch of its
+    // own, so the pipe keeps answering while it runs: a client that comes
+    // back in time finds the engine, rather than one that stopped listening.
+    let mut idle_since: Option<tokio::time::Instant> = None;
     loop {
+        let deadline = idle_since.map(|since| since + options.linger);
         tokio::select! {
             connected = server.connect() => {
                 connected?;
                 let client = std::mem::replace(&mut server, create(&path, &security, false)?);
                 clients.fetch_add(1, Ordering::SeqCst);
+                idle_since = None;
                 let (app, events, clients, gone) = (app.clone(), events.subscribe(), clients.clone(), gone_tx.clone());
                 tokio::spawn(async move {
                     serve_client(client, app, handler.find, handler.names, events).await;
@@ -83,12 +89,15 @@ async fn listen(app: AppHandle, handler: Handler, options: Options) -> std::io::
             }
             Some(()) = gone_rx.recv() => {
                 if clients.load(Ordering::SeqCst) == 0 {
-                    tokio::time::sleep(options.linger).await;
-                    if clients.load(Ordering::SeqCst) == 0 {
-                        eprintln!("kil-engine: no clients left, stopping");
-                        return Ok(());
-                    }
+                    idle_since = Some(tokio::time::Instant::now());
                 }
+            }
+            _ = tokio::time::sleep_until(deadline.unwrap_or_else(tokio::time::Instant::now)), if deadline.is_some() => {
+                if clients.load(Ordering::SeqCst) == 0 {
+                    eprintln!("kil-engine: no clients left, stopping");
+                    return Ok(());
+                }
+                idle_since = None;
             }
             Some(code) = quit_rx.recv() => {
                 eprintln!("kil-engine: asked to stop ({code})");

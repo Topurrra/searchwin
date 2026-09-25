@@ -86,3 +86,22 @@ export function inFolder(folder: string, name: string): string {
 export function after(index: number, count: number): number {
     return index >= 0 && index < count - 1 ? index + 1 : -1;
 }
+
+/** The player's own hash for `path` — what the address bar and the tab title follow. */
+export function playHash(path: string): string {
+    return `#/play?path=${encodeURIComponent(path)}`;
+}
+
+type NavHistory = Pick<History, 'replaceState' | 'pushState'> & { readonly state: unknown };
+
+/**
+ * Moves the player to `path` without growing the tab's history: next,
+ * previous, auto-advance and a playlist click all replace the current
+ * entry, so the tab's own Back leaves the player in one step, not once per
+ * track played. The hash still changes (replaceState changes the URL, not
+ * just the state object), so the host browser's same-document navigation
+ * still sees a new address to follow.
+ */
+export function navigateHash(history: NavHistory, path: string): void {
+    history.replaceState(history.state, '', playHash(path));
+}

@@ -42,6 +42,10 @@ public sealed partial class ClipPopup : Grid
     /// and let go of once the entry is gone (removed, cleared, history off).
     private static readonly Dictionary<long, BitmapImage> thumbnails = [];
 
+    /// How many thumbnails are cached right now — a bench readout, so a test
+    /// world can see the cache actually drop when its entries do.
+    public static int CachedThumbnails => thumbnails.Count;
+
     static ClipPopup() => ClipHistory.Kept += history => UI.Do(() => Prune(history));
 
     private static void Prune(List<ClipEntry> history)

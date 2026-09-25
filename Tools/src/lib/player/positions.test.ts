@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { KEEP, PREFIX, after, folderOf, inFolder, keyOf, load, prune, resumable, save } from './positions';
+import { describe, expect, it, vi } from 'vitest';
+import { KEEP, PREFIX, after, folderOf, inFolder, keyOf, load, navigateHash, playHash, prune, resumable, save } from './positions';
 
 function memory(): Storage {
     const map = new Map<string, string>();
@@ -74,5 +74,17 @@ describe('the playlist', () => {
         expect(after(2, 3)).toBe(-1);
         expect(after(-1, 3)).toBe(-1);
         expect(after(0, 1)).toBe(-1);
+    });
+
+    it('moves the player by replacing the address, not pushing a new one', () => {
+        // Regression: next/previous/auto-advance used history.pushState, so
+        // Back had to be pressed once per track ever played before it left
+        // the player. Fails on the old code (pushState called, replaceState
+        // not) and passes now that go() replaces the current entry instead.
+        const history = { state: { some: 'state' }, replaceState: vi.fn(), pushState: vi.fn() };
+        navigateHash(history, 'C:\\Music\\tone-b.wav');
+        expect(history.pushState).not.toHaveBeenCalled();
+        expect(history.replaceState).toHaveBeenCalledTimes(1);
+        expect(history.replaceState).toHaveBeenCalledWith(history.state, '', playHash('C:\\Music\\tone-b.wav'));
     });
 });

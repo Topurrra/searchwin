@@ -169,7 +169,21 @@ public static class ClipHistory
 
     /// The history as last read, so the list can be drawn the moment it's
     /// asked for and brought up to date a moment later.
-    public static List<ClipEntry> Last { get; private set; } = [];
+    public static List<ClipEntry> Last
+    {
+        get => last;
+        private set
+        {
+            last = value;
+            Kept?.Invoke(value);
+        }
+    }
+    private static List<ClipEntry> last = [];
+
+    /// The history as it now stands, each time it's read or cut back
+    /// (cleared, turned off): what's drawn from it (a picture's thumbnail)
+    /// lets go of entries no longer there.
+    public static event Action<List<ClipEntry>>? Kept;
 
     /// Everything kept, secrets included (a paste needs their text). Empty
     /// when history is off or the engine couldn't say.

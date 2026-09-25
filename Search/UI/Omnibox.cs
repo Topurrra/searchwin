@@ -89,6 +89,7 @@ public sealed partial class Omnibox : Grid
         list.PointerEntered += (_, _) => browser.OverList(true);
         list.PointerExited += (_, _) => browser.OverList(false);
         list.PointerCanceled += (_, _) => browser.OverList(false);
+        list.PointerCaptureLost += (_, _) => browser.OverList(false);
         // On a canvas, which measures its children at their own size and never
         // clips them: the list hangs below a field that is only as tall as
         // itself.

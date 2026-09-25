@@ -38,8 +38,18 @@ public sealed partial class ClipPopup : Grid
     private bool stale;
     private bool waiting;
 
-    /// Pictures' thumbnails, by entry: decoded once, not on every redraw.
+    /// Pictures' thumbnails, by entry: decoded once, not on every redraw,
+    /// and let go of once the entry is gone (removed, cleared, history off).
     private static readonly Dictionary<long, BitmapImage> thumbnails = [];
+
+    static ClipPopup() => ClipHistory.Kept += history => UI.Do(() => Prune(history));
+
+    private static void Prune(List<ClipEntry> history)
+    {
+        if (thumbnails.Count == 0) return;
+        var kept = history.Select(e => e.Id).ToHashSet();
+        foreach (var gone in thumbnails.Keys.Where(id => !kept.Contains(id)).ToList()) thumbnails.Remove(gone);
+    }
 
     public ClipPopup(Browser browser)
     {
@@ -266,11 +276,7 @@ public sealed partial class ClipPopup : Grid
     {
         if (thumbnails.TryGetValue(entry.Id, out var known)) return known;
         if (entry.Thumbnail.Length == 0 || !File.Exists(entry.Thumbnail)) return null;
-        if (thumbnails.Count >= 64)
-        {
-            var kept = ClipHistory.Last.Select(e => e.Id).ToHashSet();
-            foreach (var gone in thumbnails.Keys.Where(id => !kept.Contains(id)).ToList()) thumbnails.Remove(gone);
-        }
+        if (thumbnails.Count >= 64) Prune(ClipHistory.Last);
         return thumbnails[entry.Id] = new BitmapImage(new Uri(entry.Thumbnail)) { DecodePixelHeight = 64 };
     }
 

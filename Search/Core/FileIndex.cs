@@ -45,9 +45,12 @@ public static class FileIndex
         await telling.WaitAsync();
         try
         {
-            if (dropContents && !contents && folders.Count > 0) await Clear("content");
+            // The options first: a scheduler or watcher waking between the
+            // clear and the save would otherwise index the contents again
+            // under the old ones.
             var options = IndexPlan.Options(folders, contents, Store.Folder);
             await Engine.Client.CallAsync("save_file_search_index_options", new JsonObject { ["options"] = options.DeepClone() });
+            if (dropContents && !contents && folders.Count > 0) await Clear("content");
             if (folders.Count == 0)
             {
                 await Engine.Client.CallAsync("stop_file_search_index_watcher");

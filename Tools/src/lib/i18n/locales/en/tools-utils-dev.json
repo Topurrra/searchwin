@@ -39,6 +39,7 @@
       "bitsEntropy": "{count} bits entropy",
       "copiedValues": "Copied {count} values",
       "copiedLabel": "Copied {label}",
+      "copyFailed": "Couldn't copy: {error}",
       "strengthVeryWeak": "Very Weak",
       "strengthWeak": "Weak",
       "strengthReasonable": "Reasonable",

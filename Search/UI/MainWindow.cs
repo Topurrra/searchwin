@@ -120,6 +120,9 @@ public sealed partial class MainWindow : Window
         ShowPanels();
         Closed += (_, _) => Leave();
         Activated += FirstActivated;
+        // Gone to another window, the pointer is over nothing of ours: no
+        // PointerExited comes to say so.
+        Activated += (_, e) => { if (e.WindowActivationState == WindowActivationState.Deactivated) browser.OverList(false); };
     }
 
     /// The window has been shown: what waits for it (the engine behind

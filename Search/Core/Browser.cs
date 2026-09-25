@@ -74,7 +74,17 @@ public sealed partial class Browser : Model
     private bool editing;
     /// The address field, raised over a page by Ctrl+L. A blank tab shows it
     /// without being asked — there is nothing else for that tab to show.
-    public bool Editing { get => editing; set { if (Set(ref editing, value)) Tell(nameof(FieldShowing)); } }
+    public bool Editing
+    {
+        get => editing;
+        set
+        {
+            if (!Set(ref editing, value)) return;
+            Tell(nameof(FieldShowing));
+            // The list goes with the field; the pointer can't still be over it.
+            if (!value) OverList(false);
+        }
+    }
 
     public bool FieldShowing => Editing || (Active?.IsBlank ?? true);
 

@@ -223,30 +223,37 @@ public sealed partial class Browser
 
     /// A file in a tab: the blank one you're on, or a new one beside it.
     /// Chromium shows PDFs, pictures and text itself.
-    private void OpenFile(string path)
+    private void OpenFile(string path) => WhenThere(path, () =>
     {
-        if (!File.Exists(path))
-        {
-            Announce("That file isn't there any more");
-            return;
-        }
         var url = new Uri(path);
         if (Active is { IsBlank: true } blank && Floating != blank.Id) Go(blank, url);
         else Open(url, foreground: true);
-    }
+    });
+
+    /// `then`, back on this thread, if the file is still there. Asked off
+    /// it: a file on a slow disk (or one gone to sleep) mustn't hold the
+    /// window up.
+    private void WhenThere(string path, Action then) =>
+        _ = Task.Run(() =>
+        {
+            var there = File.Exists(path);
+            UI.Do(() =>
+            {
+                if (there) then();
+                else Announce("That file isn't there any more");
+            });
+        });
 
     /// A program or a script: shown in its folder, selected, never run. What
     /// to do with it is Explorer's question, asked by the person.
-    private void Reveal(string path)
-    {
-        if (!File.Exists(path))
+    private void Reveal(string path) => _ = Task.Run(() =>
         {
-            Announce("That file isn't there any more");
-            return;
-        }
-        Announce("Shown in its folder");
-        _ = Task.Run(() =>
-        {
+            if (!File.Exists(path))
+            {
+                UI.Do(() => Announce("That file isn't there any more"));
+                return;
+            }
+            UI.Do(() => Announce("Shown in its folder"));
             try
             {
                 var explorer = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "explorer.exe");
@@ -261,21 +268,24 @@ public sealed partial class Browser
                 Log.Write($"field: reveal: {error.Message}");
             }
         });
-    }
 
     /// Audio and video, in the media player tab (Tools/#/play), not the bare
     /// file:// URL: it gets a playlist of the folder's other media, next/
     /// previous and a remembered position.
     private void OpenPlayer(string path)
     {
-        if (!File.Exists(path))
+        // Decided before anything touches the path: a share outside the
+        // chosen folders isn't even asked whether the file is there.
+        if (ToolsHost.Resolve($"search://play?path={Uri.EscapeDataString(path)}") is not { } url)
         {
-            Announce("That file isn't there any more");
+            Announce("Search doesn't play files from a network share");
             return;
         }
-        if (ToolsHost.Resolve($"search://play?path={Uri.EscapeDataString(path)}") is not { } url) return;
-        if (Active is { IsBlank: true } blank && Floating != blank.Id) Go(blank, url);
-        else Open(url, foreground: true);
+        WhenThere(path, () =>
+        {
+            if (Active is { IsBlank: true } blank && Floating != blank.Id) Go(blank, url);
+            else Open(url, foreground: true);
+        });
     }
 
     /// An engine call nothing waits on; if it fails, the line says `trouble`.

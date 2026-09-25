@@ -211,15 +211,25 @@
         }
     }
 
-    function copyAll() {
+    // "Copied" only once the browser has said so: a busy clipboard is an
+    // error, not a success.
+    async function copyAll() {
         const list = mode === 'secret' ? secretOutputs : passwords;
-        void copySecret(list.join('\n'));
-        toast($_('tool.passwordGenerator.copiedValues', { values: { count: list.length } }), 'success');
+        try {
+            await copySecret(list.join('\n'));
+            toast($_('tool.passwordGenerator.copiedValues', { values: { count: list.length } }), 'success');
+        } catch (error) {
+            toast($_('tool.passwordGenerator.copyFailed', { values: { error: String(error) } }), 'error');
+        }
     }
 
     async function copyOne(value: string, label: string) {
-        await copySecret(value);
-        toast($_('tool.passwordGenerator.copiedLabel', { values: { label } }), 'success');
+        try {
+            await copySecret(value);
+            toast($_('tool.passwordGenerator.copiedLabel', { values: { label } }), 'success');
+        } catch (error) {
+            toast($_('tool.passwordGenerator.copyFailed', { values: { error: String(error) } }), 'error');
+        }
     }
 
     $effect(() => {
@@ -387,7 +397,7 @@
                 {#if showPasswords}<EyeOff class="h-4 w-4" /> {$_('tool.passwordGenerator.hide')}{:else}<Eye class="h-4 w-4" /> {$_('tool.passwordGenerator.show')}{/if}
             </button>
         {/if}
-        <button type="button" onclick={() => copyAll()} class="pg-copy-button inline-flex h-10 items-center gap-1.5 rounded-xl bg-accent px-4 text-sm font-medium text-accent-contrast hover:bg-accent-hover">
+        <button type="button" onclick={() => void copyAll()} class="pg-copy-button inline-flex h-10 items-center gap-1.5 rounded-xl bg-accent px-4 text-sm font-medium text-accent-contrast hover:bg-accent-hover">
             <Copy class="h-4 w-4" /> {$_('tool.passwordGenerator.copyAll')}
         </button>
     </div>

@@ -315,9 +315,39 @@
     return { name: NAME, body: facts };
   }
 
-  /** Posts to the browser; returns whether it could. Never throws. */
-  function post(win, facts) {
+  /**
+   * Captures `chrome.webview.postMessage`, bound to its bridge object, right
+   * now — meant to be called the moment this script runs (document created,
+   * before any page script), so the reference can't be muted later. A page
+   * can still overwrite `window.chrome.webview.postMessage` after we've run
+   * (it's a plain writable/configurable property), but that only replaces
+   * what `win.chrome.webview.postMessage` resolves to *afterwards*; the
+   * function value captured here is unaffected. Returns null when there is
+   * no bridge to capture.
+   */
+  function captureSender(win) {
     try {
+      var bridge = win && win.chrome && win.chrome.webview;
+      var send = bridge && bridge.postMessage;
+      if (typeof send !== 'function') return null;
+      return function (message) { send.call(bridge, message); };
+    } catch (e) { /* never throw into the page */ }
+    return null;
+  }
+
+  /**
+   * Posts to the browser; returns whether it could. Never throws. `sender`,
+   * when given, is a value from `captureSender` and is used instead of
+   * looking `chrome.webview.postMessage` up again on `win` — the whole point
+   * being that a page can't mute an already-captured sender by reassigning
+   * that property later.
+   */
+  function post(win, facts, sender) {
+    try {
+      if (typeof sender === 'function') {
+        sender(buildMessage(facts));
+        return true;
+      }
       var bridge = win && win.chrome && win.chrome.webview;
       if (bridge && typeof bridge.postMessage === 'function') {
         bridge.postMessage(buildMessage(facts));
@@ -354,6 +384,9 @@
     var doc = win.document;
     var said = '';
     var looks = 0;
+    // Captured now, at document-created time, before any page script has had
+    // a chance to run — see captureSender's own doc comment.
+    var sender = captureSender(win);
 
     function look(readText) {
       if (looks >= MAX_LOOKS) return;
@@ -364,7 +397,7 @@
         var text = JSON.stringify(facts);
         if (text === said) return;
         said = text;
-        post(win, facts);
+        post(win, facts, sender);
       } catch (e) { /* never throw into the page */ }
     }
 
@@ -415,6 +448,7 @@
     collectScam: collectScam,
     collect: collect,
     buildMessage: buildMessage,
+    captureSender: captureSender,
     post: post,
     init: init
   };

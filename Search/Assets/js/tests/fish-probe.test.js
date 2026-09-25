@@ -329,6 +329,51 @@ test('init stays quiet on an ordinary page and on a non-web page', () => {
   assert.equal(sent.length, 0);
 });
 
+test('a page that overwrites chrome.webview.postMessage after init still reaches the sender captured at start', () => {
+  // fish-probe.js runs before any page script (document-created, main
+  // world). A hostile page running after it can still overwrite
+  // window.chrome.webview.postMessage — it's a plain writable property — to
+  // silence the probe. init() must capture the bridge's postMessage once, up
+  // front, and later posts must use that captured reference rather than
+  // looking the property up again at post time.
+  const original = [];
+  const hijacked = [];
+  const listeners = {};
+  const password = el('input', { type: 'password' });
+  const fixture = page({ text: 'Enter your seed phrase to unlock your wallet', select: { 'input[type="password"]': [password] } });
+  const { doc, win } = fixture;
+  doc.readyState = 'loading';
+  doc.addEventListener = (type, fn) => { listeners['doc:' + type] = fn; };
+  win.document = doc;
+  win.addEventListener = () => {};
+  win.setTimeout = () => {}; // discard the stuck-load fallback timer
+  win.chrome = { webview: { postMessage: (m) => original.push(m) } };
+
+  probe.init(win);
+  // A page script running after ours mutes the bridge.
+  win.chrome.webview.postMessage = (m) => hijacked.push(m);
+
+  listeners['doc:DOMContentLoaded']();
+  assert.equal(hijacked.length, 0);
+  assert.equal(original.length, 1);
+  assert.equal(original[0].body.aitm.interactions[0], 'password');
+});
+
+test('captureSender keeps working after chrome.webview.postMessage is reassigned', () => {
+  const sent = [];
+  const win = { chrome: { webview: { postMessage: (m) => sent.push(m) } } };
+  const sender = probe.captureSender(win);
+  win.chrome.webview.postMessage = () => { throw new Error('should never run'); };
+  sender({ name: 'x' });
+  assert.deepEqual(sent, [{ name: 'x' }]);
+});
+
+test('captureSender returns null when there is no bridge, and never throws', () => {
+  assert.equal(probe.captureSender(null), null);
+  assert.equal(probe.captureSender({}), null);
+  assert.equal(probe.captureSender({ chrome: {} }), null);
+});
+
 test('init never throws on a missing or hostile window', () => {
   assert.doesNotThrow(() => probe.init(null));
   assert.doesNotThrow(() => probe.init({}));

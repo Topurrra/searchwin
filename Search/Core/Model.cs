@@ -12,20 +12,11 @@ public abstract partial class Model : INotifyPropertyChanged
 
     protected bool Set<T>(ref T field, T value, [CallerMemberName] string name = "")
     {
-        if (Same(field, value)) return false;
+        if (!SearchKit.Web.Change.Is(field, value)) return false;
         field = value;
         Tell(name);
         return true;
     }
-
-    // Uri's own equality ignores the fragment (RFC 3986: never sent to a
-    // server, so "the same resource" as far as Uri.Equals is concerned).
-    // Search's own pages live entirely in the fragment
-    // (tools.search/index.html#/play?path=<file>), so a plain
-    // EqualityComparer<Uri>.Default would see the player move from one file
-    // to the next as no change at all. See SearchKit.Web.UriEquality.
-    private static bool Same<T>(T field, T value) =>
-        field is Uri a && value is Uri b ? SearchKit.Web.UriEquality.SameAddress(a, b) : EqualityComparer<T>.Default.Equals(field, value);
 
     protected void Tell([CallerMemberName] string name = "") =>
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));

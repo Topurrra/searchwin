@@ -202,6 +202,60 @@ public class IndexPlanRootTests
     }
 
     [Fact]
+    public void A_folder_the_rules_skip_inside_a_chosen_one_can_be_chosen_too()
+    {
+        Assert.Equal([@"D:\Work", @"D:\Work\build\docs"], IndexPlan.Add([@"D:\Work"], @"D:\Work\build\docs"));
+        Assert.Equal([@"D:\Work", @"D:\Work\.vscode"], IndexPlan.Add([@"D:\Work"], @"D:\Work\.vscode"));
+        Assert.Equal([@"C:\Users\me", @"C:\Users\me\AppData\Local\Notes"], IndexPlan.Add([@"C:\Users\me"], @"C:\Users\me\AppData\Local\Notes"));
+        // One indexed already, by some chosen folder, is refused.
+        Assert.Null(IndexPlan.Add([@"D:\Work"], @"d:\work\docs"));
+        Assert.Null(IndexPlan.Add([@"D:\Work"], @"D:\Work"));
+        Assert.Null(IndexPlan.Add([@"D:\Work", @"D:\Work\.vscode"], @"D:\Work\.vscode\notes"));
+        // A folder around chosen ones replaces those it indexes, not those it skips.
+        Assert.Equal([@"D:\Work\build\docs", @"E:\Music", @"D:\Work"], IndexPlan.Add([@"D:\Work\build\docs", @"D:\Work\src", @"E:\Music"], @"D:\Work"));
+    }
+
+    [Fact]
+    public void A_folder_chosen_inside_another_ones_skipped_folder_is_indexed_and_only_it()
+    {
+        var build = IndexPlan.Options([@"D:\Work", @"D:\Work\build\docs"], contents: true);
+        Assert.False(Skipped(build, @"D:\Work\build\docs\readme.md"));
+        Assert.True(Skipped(build, @"D:\Work\build\out.txt"));
+        Assert.True(Skipped(build, @"D:\Work\app\build\out.txt"));
+        Assert.True(Skipped(build, @"D:\Work\build\docs\build\out.txt"));
+        Assert.True(Skipped(build, @"D:\Work\build\docs\node_modules\x.js"));
+        Assert.False(Skipped(build, @"D:\Work\app\main.cs"));
+
+        var vscode = IndexPlan.Options([@"D:\Work", @"D:\Work\.vscode"], contents: true);
+        Assert.False(Skipped(vscode, @"D:\Work\.vscode\settings.json"));
+        Assert.True(Skipped(vscode, @"D:\Work\app\.vscode\settings.json"));
+        Assert.True(Skipped(vscode, @"D:\Work\.git\config"));
+        Assert.True(Skipped(vscode, @"D:\Work\.vscode\.cache\x"));
+    }
+
+    [Fact]
+    public void A_folder_chosen_inside_another_ones_AppData_turns_hidden_folders_on()
+    {
+        var options = IndexPlan.Options([@"C:\Users\me", @"C:\Users\me\AppData\Local\Notes"], contents: true);
+        Assert.True(options["includeHidden"]!.GetValue<bool>());
+        Assert.False(Skipped(options, @"C:\Users\me\AppData\Local\Notes\plan.md"));
+        Assert.True(Skipped(options, @"C:\Users\me\AppData\Local\Other\x.dat"));
+        Assert.True(Skipped(options, @"C:\Users\me\AppData\Roaming\Code\User\settings.json"));
+        Assert.True(Skipped(options, @"C:\Users\me\.cargo\registry\x.rs"));
+        Assert.True(Skipped(options, @"C:\Users\me\AppData\Local\Notes\.git\config"));
+        Assert.False(Skipped(options, @"C:\Users\me\Documents\cv.pdf"));
+    }
+
+    [Fact]
+    public void The_browsers_own_folder_wins_over_a_folder_kept_inside_it()
+    {
+        // `own` repeats the profile's AppData rule, which comes before the
+        // Notes keep: the copy after the keep must be the one that stays.
+        var options = IndexPlan.Options([@"C:\Users\me", @"C:\Users\me\AppData\Roaming\Notes", @"D:\.notes"], true, own: @"C:\Users\me\AppData");
+        Assert.True(Skipped(options, @"C:\Users\me\AppData\Roaming\Notes\plan.md"));
+    }
+
+    [Fact]
     public void A_secret_folder_chosen_itself_still_gives_nothing()
     {
         Assert.True(Skipped(IndexPlan.Options([@"C:\Users\me\.ssh"], true), @"C:\Users\me\.ssh\id_ed25519"));

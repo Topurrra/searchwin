@@ -3,18 +3,6 @@ using SearchKit.Engine;
 
 namespace SearchKit.Field;
 
-/// A source that answers at once, on the UI thread, on every keystroke:
-/// open tabs, history, bookmarks, commands, the typed text itself. The whole
-/// keystroke has 5 ms; a source should need well under one.
-public interface ILocalSource
-{
-    Group Group { get; }
-
-    /// Rows for this query, best first, at most `limit`. Nothing to say is an
-    /// empty list, never an exception.
-    IReadOnlyList<FieldRow> Suggest(FieldQuery query, int limit);
-}
-
 /// A source the engine answers: files by name and by contents, apps, instant
 /// answers, clipboard history. Asked off the UI thread, after `Delay`, and
 /// cancelled by the next keystroke.

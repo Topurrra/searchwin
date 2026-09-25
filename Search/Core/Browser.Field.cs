@@ -46,11 +46,10 @@ public sealed partial class Browser
                 new GatedSource(new AppSource(calls), _ => Prefs.AppsInField),
                 // `clip:` and `clipboard` list it; words find a couple of
                 // matches among the rest. Secrets only ever by their kind.
-                new GatedSource(new ClipboardSource(calls, inField: true), _ => ClipHistory.On),
+                new GatedSource(new ClipboardSource(calls), _ => ClipHistory.On),
             ]);
         var model = new FieldModel(
-            local: [],
-            engine: sources,
+            sources,
             new FieldOptions
             {
                 Bangs = Commands.Bangs,

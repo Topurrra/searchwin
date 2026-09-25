@@ -8967,10 +8967,12 @@ fn normalize_exclude_extensions(values: &[String]) -> Vec<String> {
     normalize_unique_tokens(values, true)
 }
 
+/// Each token once, in the place of its last copy: the last exclusion that
+/// matches decides.
 fn normalize_unique_tokens(values: &[String], trim_dot_prefix: bool) -> Vec<String> {
     let mut seen = HashSet::new();
     let mut normalized = Vec::new();
-    for value in values {
+    for value in values.iter().rev() {
         let mut token = value
             .trim()
             .trim_matches('"')
@@ -8987,6 +8989,7 @@ fn normalize_unique_tokens(values: &[String], trim_dot_prefix: bool) -> Vec<Stri
         seen.insert(token.clone());
         normalized.push(token);
     }
+    normalized.reverse();
     normalized
 }
 
@@ -12606,6 +12609,15 @@ mod tests {
         let dots = ["c:/t/root/*/.*".to_string()];
         assert!(has_excluded_folder(Path::new("C:\\t\\root\\a\\.git\\x"), &dots));
         assert!(!has_excluded_folder(Path::new("C:\\t\\root\\a\\b.txt"), &dots));
+    }
+
+    /// A repeated entry keeps its last place: the last entry that matches
+    /// decides, so a keep between two copies must not win.
+    #[test]
+    fn a_repeated_exclusion_keeps_its_last_place() {
+        let entries = ["c:/t/root/a".to_string(), "!c:/t/root/a/b".to_string(), "C:\\t\\root\\a".to_string()];
+        let entries = normalize_exclude_folders(&entries);
+        assert!(has_excluded_folder(Path::new("C:\\t\\root\\a\\b\\x.txt"), &entries));
     }
 
     /// A folder chosen inside another chosen folder's dot-folder (the

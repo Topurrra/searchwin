@@ -54,6 +54,7 @@
     "@types/markdown-it": "^14.1.2",
     "@types/node": "^24.6.0",
     "autoprefixer": "^10.5.0",
+    "jsdom": "^30.1.1",
     "markdown-it": "^14.1.1",
     "postcss": "^8.5.14",
     "svelte": "^5.0.0",

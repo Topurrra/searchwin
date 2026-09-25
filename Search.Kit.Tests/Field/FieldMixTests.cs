@@ -28,7 +28,7 @@ public class FieldMixTests
         // A reserved top hit, filled in place, then files arriving below:
         // every local row stays at the index it had.
         var board = new FieldBoard();
-        board.Reset(1, [FieldRow.Placeholder(Group.Answer)], null);
+        board.Reset(1, [FieldRow.Placeholder(Group.Answer)]);
         var before = FieldMix.Compose(3, board.Rows);
         board.Arrive(1, Group.Answer, [Rows.Answer("1081")], 3, 16);
         board.Arrive(1, Group.Files, [Rows.File("a.txt"), Rows.File("b.txt")], 4, 16);
@@ -98,12 +98,6 @@ public class IndexPlanTests
         Assert.DoesNotContain("users/*/appdata/local/temp", IndexPlan.Excludes([@"C:\Users\me\AppData\Local\Temp\x"]));
 
         Assert.Equal(IndexPlan.DefaultExcludes.Concat(IndexPlan.Secrets), IndexPlan.Excludes([@"D:\Documents"]));
-    }
-
-    [Fact]
-    public void A_folder_inside_a_dot_folder_needs_hidden_on()
-    {
-        Assert.True(IndexPlan.Options([@"C:\Users\me\.notes\work"], true)["includeHidden"]!.GetValue<bool>());
     }
 
     [Fact]

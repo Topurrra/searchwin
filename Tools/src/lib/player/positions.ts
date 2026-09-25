@@ -2,17 +2,17 @@
 // path arithmetic its playlist needs. Kept apart from the page so it can be
 // tested without a <video>.
 
-export const PREFIX = 'search-player:position:';
+const PREFIX = 'search-player:position:';
 
 /** How many files' positions are kept: the most recently played. */
-export const KEEP = 200;
+const KEEP = 200;
 
 /** A file this close to its end is finished: it starts over next time. */
-export const END_SLACK = 5;
+const END_SLACK = 5;
 
 type Store = Pick<Storage, 'getItem' | 'setItem' | 'removeItem' | 'key' | 'length'>;
 
-export function keyOf(path: string): string {
+function keyOf(path: string): string {
     return PREFIX + path.replace(/\//g, '\\').toLowerCase();
 }
 
@@ -34,7 +34,7 @@ export function load(store: Store, path: string): number {
 }
 
 /** Whether `seconds` into a file `duration` long is worth resuming at. */
-export function resumable(seconds: number, duration: number): boolean {
+function resumable(seconds: number, duration: number): boolean {
     return seconds > 0 && (!Number.isFinite(duration) || duration <= 0 || seconds < duration - END_SLACK);
 }
 
@@ -43,13 +43,13 @@ export function resumable(seconds: number, duration: number): boolean {
  * its last seconds) is forgotten rather than kept at 0; past KEEP files the
  * least recently played are let go.
  */
-export function save(store: Store, path: string, seconds: number, duration = NaN, now = Date.now()): void {
+export function save(store: Store, path: string, seconds: number, duration = NaN): void {
     try {
         if (!resumable(seconds, duration)) {
             store.removeItem(keyOf(path));
             return;
         }
-        store.setItem(keyOf(path), `${Math.floor(seconds)}|${now}`);
+        store.setItem(keyOf(path), `${Math.floor(seconds)}|${Date.now()}`);
         prune(store);
     } catch {
         /* private mode, quota, or storage disabled — just don't remember */
@@ -57,15 +57,15 @@ export function save(store: Store, path: string, seconds: number, duration = NaN
 }
 
 /** Only the KEEP most recently saved positions stay. */
-export function prune(store: Store, keep = KEEP): void {
+function prune(store: Store): void {
     const mine: { key: string; at: number }[] = [];
     for (let i = 0; i < store.length; i++) {
         const key = store.key(i);
         if (key?.startsWith(PREFIX)) mine.push({ key, at: parse(store.getItem(key)).at });
     }
-    if (mine.length <= keep) return;
+    if (mine.length <= KEEP) return;
     mine.sort((a, b) => b.at - a.at);
-    for (const { key } of mine.slice(keep)) store.removeItem(key);
+    for (const { key } of mine.slice(KEEP)) store.removeItem(key);
 }
 
 /** The folder a file is in: `E:\song.mp3` → `E:\` (a drive's root keeps its backslash). */
@@ -85,23 +85,4 @@ export function inFolder(folder: string, name: string): string {
 /** The track after `index`, or -1 at the end: the last one doesn't wrap around by itself. */
 export function after(index: number, count: number): number {
     return index >= 0 && index < count - 1 ? index + 1 : -1;
-}
-
-/** The player's own hash for `path` — what the address bar and the tab title follow. */
-export function playHash(path: string): string {
-    return `#/play?path=${encodeURIComponent(path)}`;
-}
-
-type NavHistory = Pick<History, 'replaceState' | 'pushState'> & { readonly state: unknown };
-
-/**
- * Moves the player to `path` without growing the tab's history: next,
- * previous, auto-advance and a playlist click all replace the current
- * entry, so the tab's own Back leaves the player in one step, not once per
- * track played. The hash still changes (replaceState changes the URL, not
- * just the state object), so the host browser's same-document navigation
- * still sees a new address to follow.
- */
-export function navigateHash(history: NavHistory, path: string): void {
-    history.replaceState(history.state, '', playHash(path));
 }

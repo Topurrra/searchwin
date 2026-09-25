@@ -58,51 +58,70 @@ public static class IndexPlan
     public static JsonObject Options(IReadOnlyList<string> folders, bool contents, string? own = null)
     {
         JsonArray Folders() => [.. folders.Select(f => (JsonNode)f)];
-        var roots = Roots(folders);
-        // The engine skips anything with a folder whose name starts with a
-        // dot anywhere in its path, the chosen folder's own parents too. A
-        // folder chosen inside one needs that off, and then every folder's
-        // dot-folders are skipped by name instead: below each chosen folder,
-        // not above it.
-        var hidden = roots.Any(r => r.Split('/').Any(p => p.StartsWith('.')));
-        List<string> excludes = hidden ? HiddenRules(roots) : [];
-        excludes.AddRange(Excludes(folders, own));
         return new JsonObject
         {
             ["roots"] = Folders(),
             ["filenameRoots"] = Folders(),
-            ["includeHidden"] = hidden,
+            ["includeHidden"] = Hidden(Roots(folders)),
             ["indexContent"] = contents,
             ["contentIndexingEnabled"] = contents,
             ["maxContentKb"] = null,
             ["commitEvery"] = null,
             ["watcherEnabled"] = true,
-            ["excludeFolders"] = new JsonArray([.. excludes.Distinct(StringComparer.Ordinal).Select(e => (JsonNode)e)]),
+            ["excludeFolders"] = new JsonArray([.. Excludes(folders, own).Select(e => (JsonNode)e)]),
         };
     }
 
-    /// With hidden folders on, each chosen folder's dot-folders (right below
-    /// it and deeper) are skipped, and so is AppData, Windows' hidden folder,
-    /// below a profile (or a folder of profiles), unless the folder was
-    /// chosen inside AppData. A folder chosen inside another's skipped
-    /// folder (the profile and its `.config`, or `AppData\Roaming\Notes`) is
+    /// The engine skips anything with a folder whose name starts with a dot
+    /// anywhere in its path, the chosen folder's own parents too. A folder
+    /// chosen inside one needs that off, and then every folder's dot-folders
+    /// are skipped by rules instead: below each chosen folder, not above it.
+    /// So does a folder chosen inside another's AppData, which those rules
+    /// skip (the rest of that AppData stays out, as with any hidden folder).
+    private static bool Hidden(List<string> roots) =>
+        roots.Any(r => r.Split('/').Any(p => p.StartsWith('.')) || roots.Any(o => Skips(AppData(o), r)));
+
+    /// AppData, Windows' hidden folder, below a profile (or a folder of
+    /// profiles), unless the folder was chosen inside AppData.
+    private static List<string> AppData(string root) => InAppData(root) ? [] : [root + "/appdata", root + "/*/appdata"];
+
+    /// The exclusions, per chosen folder. The engine tests every folder of a
+    /// path, the chosen one's own parents too, so a folder picked under Temp
+    /// or a `build` folder would come back empty. Such an exclusion is
+    /// narrowed to below each chosen folder (not dropped: a `build` inside
+    /// another chosen folder is still skipped). With hidden folders on, each
+    /// chosen folder's dot-folders and AppData are skipped too.
+    ///
+    /// A folder chosen inside what another's rules skip (the profile and its
+    /// `.config` or `AppData\Local\Notes`, a project and its `build\docs`) is
     /// kept by a `!folder` rule: the engine lets a later rule win, so the
-    /// keep undoes only the rules of the folders around it. Everything else
-    /// stays out: the profile's other dot-folders and the rest of its
-    /// AppData, the kept folder's own dot-folders (its rules come after its
-    /// keep), and the default exclusions and secrets (listed after all of
-    /// these).
-    private static List<string> HiddenRules(List<string> roots)
+    /// keep undoes only the rules of the folders around it, which come
+    /// first, outer folders first. Its own rules follow its keep, and the
+    /// exclusions no chosen folder sits in, the secrets and `own` come after
+    /// every keep: they always apply, even to a folder chosen inside them.
+    public static List<string> Excludes(IReadOnlyList<string> folders, string? own = null)
     {
+        var roots = Roots(folders);
+        var list = Rules(roots, Hidden(roots));
+        list.AddRange(Secrets);
+        if (own != null && Normal(own) is { Length: > 0 } mine) list.Add(mine);
+        return Once(list);
+    }
+
+    private static List<string> Rules(List<string> roots, bool hidden)
+    {
+        var narrowed = DefaultExcludes.Where(e => roots.Any(r => Within(r, e))).ToList();
         var rules = new List<string>();
-        // Outer folders first, so a folder's keep follows the rules of the
-        // folders it sits in and comes before its own.
         foreach (var root in roots.OrderBy(r => r.Split('/').Length).ThenBy(r => r, StringComparer.Ordinal))
         {
             if (Skips(rules, root)) rules.Add("!" + root);
-            rules.AddRange([root + "/.*", root + "/*/.*"]);
-            if (!InAppData(root)) rules.AddRange([root + "/appdata", root + "/*/appdata"]);
+            if (hidden) rules.AddRange([root + "/.*", root + "/*/.*", .. AppData(root)]);
+            // Right below the folder, and anywhere deeper: the excluded
+            // folder itself and all it holds (a `*` pattern ending in a name
+            // ends at a folder name, so `bin` isn't `binaries`).
+            foreach (var exclusion in narrowed) rules.AddRange([$"{root}/{exclusion}", $"{root}/*/{exclusion}"]);
         }
+        rules.AddRange(DefaultExcludes.Except(narrowed));
         return rules;
     }
 
@@ -119,35 +138,16 @@ public static class IndexPlan
         return skipped;
     }
 
-    /// The exclusions, per chosen folder. The engine tests every folder of a
-    /// path, the chosen one's own parents too, so a folder picked under Temp
-    /// or a `build` folder would come back empty. Such an exclusion is
-    /// narrowed to below each chosen folder (not dropped: a `build` inside
-    /// another chosen folder is still skipped). The secrets and `own` always
-    /// apply, even to a folder chosen inside them.
-    public static List<string> Excludes(IReadOnlyList<string> folders, string? own = null)
+    /// Each rule once, in the place of its last copy: the engine lets the
+    /// last rule that matches decide.
+    private static List<string> Once(List<string> rules)
     {
-        var roots = Roots(folders);
-        var list = new List<string>();
-        foreach (var exclusion in DefaultExcludes)
-        {
-            if (!roots.Any(r => Within(r, exclusion)))
-            {
-                list.Add(exclusion);
-                continue;
-            }
-            foreach (var root in roots)
-            {
-                // Right below the folder, and anywhere deeper: the excluded
-                // folder itself and all it holds (a `*` pattern ending in a
-                // name ends at a folder name, so `bin` isn't `binaries`).
-                list.Add($"{root}/{exclusion}");
-                list.Add($"{root}/*/{exclusion}");
-            }
-        }
-        list.AddRange(Secrets);
-        if (own != null && Normal(own) is { Length: > 0 } mine) list.Add(mine);
-        return [.. list.Distinct(StringComparer.Ordinal)];
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var once = new List<string>();
+        for (var i = rules.Count - 1; i >= 0; i--)
+            if (seen.Add(rules[i])) once.Add(rules[i]);
+        once.Reverse();
+        return once;
     }
 
     private static bool InAppData(string root) => root.Split('/').Contains("appdata", StringComparer.Ordinal);
@@ -158,6 +158,23 @@ public static class IndexPlan
     /// Whether the chosen folder itself, or a parent of it, is excluded.
     private static bool Within(string root, string exclusion) =>
         IsPathLike(exclusion) ? Matches(root, exclusion) : root.Split('/').Contains(exclusion, StringComparer.Ordinal);
+
+    /// The chosen folders with `path` added, or null when a chosen folder
+    /// already indexes it. One inside a chosen folder that that folder's
+    /// rules skip (its `build\docs`, `.vscode` or AppData) is its own choice;
+    /// one around chosen folders replaces those it would index itself.
+    public static List<string>? Add(IReadOnlyList<string> folders, string path) =>
+        folders.Any(f => Covers([f], path) && !SkippedUnder(f, path))
+            ? null
+            : [.. folders.Where(f => !Covers([path], f) || SkippedUnder(path, f)), path];
+
+    /// Whether `outer`'s rules, with hidden folders on as a folder chosen
+    /// inside its dot-folders or AppData turns them on, skip `inner`.
+    private static bool SkippedUnder(string outer, string inner)
+    {
+        var (o, i) = (Normal(outer), Normal(inner));
+        return i.StartsWith(o + "/", StringComparison.Ordinal) && Skips(Rules([o], hidden: true), i);
+    }
 
     /// Whether `path` is inside one of `folders`, so a result left in the
     /// index from a folder since removed is never shown.

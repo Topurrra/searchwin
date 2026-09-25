@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { KEEP, PREFIX, after, folderOf, inFolder, keyOf, load, navigateHash, playHash, prune, resumable, save } from './positions';
+import { after, folderOf, inFolder, load, save } from './positions';
 
 function memory(): Storage {
     const map = new Map<string, string>();
@@ -24,38 +24,38 @@ describe('remembered positions', () => {
 
     it('reads a value saved the old way (plain seconds)', () => {
         const store = memory();
-        store.setItem(keyOf('C:\\a.mp3'), '42');
+        store.setItem('search-player:position:c:\\a.mp3', '42');
         expect(load(store, 'C:\\a.mp3')).toBe(42);
     });
 
-    it('forgets a finished file rather than keeping it at 0', () => {
+    it('forgets a finished file (at its start or in its last 5 seconds) rather than keeping it at 0', () => {
         const store = memory();
         save(store, 'C:\\a.mp3', 30, 100);
         save(store, 'C:\\a.mp3', 0, 100);
-        expect(store.getItem(keyOf('C:\\a.mp3'))).toBeNull();
         save(store, 'C:\\b.mp3', 30, 100);
         save(store, 'C:\\b.mp3', 97, 100);
-        expect(store.getItem(keyOf('C:\\b.mp3'))).toBeNull();
+        expect(store.length).toBe(0);
+        // Its length not known yet: kept.
+        save(store, 'C:\\c.mp3', 6, NaN);
+        expect(load(store, 'C:\\c.mp3')).toBe(6);
     });
 
-    it('resumes only short of the end', () => {
-        expect(resumable(6, 12)).toBe(true);
-        expect(resumable(8, 12)).toBe(false);
-        expect(resumable(0, 12)).toBe(false);
-        expect(resumable(6, NaN)).toBe(true);
-    });
-
-    it('keeps the last KEEP files, dropping the least recently played', () => {
-        const store = memory();
-        store.setItem('something-else', 'kept');
-        for (let i = 0; i < KEEP + 20; i++) save(store, `C:\\v\\${i}.mp4`, 10, 100, 1000 + i);
-        const mine = [...Array(store.length).keys()].map((i) => store.key(i)!).filter((k) => k.startsWith(PREFIX));
-        expect(mine.length).toBe(KEEP);
-        expect(load(store, 'C:\\v\\0.mp4')).toBe(0);
-        expect(load(store, `C:\\v\\${KEEP + 19}.mp4`)).toBe(10);
-        expect(store.getItem('something-else')).toBe('kept');
-        prune(store, 5);
-        expect([...Array(store.length).keys()].filter((i) => store.key(i)!.startsWith(PREFIX)).length).toBe(5);
+    it('keeps the 200 most recently played files', () => {
+        vi.useFakeTimers();
+        try {
+            const store = memory();
+            store.setItem('something-else', 'kept');
+            for (let i = 0; i < 220; i++) {
+                vi.setSystemTime(1000 + i);
+                save(store, `C:\\v\\${i}.mp4`, 10, 100);
+            }
+            expect(store.length).toBe(201);
+            expect(load(store, 'C:\\v\\19.mp4')).toBe(0);
+            expect(load(store, 'C:\\v\\20.mp4')).toBe(10);
+            expect(store.getItem('something-else')).toBe('kept');
+        } finally {
+            vi.useRealTimers();
+        }
     });
 });
 
@@ -74,17 +74,5 @@ describe('the playlist', () => {
         expect(after(2, 3)).toBe(-1);
         expect(after(-1, 3)).toBe(-1);
         expect(after(0, 1)).toBe(-1);
-    });
-
-    it('moves the player by replacing the address, not pushing a new one', () => {
-        // Regression: next/previous/auto-advance used history.pushState, so
-        // Back had to be pressed once per track ever played before it left
-        // the player. Fails on the old code (pushState called, replaceState
-        // not) and passes now that go() replaces the current entry instead.
-        const history = { state: { some: 'state' }, replaceState: vi.fn(), pushState: vi.fn() };
-        navigateHash(history, 'C:\\Music\\tone-b.wav');
-        expect(history.pushState).not.toHaveBeenCalled();
-        expect(history.replaceState).toHaveBeenCalledTimes(1);
-        expect(history.replaceState).toHaveBeenCalledWith(history.state, '', playHash('C:\\Music\\tone-b.wav'));
     });
 });

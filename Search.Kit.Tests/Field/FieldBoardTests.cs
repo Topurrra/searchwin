@@ -1,80 +1,9 @@
-using SearchKit.Commands;
 using SearchKit.Field;
 
 namespace SearchKit.Tests.Field;
 
 public class FieldLayoutTests
 {
-    private static readonly FieldCaps caps = new();
-
-    private static FieldRow Tab(string key, string title, double score) =>
-        new(Group.Tabs, "url:" + key, title, key, RowAction.SwitchTab, "https://" + key + "/") { Score = score, Tab = Guid.NewGuid() };
-
-    [Fact]
-    public void The_same_page_shows_once_and_an_open_tab_wins()
-    {
-        var query = FieldQuery.Read("docs");
-        var laid = FieldLayout.Build(query,
-            [Rows.Page(Group.History, "rust-lang.org/docs"), Tab("rust-lang.org/docs", "Rust docs", 4), Rows.Search("docs")],
-            null, caps);
-        Assert.Single(laid, r => r.Key == "url:rust-lang.org/docs");
-        Assert.Contains(laid, r => r.Key == "url:rust-lang.org/docs" && r.Origin == Group.Tabs);
-    }
-
-    [Fact]
-    public void Groups_are_drawn_in_order_and_capped()
-    {
-        var query = FieldQuery.Read("zzz");
-        var history = Enumerable.Range(0, 6).Select(i => Rows.Page(Group.History, $"h{i}.zzz.com")).ToList();
-        var laid = FieldLayout.Build(query, [Rows.Search("zzz"), .. history, Tab("t.zzz.com", "t", 2)], null, caps);
-        // The search row is the top hit (nothing starts with "zzz"), then tabs, then three places.
-        Assert.Equal([Group.TopHit, Group.Tabs, Group.History, Group.History, Group.History], laid.Select(r => r.Group));
-        Assert.Equal(RowKey.WebSearch("zzz"), laid[0].Key);
-        Assert.Equal(["url:h0.zzz.com", "url:h1.zzz.com", "url:h2.zzz.com"], laid.Where(r => r.Group == Group.History).Select(r => r.Key));
-    }
-
-    [Fact]
-    public void The_place_being_finished_is_the_top_hit_and_gives_the_ending()
-    {
-        var query = FieldQuery.Read("git");
-        var laid = FieldLayout.Build(query,
-            [Rows.Page(Group.History, "gitlab.example.org/x"), Rows.Page(Group.History, "github.com"), Rows.Search("git")], null, caps);
-        // The first place (in the source's order) whose key starts with the text.
-        Assert.Equal("url:gitlab.example.org/x", laid[0].Key);
-        Assert.Equal(Group.TopHit, laid[0].Group);
-        Assert.Equal(Group.History, laid[0].Origin);
-        Assert.Equal("lab.example.org/x", FieldLayout.Ending(query, laid[0]));
-        Assert.Null(FieldLayout.Ending(FieldQuery.Read("g"), laid[0]));
-    }
-
-    [Fact]
-    public void A_tab_that_starts_with_the_text_beats_history()
-    {
-        var query = FieldQuery.Read("mail");
-        var laid = FieldLayout.Build(query,
-            [Rows.Page(Group.History, "mail.google.com"), Tab("outlook.com", "Mail - Outlook", 5), Rows.Search("mail")], null, caps);
-        Assert.Equal("url:outlook.com", laid[0].Key);
-        Assert.Equal(RowAction.SwitchTab, laid[0].Action);
-    }
-
-    [Fact]
-    public void Commands_bangs_and_questions_take_their_first_row()
-    {
-        var registry = new CommandRegistry();
-        registry.Add(new Command("tabs.close-others", "Close Other Tabs", Tier.Act, ["close others"]), _ => { });
-        var command = FieldQuery.Read(">close");
-        var rows = new CommandSource(registry).Suggest(command, 6);
-        Assert.Equal("tabs.close-others", FieldLayout.Build(command, rows, null, caps)[0].Target);
-
-        var typed = new TypedSource(_ => null, t => ("Google", new Uri("https://www.google.com/search?q=" + Uri.EscapeDataString(t))));
-        var bang = FieldQuery.Read("!yt cats", new Bangs());
-        var top = FieldLayout.Build(bang, typed.Suggest(bang, 1), null, caps)[0];
-        Assert.StartsWith("https://www.youtube.com/results?search_query=cats", top.Target);
-
-        var ask = FieldQuery.Read("? what now");
-        Assert.Equal(RowAction.Ask, FieldLayout.Build(ask, typed.Suggest(ask, 1), null, caps)[0].Action);
-    }
-
     [Fact]
     public void Answers_and_engine_scopes_reserve_the_top_hit()
     {
@@ -84,11 +13,6 @@ public class FieldLayoutTests
         // Nothing to wait for when no source was asked.
         Assert.Null(FieldLayout.Reserve(FieldQuery.Read("23*47"), [Group.Files]));
         Assert.Null(FieldLayout.Reserve(FieldQuery.Read("invoice"), [Group.Files, Group.Apps]));
-
-        var laid = FieldLayout.Build(FieldQuery.Read("23*47"), [Rows.Search("23*47")], Group.Answer, caps);
-        Assert.True(laid[0].IsPending);
-        Assert.Equal(Group.Answer, laid[0].Origin);
-        Assert.Equal(RowKey.WebSearch("23*47"), laid[1].Key);
     }
 }
 
@@ -97,7 +21,7 @@ public class FieldBoardTests
     private static FieldBoard Board(params FieldRow[] rows)
     {
         var board = new FieldBoard();
-        board.Reset(1, [.. rows], null);
+        board.Reset(1, [.. rows]);
         return board;
     }
 
@@ -117,9 +41,7 @@ public class FieldBoardTests
     {
         var board = Board(Top(Rows.Search("inv")), Rows.Page(Group.History, "a.com"), Rows.Page(Group.History, "b.com"),
             Rows.Page(Group.Bookmarks, "c.com"));
-        board.Walk(1);
-        board.Walk(1);
-        board.Walk(1);
+        board.Pick(2);
         Assert.Equal(2, board.Picked);
         var before = board.Keys();
 
@@ -180,22 +102,23 @@ public class FieldBoardTests
         Assert.Equal(["url:a.com", RowKey.WebSearch("5 km to zz")], board.Keys());
         Assert.False(board.Waiting);
         Assert.Null(board.EnterRow);
-        Assert.Equal(RowKey.WebSearch("5 km to zz"), board.Fallback!.Key);
     }
 
     [Fact]
     public void Under_a_pick_it_stays_as_a_spacer_and_nothing_moves()
     {
         var board = Board(FieldRow.Placeholder(Group.Answer), Rows.Page(Group.History, "a.com"), Rows.Search("5 km to zz"));
-        board.Walk(1);
+        board.Pick(1);
         Assert.Equal("url:a.com", board.EnterRow!.Key);
         Assert.False(board.Settle(1, Group.Answer));
         Assert.Equal([FieldRow.Placeholder(Group.Answer).Key, "url:a.com", RowKey.WebSearch("5 km to zz")], board.Keys());
         Assert.Equal(1, board.Picked);
         Assert.Equal("url:a.com", board.EnterRow!.Key);
-        Assert.Equal(RowKey.WebSearch("5 km to zz"), board.Fallback!.Key);
+        // The spacer itself can't be picked.
+        board.Pick(0);
+        Assert.Null(board.Picked);
         // The next question starts clean.
-        board.Reset(2, [FieldRow.Placeholder(Group.Answer), Rows.Search("5 km to zzz")], null);
+        board.Reset(2, [FieldRow.Placeholder(Group.Answer), Rows.Search("5 km to zzz")]);
         Assert.True(board.Settle(2, Group.Answer));
     }
 
@@ -231,33 +154,19 @@ public class FieldBoardTests
         board.Hold(FieldBoard.Beside);
         board.Pick(FieldBoard.Beside);
         board.PointerOver = true;
-        board.Reset(2, [FieldRow.Placeholder(Group.Answer), Rows.File("a.txt")], null);
+        board.Reset(2, [FieldRow.Placeholder(Group.Answer), Rows.File("a.txt")]);
         Assert.True(board.PointerOver);
         Assert.False(board.Settle(2, Group.Answer));
 
         board.PointerOver = false;
-        board.Reset(3, [FieldRow.Placeholder(Group.Answer), Rows.File("a.txt")], null);
+        board.Reset(3, [FieldRow.Placeholder(Group.Answer), Rows.File("a.txt")]);
         Assert.True(board.Settle(3, Group.Answer));
 
         // Letting go of the browser's row lets the slot go.
-        board.Reset(4, [FieldRow.Placeholder(Group.Answer), Rows.File("a.txt")], null);
+        board.Reset(4, [FieldRow.Placeholder(Group.Answer), Rows.File("a.txt")]);
         board.Hold(FieldBoard.Beside);
         board.Hold(null);
         Assert.True(board.Settle(4, Group.Answer));
-    }
-
-    [Fact]
-    public void Walking_skips_reserved_slots_and_lets_go_off_the_ends()
-    {
-        var board = Board(FieldRow.Placeholder(Group.Files), Rows.Page(Group.History, "a.com"), Rows.Search("x"));
-        board.Walk(1);
-        Assert.Equal(1, board.Picked);
-        board.Walk(-1);
-        Assert.Null(board.Picked);
-        board.Walk(-1);
-        Assert.Equal(2, board.Picked);
-        board.Pick(0);
-        Assert.Null(board.Picked);
     }
 
     [Fact]
@@ -276,7 +185,7 @@ public class FieldBoardTests
     public void Answers_to_an_older_question_are_dropped()
     {
         var board = Board(Top(Rows.Search("x")));
-        board.Reset(2, [Top(Rows.Search("xy"))], null);
+        board.Reset(2, [Top(Rows.Search("xy"))]);
         Assert.False(board.Arrive(1, Group.Files, [Rows.File("x.txt")], 4, 16));
         Assert.False(board.Settle(1, Group.Files));
         Assert.Single(board.Rows);
@@ -293,7 +202,7 @@ public class FieldBoardTests
             var groups = new[] { Group.Answer, Group.Tabs, Group.History, Group.Files, Group.Apps, Group.Clipboard };
             for (var batch = 0; batch < 6; batch++)
             {
-                if (random.Next(3) == 0) board.Walk(1);
+                if (random.Next(3) == 0) board.Pick((board.Picked ?? -1) + 1);
                 if (random.Next(4) == 0) board.Hold(random.Next(board.Rows.Count));
                 var before = board.Keys();
                 var picked = board.Picked;

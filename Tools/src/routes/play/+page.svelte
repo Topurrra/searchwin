@@ -6,7 +6,7 @@
     // for the path the browser handed it or a sibling the engine listed.
     import { invoke, convertFileSrc } from '@tauri-apps/api/core';
     import * as positions from '$lib/player/positions';
-    import { folderOf, inFolder, after, navigateHash } from '$lib/player/positions';
+    import { folderOf, inFolder, after } from '$lib/player/positions';
     import {
         Play,
         Pause,
@@ -128,9 +128,10 @@
     // the hash, and drops a `?path=` living inside it on the way back out.
     // `replaceState`, not `pushState`: next/previous/auto-advance and a
     // playlist click change the file playing, not a place worth walking
-    // back to one track at a time.
+    // back to one track at a time. The URL still changes, so the browser's
+    // same-document navigation sees a new address to follow.
     function go(newPath: string) {
-        navigateHash(history, newPath);
+        history.replaceState(history.state, '', `#/play?path=${encodeURIComponent(newPath)}`);
         path = newPath;
     }
     function next() {

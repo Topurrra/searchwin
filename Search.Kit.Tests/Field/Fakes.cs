@@ -24,13 +24,6 @@ internal sealed class FakeEngine : IEngineCalls
     public static JsonNode? Json(string text) => JsonNode.Parse(text);
 }
 
-/// A local source that answers from a function.
-internal sealed class ListSource(Group group, Func<FieldQuery, IReadOnlyList<FieldRow>> rows) : ILocalSource
-{
-    public Group Group => group;
-    public IReadOnlyList<FieldRow> Suggest(FieldQuery query, int limit) => [.. rows(query).Take(limit)];
-}
-
 /// An engine source that answers from a function, after `delay`.
 internal sealed class FakeSource(
     Group group,

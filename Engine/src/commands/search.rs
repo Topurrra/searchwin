@@ -1304,7 +1304,7 @@ fn reconcile_filename_index(
     for root in walked_roots(options) {
         for entry in index_walk(root, options).build().flatten() {
             let path = entry.path();
-            if !should_include_path(path, options) {
+            if !walk_entry_included(&entry, options) {
                 continue;
             }
             let file_type = entry.file_type();
@@ -6388,7 +6388,7 @@ fn content_index_unchanged(
             if !is_file {
                 continue;
             }
-            if !should_include_path(path, options) {
+            if !should_include_entry(path, true, options) {
                 continue;
             }
             if !should_index_for_content(path, options) {
@@ -6778,7 +6778,7 @@ fn build_index_in_worker(
                 if !is_file && !is_dir {
                     return ignore::WalkState::Continue;
                 }
-                if !should_include_path(path, &options) {
+                if !walk_entry_included(&entry, &options) {
                     skipped_files_atomic.fetch_add(1, Ordering::Relaxed);
                     return ignore::WalkState::Continue;
                 }
@@ -7262,7 +7262,7 @@ fn build_filename_index_in_worker(
                 if !is_file && !is_dir {
                     return ignore::WalkState::Continue;
                 }
-                if !should_include_path(path, &options) {
+                if !walk_entry_included(&entry, &options) {
                     skipped_files_atomic.fetch_add(1, Ordering::Relaxed);
                     return ignore::WalkState::Continue;
                 }
@@ -7709,7 +7709,7 @@ fn reconcile_watched_index(
     for root in walked_roots(options) {
         for entry in index_walk(root, options).build().flatten() {
             let path = entry.path();
-            if !should_include_path(path, options) {
+            if !walk_entry_included(&entry, options) {
                 continue;
             }
             let path_lower = path.to_string_lossy().to_lowercase();
@@ -9015,7 +9015,7 @@ fn index_walk(root: &str, options: &FileSearchIndexOptions) -> WalkBuilder {
         // The walker's metadata: on Windows it comes with the listing, no stat.
         let hidden = entry.metadata().is_ok_and(|meta| is_os_hidden(&meta));
         let is_dir = entry.file_type().is_some_and(|kind| kind.is_dir());
-        entry.depth() == 0 || (!hidden && (!is_dir || should_include_path(entry.path(), &options)))
+        entry.depth() == 0 || (!hidden && (!is_dir || should_include_entry(entry.path(), false, &options)))
     });
     builder
 }
@@ -9036,6 +9036,12 @@ fn is_os_hidden(meta: &fs::Metadata) -> bool {
 }
 
 fn should_include_path(path: &Path, options: &FileSearchIndexOptions) -> bool {
+    should_include_entry(path, path.is_file(), options)
+}
+
+/// `should_include_path` for an entry whose kind is known (a walk's), so
+/// without a stat to learn it.
+fn should_include_entry(path: &Path, is_file: bool, options: &FileSearchIndexOptions) -> bool {
     // Wave 6 (2026-05-28): hard-block on the four Windows system trees
     // (Windows / Program Files / Program Files (x86) / ProgramData). These
     // contain zero user-authored content and were previously eating
@@ -9050,10 +9056,18 @@ fn should_include_path(path: &Path, options: &FileSearchIndexOptions) -> bool {
     if has_excluded_folder(path, &options.exclude_folders) {
         return false;
     }
-    if path.is_file() && has_excluded_extension(path, &options.exclude_extensions) {
+    if is_file && has_excluded_extension(path, &options.exclude_extensions) {
         return false;
     }
     true
+}
+
+/// A walk entry `index_walk` let through is to be indexed: a folder below
+/// the chosen one it has already checked, a file (or the chosen folder)
+/// against the rules.
+fn walk_entry_included(entry: &ignore::DirEntry, options: &FileSearchIndexOptions) -> bool {
+    let is_dir = entry.file_type().is_some_and(|kind| kind.is_dir());
+    (is_dir && entry.depth() > 0) || should_include_entry(entry.path(), !is_dir, options)
 }
 
 fn is_hidden(path: &Path) -> bool {

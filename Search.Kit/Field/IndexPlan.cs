@@ -35,6 +35,20 @@ public static class IndexPlan
         "appdata/local/bravesoftware/brave-browser/user data", "appdata/local/vivaldi/user data",
         "appdata/roaming/opera software", "appdata/roaming/mozilla/firefox/profiles",
         "appdata/local/search", "appdata/local/search (*",
+        // Sign-ins other apps keep in files: chat apps' tokens (leveldb),
+        // the GitHub CLI's, FTP and cloud clients', password managers' and
+        // wallets'.
+        "appdata/roaming/discord", "appdata/roaming/discordcanary", "appdata/roaming/discordptb",
+        "appdata/roaming/slack", "appdata/local/slack", "appdata/roaming/microsoft/teams",
+        "appdata/local/packages/msteams_8wekyb3d8bbwe", "appdata/local/microsoft/teams",
+        "appdata/roaming/telegram desktop", "appdata/roaming/signal", "appdata/local/whatsapp",
+        "appdata/roaming/github cli", ".config/gh", ".config/hub", "appdata/roaming/filezilla",
+        "appdata/roaming/winscp", "appdata/roaming/rclone", ".config/rclone", "appdata/roaming/bitwarden",
+        "appdata/local/1password", "appdata/roaming/keepassxc", "appdata/roaming/bitcoin",
+        "appdata/roaming/electrum", "appdata/roaming/exodus", "appdata/roaming/ethereum",
+        "appdata/local/chromium/user data", "appdata/local/arc/user data",
+        "appdata/local/mozilla/firefox/profiles", "appdata/roaming/thunderbird/profiles",
+        ".git-credentials", ".netrc", "_netrc", ".npmrc", ".pypirc", ".vault-token", ".terraform.d",
     ];
 
     /// `save_file_search_index_options {options}` for these folders. The
@@ -52,7 +66,17 @@ public static class IndexPlan
         // not above it.
         var hidden = roots.Any(r => r.Split('/').Any(p => p.StartsWith('.')));
         if (hidden)
-            foreach (var root in roots) excludes.AddRange([root + "/.*", root + "/*/."]);
+            foreach (var root in roots)
+            {
+                excludes.AddRange([root + "/.*", root + "/*/."]);
+                // Hidden folders on then mean Windows' hidden ones too:
+                // AppData, below a profile (or deeper, below a folder of
+                // profiles), is skipped — unless the folder was chosen
+                // inside it, or another chosen folder lies inside it.
+                if (InAppData(root)) continue;
+                foreach (var appdata in (string[])[root + "/appdata", root + "/*/appdata/*"])
+                    if (!roots.Any(r => Matches(r, appdata))) excludes.Add(appdata);
+            }
         return new JsonObject
         {
             ["roots"] = Folders(),
@@ -96,6 +120,8 @@ public static class IndexPlan
         if (own != null && Normal(own) is { Length: > 0 } mine) list.Add(mine);
         return [.. list.Distinct(StringComparer.Ordinal)];
     }
+
+    private static bool InAppData(string root) => root.Split('/').Contains("appdata", StringComparer.Ordinal);
 
     private static List<string> Roots(IReadOnlyList<string> folders) =>
         [.. folders.Select(Normal).Where(p => p.Length > 0).Distinct(StringComparer.Ordinal)];

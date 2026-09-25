@@ -105,7 +105,47 @@ public class IndexPlanRootTests
         @"C:\Users\me\AppData\Local\Search\passwords.json",
         @"C:\Users\me\AppData\Local\Search (test)\settings.json",
         @"C:\Data\Mine\WebView\Cookies",
+        @"C:\Users\me\AppData\Roaming\discord\Local Storage\leveldb\000003.log",
+        @"C:\Users\me\AppData\Roaming\Slack\Local Storage\leveldb\000003.log",
+        @"C:\Users\me\AppData\Roaming\Microsoft\Teams\Local Storage\leveldb\x.ldb",
+        @"C:\Users\me\AppData\Local\Packages\MSTeams_8wekyb3d8bbwe\LocalCache\x.json",
+        @"C:\Users\me\AppData\Roaming\GitHub CLI\hosts.yml",
+        @"C:\Users\me\.config\gh\hosts.yml",
+        @"C:\Users\me\AppData\Roaming\FileZilla\sitemanager.xml",
+        @"C:\Users\me\AppData\Roaming\Telegram Desktop\tdata\key_datas",
+        @"C:\Users\me\.git-credentials",
     ];
+
+    [Fact]
+    public void Hidden_folders_on_skip_AppData_below_a_profile()
+    {
+        // A dot-folder chosen turns hidden folders on for every folder: the
+        // profile's AppData (Windows-hidden, not dotted) must not come with it.
+        var options = IndexPlan.Options([@"C:\Users\me", @"C:\Users\me\.config"], contents: true);
+        Assert.True(options["includeHidden"]!.GetValue<bool>());
+        Assert.Contains("c:/users/me/appdata", options["excludeFolders"]!.AsArray().Select(n => n!.GetValue<string>()));
+        Assert.True(Skipped(options, @"C:\Users\me\AppData\Roaming\Code\User\settings.json"));
+        Assert.True(Skipped(options, @"C:\Users\me\AppData\Local\Packages\x\y.dat"));
+        Assert.False(Skipped(options, @"C:\Users\me\Documents\cv.pdf"));
+
+        // A folder of profiles: every profile's AppData.
+        var users = IndexPlan.Options([@"C:\Users", @"D:\.notes"], contents: true);
+        Assert.True(Skipped(users, @"C:\Users\me\AppData\Roaming\x.txt"));
+        Assert.False(Skipped(users, @"C:\Users\me\Documents\cv.pdf"));
+    }
+
+    [Fact]
+    public void A_folder_chosen_inside_AppData_is_still_indexed()
+    {
+        var options = IndexPlan.Options([@"C:\Users\me", @"C:\Users\me\AppData\Roaming\Notes", @"D:\.notes"], contents: true);
+        Assert.True(options["includeHidden"]!.GetValue<bool>());
+        Assert.False(Skipped(options, @"C:\Users\me\AppData\Roaming\Notes\plan.md"));
+        Assert.True(Skipped(options, @"C:\Users\me\AppData\Local\Packages\x\y.dat"));
+        Assert.False(Skipped(options, @"C:\Users\me\Documents\cv.pdf"));
+        // Chosen inside AppData itself: no AppData exclusion of its own.
+        var inside = IndexPlan.Options([@"C:\Users\me\AppData\Roaming\.tool"], contents: true);
+        Assert.False(Skipped(inside, @"C:\Users\me\AppData\Roaming\.tool\notes.md"));
+    }
 
     [Theory]
     [MemberData(nameof(SecretPaths))]

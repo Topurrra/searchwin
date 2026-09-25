@@ -15,12 +15,13 @@ namespace Search;
 /// as for the tab you are on.
 public sealed partial class SettingsPanel : Grid
 {
-    private enum Page { General, Tabs, Extensions, Passwords, Downloads, Privacy, About }
+    private enum Page { General, Tabs, Search, Extensions, Passwords, Downloads, Privacy, About }
 
     private static readonly (Page page, string raw, string title, string icon)[] Pages =
     [
         (Page.General, "general", "General", Icons.Window),
         (Page.Tabs, "tabs", "Tabs", Icons.Tabs),
+        (Page.Search, "search", "Search", Icons.Search),
         (Page.Extensions, "extensions", "Extensions", Icons.Puzzle),
         (Page.Passwords, "passwords", "Passwords", Icons.Key),
         (Page.Downloads, "downloads", "Downloads", Icons.Download),
@@ -191,6 +192,7 @@ public sealed partial class SettingsPanel : Grid
         {
             case Page.General: body.Children.Add(General()); break;
             case Page.Tabs: body.Children.Add(Tabs()); break;
+            case Page.Search: Finding(body); break;
             case Page.Extensions: body.Children.Add(new ExtensionsPage(browser)); break;
             case Page.Passwords: Passwords(body); break;
             case Page.Downloads: body.Children.Add(Downloads()); break;
@@ -305,6 +307,102 @@ public sealed partial class SettingsPanel : Grid
         card.Add(new Line("Spaces", "Separate sets of tabs, signed in where the others are or starting afresh, switched with Alt+1–Alt+9 or the space's icon.",
             new Switch(prefs.UsesSpaces, on => prefs.UsesSpaces = on)));
         return card;
+    }
+
+    // MARK: - search
+
+    /// What the field reaches beyond the web: the files in folders chosen
+    /// here — none until one is — and the apps on this PC.
+    private void Finding(StackPanel body)
+    {
+        var folders = prefs.SearchFolders;
+        var card = Parts.Card();
+        if (folders.Count == 0)
+            card.Add(new Line("Folders to search", "None yet: nothing on this PC is searched until you add a folder. Then the field finds its files by name and by what's inside them.",
+                new Pill("Add folder…", AddSearchFolder, filled: true)));
+        else
+        {
+            foreach (var folder in folders)
+            {
+                var name = Path.GetFileName(folder.TrimEnd('\\', '/'));
+                card.Add(new Line(name.Length > 0 ? name : folder, folder, new Pill("Remove", () =>
+                {
+                    prefs.SearchFolders = [.. prefs.SearchFolders.Where(f => !string.Equals(f, folder, StringComparison.OrdinalIgnoreCase))];
+                    Show();
+                })));
+            }
+            card.Add(new Line("Another folder", null, new Pill("Add folder…", AddSearchFolder)));
+        }
+        body.Children.Add(card);
+
+        body.Children.Add(Parts.Card(
+            new Line("Search inside files", "Words in documents, PDFs and notes, not only their names",
+                new Switch(prefs.FileContents, on => prefs.FileContents = on)),
+            new Line("Apps in the field", "Installed apps among the suggestions; Enter starts one",
+                new Switch(prefs.AppsInField, on => prefs.AppsInField = on))));
+
+        if (folders.Count == 0) return;
+        var said = new Line("Index", "Asking…", new Pill("Rebuild", () =>
+        {
+            FileIndex.Rebuild(prefs);
+            browser.Announce("Rebuilding the index");
+            UI.After(0.6, () => { if (page == Page.Search) Show(); });
+        }));
+        body.Children.Add(Parts.Card(said));
+        _ = SayIndex(said);
+    }
+
+    /// The index's line: how many files, and when — asked again every couple
+    /// of seconds while it's being built and this page is up.
+    private async Task SayIndex(Line line)
+    {
+        var status = await FileIndex.Status(prefs);
+        if (page != Page.Search) return;
+        var detail = line.Children.OfType<StackPanel>().FirstOrDefault()?.Children.OfType<TextBlock>().Skip(1).FirstOrDefault();
+        if (detail == null) return;
+        detail.Text = status switch
+        {
+            null => "The engine isn't answering — try Rebuild",
+            { Indexing: true } => status.Count > 0 ? $"Indexing… {status.Count:N0} files so far" : "Indexing…",
+            { Error: { } error } when status.Count == 0 => error,
+            { Count: 0 } => "Not built yet",
+            _ => $"{status.Count:N0} files" + (status.LastIndexedMs is { } ms
+                ? $" · built {When.Said(DateTimeOffset.FromUnixTimeMilliseconds(ms).UtcDateTime)}" : ""),
+        };
+        if (status is { Indexing: true }) UI.After(2, () => { if (page == Page.Search && line.IsLoaded) _ = SayIndex(line); });
+    }
+
+    private async void AddSearchFolder()
+    {
+        try
+        {
+            var picker = new Windows.Storage.Pickers.FolderPicker
+            {
+                SuggestedStartLocation = Windows.Storage.Pickers.PickerLocationId.DocumentsLibrary,
+                CommitButtonText = "Search this folder",
+            };
+            picker.FileTypeFilter.Add("*");
+            if (App.Window is { } window)
+                WinRT.Interop.InitializeWithWindow.Initialize(picker, WinRT.Interop.WindowNative.GetWindowHandle(window));
+            var folder = await picker.PickSingleFolderAsync();
+            if (folder == null) return;
+            AddSearchFolder(folder.Path);
+        }
+        catch { }
+    }
+
+    /// A folder, unless it's one already searched or inside one.
+    private void AddSearchFolder(string path)
+    {
+        if (SearchKit.Field.IndexPlan.Covers(prefs.SearchFolders, path))
+        {
+            browser.Announce("Already searched");
+            return;
+        }
+        // One that holds folders already chosen takes their place.
+        prefs.SearchFolders = [.. prefs.SearchFolders.Where(f => !SearchKit.Field.IndexPlan.Covers([path], f)), path];
+        browser.Announce("Indexing " + Path.GetFileName(path.TrimEnd('\\', '/')));
+        if (page == Page.Search) Show();
     }
 
     // MARK: - passwords

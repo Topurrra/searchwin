@@ -175,7 +175,7 @@ public sealed class Bench
     private static readonly string[] Commands =
     [
         "tabs", "open", "go", "close", "wait", "sleep", "select", "text", "eval", "click", "type", "submit", "tap",
-        "shot", "probe", "key", "press", "resize", "hit", "space", "strip", "column", "ui", "fish",
+        "shot", "probe", "key", "press", "resize", "hit", "space", "strip", "column", "ui", "fish", "field",
     ];
 
     /// What a script may open: anything the field would take, and an
@@ -224,6 +224,17 @@ public sealed class Bench
                         UI.Do(() => answer(Error(e.Message)));
                     }
                 });
+                break;
+            }
+
+            case "field":
+            {
+                // Typed into the field as a person would, one keystroke at a
+                // time with `keys`; what it offers once the engine has
+                // answered; then Enter, or a row picked and pressed. Only on
+                // a SEARCH_PROBE run: it opens files and starts apps.
+                if (!Store.Testing) { answer(Error("field only works on a --test run — it would open things in your browser")); return; }
+                _ = Field(b, request, answer);
                 break;
             }
 
@@ -497,6 +508,66 @@ public sealed class Bench
                 });
                 break;
         }
+    }
+
+    // MARK: - the field
+
+    /// Each keystroke's time on the UI thread (the field's own work and its
+    /// list redrawn), the rows once every engine source has answered, and
+    /// what Enter did.
+    private static async Task Field(Browser b, JsonObject request, Action<JsonObject> answer)
+    {
+        var text = Str(request, "text") ?? "";
+        b.Editing = true;
+        b.Typed = "";
+        var times = new JsonArray();
+        var clock = new System.Diagnostics.Stopwatch();
+        IEnumerable<string> steps = Bool(request, "keys") == true ? Enumerable.Range(1, text.Length).Select(n => text[..n]) : [text];
+        foreach (var step in steps)
+        {
+            clock.Restart();
+            b.Typed = step;
+            times.Add((JsonNode)Math.Round(clock.Elapsed.TotalMilliseconds, 3));
+        }
+        clock.Restart();
+        await Task.WhenAny(b.Reach.WhenSettled, Task.Delay(TimeSpan.FromSeconds(Num(request, "seconds") ?? 5)));
+        var settled = clock.Elapsed.TotalMilliseconds;
+        // The last rows are posted to this thread as they land.
+        await Task.Delay(50);
+        var reply = new JsonObject
+        {
+            ["keystrokes"] = times,
+            ["settledMs"] = Math.Round(settled, 1),
+            ["rows"] = new JsonArray([.. b.Offers.Select((o, i) => (JsonNode)new JsonObject
+            {
+                ["i"] = i,
+                ["kind"] = o.Kind.ToString(),
+                ["title"] = o.Key,
+                ["detail"] = o.Title,
+                ["group"] = o.Row?.Origin.ToString(),
+                ["action"] = o.Row?.Action.ToString(),
+                ["top"] = o.Row?.Group == SearchKit.Field.Group.TopHit,
+            })]),
+            ["picked"] = b.Picked,
+            ["ending"] = b.Ending,
+        };
+        var pick = Int(request, "pick");
+        if (pick != null || Bool(request, "enter") == true)
+        {
+            if (pick is { } n) b.Picked = n;
+            var tabs = b.Tabs.Count;
+            b.Submit();
+            await Task.Delay(TimeSpan.FromSeconds(Num(request, "after") ?? 0.8));
+            reply["after"] = new JsonObject
+            {
+                ["said"] = b.Announcement,
+                ["newTabs"] = b.Tabs.Count - tabs,
+                ["active"] = b.Active?.Address?.AbsoluteUri,
+                ["typed"] = b.Typed,
+                ["refusals"] = b.Refusals,
+            };
+        }
+        answer(reply);
     }
 
     // MARK: - tabs

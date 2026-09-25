@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using SearchKit.Commands;
+using SearchKit.Field;
 using Windows.ApplicationModel.DataTransfer;
 
 namespace Search;
@@ -103,7 +104,16 @@ public sealed partial class Browser : Model
 
     private int? picked;
     /// Which row the arrow keys have walked to, if any.
-    public int? Picked { get => picked; set { if (Set(ref picked, value)) Tell(nameof(Completed)); } }
+    public int? Picked
+    {
+        get => picked;
+        set
+        {
+            if (!Set(ref picked, value)) return;
+            HoldPick();
+            Tell(nameof(Completed));
+        }
+    }
 
     private int refusals;
     /// Bumped when what was typed isn't an address and can't be searched for.
@@ -127,7 +137,9 @@ public sealed partial class Browser : Model
     {
         get
         {
-            if (Picked is { } p && p >= 0 && p < Offers.Count) return Offers[p].Key;
+            // A file or an app walked to leaves the text as it was typed:
+            // it's somewhere to go, not something to type.
+            if (Picked is { } p && p >= 0 && p < Offers.Count) return Offers[p].Row != null ? Typed : Offers[p].Key;
             return Typed + (Ending ?? "");
         }
     }
@@ -850,9 +862,16 @@ public sealed partial class Browser : Model
 
     private void Guess()
     {
+        // The engine's side first (files, apps, answers — see Browser.Field):
+        // asked off this thread, landing below the rows decided here.
+        Ask(Summoning ? "" : Typed);
+        // A row that was picked stops being the right row the moment the
+        // question changes.
+        picked = null;
+
         if (Summoning)
         {
-            Offers = OpenPages(Typed);
+            Show(OpenPages(Typed));
             Ending = null;
             // The most recent page is already chosen, so Ctrl+K then Enter is
             // the whole gesture.
@@ -863,7 +882,7 @@ public sealed partial class Browser : Model
 
         if (Typed.Trim().Length == 0)
         {
-            Offers = [];
+            Show([]);
             Ending = null;
             Picked = null;
             Tell(nameof(Completed));
@@ -875,22 +894,33 @@ public sealed partial class Browser : Model
         switch (FieldInput.Read(Typed, Commands.Bangs))
         {
             case FieldInput.ToCommand command:
-                Offers = [.. Commands.Registry.Find(command.Query, 6).Select(match => new Suggestion(
+                Show([.. Commands.Registry.Find(command.Query, 6).Select(match => new Suggestion(
                     match.Argument.Length > 0 ? $"{match.Command.Title} “{match.Argument}”" : match.Command.Title,
                     match.Command.Keys ?? match.Command.Group ?? "",
                     Commands.Address(match.Command, match.Argument),
-                    SuggestionKind.Command))];
+                    SuggestionKind.Command))]);
                 Ending = null;
                 Picked = Offers.Count == 0 ? null : 0;
                 Tell(nameof(Completed));
                 return;
             case FieldInput.ToBang bang:
                 var there = bang.Query.Length == 0 ? bang.Bang.Home() : bang.Bang.For(bang.Query);
-                Offers = there == null ? [] : [new Suggestion(bang.Query.Length == 0 ? bang.Bang.Name : bang.Query, bang.Bang.Name, there, SuggestionKind.Search)];
+                Show(there == null ? [] : [new Suggestion(bang.Query.Length == 0 ? bang.Bang.Name : bang.Query, bang.Bang.Name, there, SuggestionKind.Search)]);
                 Ending = null;
                 Picked = Offers.Count == 0 ? null : 0;
                 Tell(nameof(Completed));
                 return;
+        }
+
+        // `tabs:` and `history:` are those lists, the first chosen; `files:`,
+        // `apps:` and `clip:` are only what the engine finds.
+        if (Scoped() is { } scoped)
+        {
+            Show(scoped);
+            Ending = null;
+            Picked = Offers.Count > 0 && Offers[0].Row == null ? 0 : null;
+            Tell(nameof(Completed));
+            return;
         }
 
         // Three places and, if it can't be a place, a search. No open pages:
@@ -899,10 +929,8 @@ public sealed partial class Browser : Model
         // Last in the list, and only when what was typed cannot be a place.
         if (Address.Url(Typed) == null && Google.Url(Typed) is { } asked)
             list.Add(new Suggestion(Typed, Google.Name, asked, SuggestionKind.Search));
-        Offers = list;
-        Ending = History.Completion(Typed, Offers.Where(o => o.Kind != SuggestionKind.Open));
-        // A row that was picked stops being the right row the moment the
-        // question changes.
+        Show(list);
+        Ending = History.Completion(Typed, list.Where(o => o.Kind != SuggestionKind.Open));
         Picked = null;
         Tell(nameof(Completed));
     }
@@ -929,6 +957,11 @@ public sealed partial class Browser : Model
     public void Take(Suggestion offer)
     {
         Summoning = false;
+        if (offer.Row is { } row)
+        {
+            Act(row);
+            return;
+        }
         if (Commands.From(offer.Url) is { } chosen)
         {
             Editing = false;
@@ -960,12 +993,8 @@ public sealed partial class Browser : Model
     public void Walk(int step)
     {
         if (Offers.Count == 0) return;
-        if (Picked is not { } here) Picked = step > 0 ? 0 : Offers.Count - 1;
-        else
-        {
-            var next = here + step;
-            Picked = next < 0 || next >= Offers.Count ? null : next;
-        }
+        // Over a slot still waiting for its answer.
+        Picked = FieldMix.Step(slots, board, Picked, step);
     }
 
     /// Ctrl+L. The current address comes up selected, so typing over it
@@ -993,6 +1022,13 @@ public sealed partial class Browser : Model
     /// those is a place, nothing happens and the field says so.
     public void Submit()
     {
+        // A file, an app, an answer: what the engine found does what it is.
+        if (Picked is { } f && f < Offers.Count && Offers[f].Row is { } found)
+        {
+            Act(found);
+            return;
+        }
+
         // A page already open is switched to, not opened again.
         if (Picked is { } p && p < Offers.Count && Offers[p].Tab is { } id && Tabs.FirstOrDefault(t => t.Id == id) is { } open)
         {
@@ -1031,6 +1067,20 @@ public sealed partial class Browser : Model
             return;
         }
 
+        // `23*47` copies its answer; `files: invoice` opens the first file.
+        if (Picked == null && Answering)
+        {
+            EnterFound();
+            return;
+        }
+
+        SubmitTyped();
+    }
+
+    /// Enter on what was typed: what the field was finishing, or the text
+    /// itself, as a place or a search.
+    private void SubmitTyped()
+    {
         Uri? target;
         if (Picked is { } q && q < Offers.Count) target = Offers[q].Url;
         else if (Ending != null) target = Address.Url(Completed);

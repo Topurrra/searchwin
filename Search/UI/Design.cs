@@ -250,6 +250,13 @@ public static class Icons
     public const string Clear = "";
     public const string Star = "";
     public const string Menu = "";
+    // What the field's engine rows are (Omnibox).
+    public const string Document = "";
+    public const string Picture = "";
+    public const string Music = "";
+    public const string App = "";
+    public const string Calculator = "";
+    public const string Clipboard = "";
 
     public static readonly FontFamily Font = new("Segoe Fluent Icons, Segoe MDL2 Assets");
 

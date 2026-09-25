@@ -3,6 +3,7 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Animation;
+using SearchKit.Field;
 using Windows.System;
 
 namespace Search;
@@ -313,15 +314,38 @@ public sealed partial class Omnibox : Grid
         for (var i = 0; i < offers.Count; i++)
         {
             var offer = offers[i];
-            rows.Children.Add(new OfferRow(offer, browser.Picked == i, () => browser.Take(offer)));
+            var index = i;
+            // What the engine found comes in groups, each named once.
+            if (offer.Row is { Group: not Group.TopHit } found && (i == 0 || offers[i - 1].Row?.Group != found.Group))
+                rows.Children.Add(Heading(found.Group));
+            // An answer at the top is what Enter takes, picked or not.
+            var picked = browser.Picked == i
+                || (browser.Picked == null && i == 0 && offer.Row is { Group: Group.TopHit, IsPending: false });
+            rows.Children.Add(new OfferRow(offer, picked, () => browser.Take(offer),
+                on => browser.Hover(on ? index : null), offer.Row is { } row ? browser.IconOf(row) : null));
         }
+    }
+
+    private static TextBlock Heading(Group group)
+    {
+        var name = group switch
+        {
+            Group.Answer => "Answers",
+            Group.Files => "Files",
+            Group.Apps => "Apps",
+            Group.Clipboard => "Clipboard",
+            _ => "",
+        };
+        var heading = Kit.Text(name, 11, Palette.Muted, medium: true);
+        heading.Margin = new Thickness(12, 8, 12, 3);
+        return heading;
     }
 
     /// One line of the list. Places you have been come with their titles; the
     /// arrow keys' row is washed, the pointer's only hovered.
     private sealed partial class OfferRow : Press
     {
-        public OfferRow(Suggestion offer, bool picked, Action take)
+        public OfferRow(Suggestion offer, bool picked, Action take, Action<bool> hover, string? image)
         {
             var ground = Kit.Rounded(9, picked ? Palette.Wash : null);
             Children.Add(ground);
@@ -340,6 +364,15 @@ public sealed partial class Omnibox : Grid
                     // opening a second copy.
                     line.Children.Add(new Microsoft.UI.Xaml.Shapes.Ellipse { Width = 5, Height = 5, Fill = Palette.Brush(Tone.Ink, 0.55), Margin = new Thickness(2, 0, 2, 0), VerticalAlignment = VerticalAlignment.Center });
                     break;
+                case SuggestionKind.Found when offer.Row is { IsPending: true }:
+                    // A place kept for an answer on its way: the same height,
+                    // nothing in it, nothing to press.
+                    line.Children.Add(Kit.Text(" ", 13));
+                    Children.Add(line);
+                    return;
+                case SuggestionKind.Found when offer.Row is { } row:
+                    line.Children.Add(Mark(row, image));
+                    break;
             }
             var key = Kit.Text(offer.Key, 13);
             key.MaxWidth = 300;
@@ -347,12 +380,42 @@ public sealed partial class Omnibox : Grid
             if (offer.Title.Length > 0)
             {
                 var title = Kit.Text(offer.Title, 12, Palette.Muted);
-                title.MaxWidth = 220;
+                title.MaxWidth = offer.Kind == SuggestionKind.Found ? 300 : 220;
                 line.Children.Add(title);
             }
             Children.Add(line);
-            Hovered += on => { if (!picked) ground.Background = on ? Palette.Hover : null; };
+            Hovered += on =>
+            {
+                if (!picked) ground.Background = on ? Palette.Hover : null;
+                hover(on);
+            };
             Clicked += _ => take();
+        }
+
+        /// What the row is, at a glance: the app's own icon, or the kind of file.
+        private static FrameworkElement Mark(SearchKit.Field.FieldRow row, string? image)
+        {
+            if (image != null)
+                return new Microsoft.UI.Xaml.Controls.Image
+                {
+                    Source = new Microsoft.UI.Xaml.Media.Imaging.BitmapImage(new Uri(image)) { DecodePixelWidth = 32 },
+                    Width = 14,
+                    Height = 14,
+                    VerticalAlignment = VerticalAlignment.Center,
+                };
+            var glyph = row.Action switch
+            {
+                RowAction.Copy => Icons.Calculator,
+                RowAction.Launch => Icons.App,
+                RowAction.Play => Path.GetExtension(row.Target).ToLowerInvariant() is ".mp3" or ".m4a" or ".aac" or ".wav" or ".ogg" or ".oga" or ".opus" or ".flac"
+                    ? Icons.Music : Icons.Video,
+                RowAction.CopyClip => Icons.Clipboard,
+                RowAction.OpenWithApp when !Path.HasExtension(row.Target) => Icons.Folder,
+                RowAction.OpenInTab when Path.GetExtension(row.Target).ToLowerInvariant() is ".png" or ".jpg" or ".jpeg" or ".gif" or ".webp" or ".svg" or ".bmp" or ".avif" or ".ico"
+                    => Icons.Picture,
+                _ => Icons.Document,
+            };
+            return Icons.Make(glyph, 11);
         }
     }
 }

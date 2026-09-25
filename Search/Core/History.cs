@@ -16,11 +16,18 @@ public enum SuggestionKind
     Search,
     /// Something Search does (`>…`), from the command registry.
     Command,
+    /// Found by the engine: a file, an app, an answer (see Browser.Field).
+    Found,
 }
 
 public sealed record Suggestion(string Key, string Title, Uri Url, SuggestionKind Kind, Guid? Tab = null)
 {
     public string Id => Key;
+
+    /// The engine's row, for `Found`; its `Url` is only a stand-in.
+    public SearchKit.Field.FieldRow? Row { get; init; }
+
+    public static readonly Uri Nowhere = new("search://field/");
 }
 
 public sealed class Visit

@@ -56,6 +56,9 @@ public sealed partial class Preferences : Model
         welcomed = store.Bool("welcomed") || store.Has("glyph");
         spelling = store.OptionalBool("spelling") ?? true;
         usesSpaces = store.Bool("spaces");
+        searchFolders = store.Strings("files.folders");
+        fileContents = store.OptionalBool("files.contents") ?? true;
+        appsInField = store.OptionalBool("field.apps") ?? true;
     }
 
     private bool bench;
@@ -156,6 +159,31 @@ public sealed partial class Preferences : Model
     /// Separate sets of tabs, each with its own sign-ins (see Spaces).
     /// Off unless asked for.
     public bool UsesSpaces { get => usesSpaces; set { if (Set(ref usesSpaces, value)) store.Set("spaces", value); } }
+
+    private IReadOnlyList<string> searchFolders;
+    /// The folders whose files the field finds (Settings › Search). None
+    /// until some are chosen: nothing on the PC is indexed before that. A
+    /// new list on every change, so the engine's threads can read it as is.
+    public IReadOnlyList<string> SearchFolders
+    {
+        get => searchFolders;
+        set
+        {
+            if (searchFolders.SequenceEqual(value, StringComparer.OrdinalIgnoreCase)) return;
+            searchFolders = [.. value];
+            store.Set("files.folders", searchFolders);
+            Tell();
+        }
+    }
+
+    private bool fileContents;
+    /// Those files found by what's inside them too, not only by name. On
+    /// unless turned off.
+    public bool FileContents { get => fileContents; set { if (Set(ref fileContents, value)) store.Set("files.contents", value); } }
+
+    private bool appsInField;
+    /// Installed apps among the field's suggestions. On unless turned off.
+    public bool AppsInField { get => appsInField; set { if (Set(ref appsInField, value)) store.Set("field.apps", value); } }
 }
 
 public static class KnownFolders

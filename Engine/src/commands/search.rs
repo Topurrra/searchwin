@@ -1744,6 +1744,109 @@ pub fn stop_file_search_index_watcher(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// Deletes what the file index keeps on disk: what's inside files
+/// (`kind: "content"`), or everything, names too (`kind: "all"`, the
+/// default). Search for Windows calls it when its last folder is taken away
+/// or "search inside files" is turned off, so an index of files it no longer
+/// covers doesn't stay behind. Builds and the watcher are stopped first: an
+/// index open in a worker can't be deleted. The saved options are left as
+/// they are; the caller saves new ones.
+#[tauri::command]
+pub fn clear_file_search_index(app: AppHandle, kind: Option<String>) -> Result<(), String> {
+    let names_too = !matches!(kind.as_deref(), Some("content"));
+    let state_dir = search_index_dir(&app)?;
+    stop_isolated_watch_worker_for_state(&state_dir);
+    let mut workers = vec![&SEARCH_INDEX_WORKER];
+    if names_too {
+        workers.push(&FILENAME_INDEX_WORKER);
+    }
+    for slot in workers {
+        if let Ok(mut guard) = slot.lock() {
+            if let Some(worker) = guard.take() {
+                let _ = fs::write(&worker.cancel_path, b"cancel");
+                if let Ok(mut child) = worker.child.lock() {
+                    kill_process_tree(child.id());
+                    let _ = child.kill();
+                    let _ = child.wait();
+                }
+            }
+        }
+    }
+    if let Ok(mut guard) = SEARCH_ENGINE.lock() {
+        *guard = None;
+    }
+    if names_too {
+        if let Ok(mut guard) = FILENAME_ENGINE.lock() {
+            *guard = None;
+        }
+    }
+
+    let mut dirs = vec![
+        active_search_index_dir_for_state(&state_dir),
+        previous_search_index_dir_for_state(&state_dir),
+    ];
+    let mut files = vec![
+        state_dir.join(INDEX_WORKER_STATUS_FILE),
+        state_dir.join(INDEX_WORKER_OPTIONS_FILE),
+        state_dir.join(INDEX_WORKER_CANCEL_FILE),
+    ];
+    let mut prefixes = vec![STAGING_SEARCH_INDEX_PREFIX, CORRUPT_SEARCH_INDEX_PREFIX];
+    if names_too {
+        dirs.push(active_filename_index_dir_for_state(&state_dir));
+        dirs.push(previous_filename_index_dir_for_state(&state_dir));
+        files.push(state_dir.join(FILENAME_WORKER_STATUS_FILE));
+        files.push(state_dir.join(FILENAME_WORKER_OPTIONS_FILE));
+        files.push(state_dir.join(FILENAME_WORKER_CANCEL_FILE));
+        prefixes.push(FILENAME_STAGING_INDEX_PREFIX);
+        prefixes.push(FILENAME_CORRUPT_INDEX_PREFIX);
+    }
+    for prefix in prefixes {
+        remove_staging_index_dirs(&state_dir, prefix);
+    }
+    for file in files {
+        let _ = fs::remove_file(file);
+    }
+    // A worker just killed lets go of its files a moment later.
+    let mut left = Vec::new();
+    for dir in dirs {
+        let mut removed = !dir.exists();
+        for _ in 0..20 {
+            if removed {
+                break;
+            }
+            removed = fs::remove_dir_all(&dir).is_ok() || !dir.exists();
+            if !removed {
+                thread::sleep(Duration::from_millis(100));
+            }
+        }
+        if !removed {
+            left.push(dir.display().to_string());
+        }
+    }
+
+    update_status(|status| {
+        status.indexing = false;
+        status.indexed_files = 0;
+        status.content_index_bytes = 0;
+        status.last_indexed_at_ms = None;
+        if names_too {
+            status.watching = false;
+            status.filename_indexing = false;
+            status.filename_watching = false;
+            status.filename_indexed_files = 0;
+            status.filename_index_bytes = 0;
+            status.filename_last_indexed_at_ms = None;
+        }
+        status.diagnostics.last_worker_message = Some("Index cleared".to_string());
+        status.diagnostics.last_status_at_ms = Some(unix_now_ms());
+    });
+    if left.is_empty() {
+        Ok(())
+    } else {
+        Err(format!("Couldn't delete {}", left.join(", ")))
+    }
+}
+
 #[tauri::command]
 pub fn get_file_search_status(app: AppHandle) -> Result<FileSearchStatus, String> {
     // Wave 6 (2026-05-28): `status.elevated` populated removed with MFT.

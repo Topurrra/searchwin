@@ -46,7 +46,8 @@ Drive the Search you already have open, from the shell.
                                            — --test runs only
     ./bench.ps1 ui KEY VALUE               settings/passwords/welcome/history/downloads/bookmarks/hidden on|off,
                                            look light|dark|system, sidebar on|off, spaces on|off, hides on|off,
-                                           folded on|off, peek on|off
+                                           folded on|off, peek on|off; test runs: folders PATH;PATH|none,
+                                           contents on|off (Settings › Search)
 
 Needs Settings › General › "Let a script drive Search" switched on in the
 running app. IDs are the first characters of a tab's id, as `tabs` prints
@@ -169,7 +170,7 @@ switch ($verb) {
     }
     'ui' {
         if ($rest.Count -ne 2) { Usage 'ui KEY VALUE' }
-        $request[$rest[0]] = if ($rest[0] -eq 'look') { $rest[1] } else { On $rest[1] }
+        $request[$rest[0]] = if ($rest[0] -in @('look', 'folders')) { $rest[1] } else { On $rest[1] }
     }
     'press' {
         if ($rest.Count -lt 1) { Usage 'press VIRTUALKEY [ctrl] [shift] [alt] [repeat]' }

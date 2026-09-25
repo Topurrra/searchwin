@@ -22,28 +22,36 @@ public static class FileIndex
     public static void Start(Preferences prefs)
     {
         prefs.On(nameof(Preferences.SearchFolders), () => Apply(prefs, rebuild: true));
-        prefs.On(nameof(Preferences.FileContents), () => Apply(prefs, rebuild: prefs.FileContents));
+        prefs.On(nameof(Preferences.FileContents), () => Apply(prefs, rebuild: prefs.FileContents, dropContents: !prefs.FileContents));
         if (prefs.SearchFolders.Count > 0) UI.After(4, () => Apply(prefs, rebuild: false));
     }
 
+    /// Where the engine keeps its index (its `file-search-index`).
+    private static string Kept => Path.Combine(Engine.DataDir, "file-search-index");
+
     /// Tells the engine the folders as they are now. `rebuild` builds the
     /// index again (a folder added or taken away); otherwise it's built only
-    /// if it never was.
-    public static async void Apply(Preferences prefs, bool rebuild)
+    /// if it never was. With no folders left the index is deleted, and with
+    /// `dropContents` (Search inside files turned off) what it knew of the
+    /// files' insides: nothing it no longer covers stays on disk.
+    public static async void Apply(Preferences prefs, bool rebuild, bool dropContents = false)
     {
         var folders = prefs.SearchFolders;
         var contents = prefs.FileContents;
-        // No folders and no engine running: there's nothing to tell it.
-        if (folders.Count == 0 && !Engine.Client.IsConnected) return;
+        // No folders, no engine running and nothing kept: there's nothing to
+        // tell it, and nothing to delete.
+        if (folders.Count == 0 && !Engine.Client.IsConnected && !Directory.Exists(Kept)) return;
         if (!Engine.Available) return;
         await telling.WaitAsync();
         try
         {
+            if (dropContents && !contents && folders.Count > 0) await Clear("content");
             var options = IndexPlan.Options(folders, contents, Store.Folder);
             await Engine.Client.CallAsync("save_file_search_index_options", new JsonObject { ["options"] = options.DeepClone() });
             if (folders.Count == 0)
             {
                 await Engine.Client.CallAsync("stop_file_search_index_watcher");
+                await Clear("all");
                 return;
             }
             await Engine.Client.CallAsync("start_search_services");
@@ -70,6 +78,22 @@ public static class FileIndex
         finally
         {
             telling.Release();
+        }
+    }
+
+    /// `clear_file_search_index`: "content", or "all" (names too).
+    private static async Task Clear(string kind)
+    {
+        try
+        {
+            await Engine.Client.CallAsync("clear_file_search_index", new JsonObject { ["kind"] = kind });
+            Log.Write($"files: index cleared ({kind})");
+        }
+        // One file still held a moment too long: the rest is gone, and the
+        // next clear takes what's left.
+        catch (EngineException error) when (!error.Message.Contains("went away", StringComparison.Ordinal))
+        {
+            Log.Write($"files: clear {kind}: {error.Message}");
         }
     }
 

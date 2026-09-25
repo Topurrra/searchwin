@@ -542,6 +542,12 @@ public sealed class Bench
                 if (Bool(request, "hides") is { } hides) b.Prefs.SideHides = hides;
                 if (Bool(request, "folded") is { } folded) b.Folded = folded;
                 if (Bool(request, "peek") is { } peek) b.Peeking = peek;
+                // Settings › Search, test runs only: `folders` is the list
+                // (`;` between folders, `none` for none), `contents` Search
+                // inside files.
+                if (Store.Testing && Str(request, "folders") is { } folders)
+                    b.Prefs.SearchFolders = folders == "none" ? [] : folders.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                if (Store.Testing && Bool(request, "contents") is { } contents) b.Prefs.FileContents = contents;
                 answer(new JsonObject { ["ok"] = true });
                 break;
 

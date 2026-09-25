@@ -139,8 +139,15 @@ public class IndexPlanRootTests
     ];
 
     [Fact]
-    public void Hidden_folders_on_skip_AppData_below_a_profile()
+    public void AppData_below_a_profile_is_skipped_by_rule_with_hidden_folders_off_or_on()
     {
+        // Off: the walk skips AppData as Windows hides it, but the watcher
+        // goes by the rules, so they must skip it too.
+        var plain = IndexPlan.Options([@"C:\Users\me"], contents: true);
+        Assert.False(plain["includeHidden"]!.GetValue<bool>());
+        Assert.True(Skipped(plain, @"C:\Users\me\AppData\Roaming\Code\x.json"));
+        Assert.False(Skipped(plain, @"C:\Users\me\Documents\cv.pdf"));
+
         // A dot-folder chosen turns hidden folders on for every folder: the
         // profile's AppData (Windows-hidden, not dotted) must not come with it.
         var options = IndexPlan.Options([@"C:\Users\me", @"C:\Users\me\.config"], contents: true);

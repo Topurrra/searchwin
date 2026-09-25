@@ -97,7 +97,8 @@ public class IndexPlanTests
         Assert.Contains("appdata/locallow", appData);
         Assert.DoesNotContain("users/*/appdata/local/temp", IndexPlan.Excludes([@"C:\Users\me\AppData\Local\Temp\x"]));
 
-        Assert.Equal(IndexPlan.DefaultExcludes.Concat(IndexPlan.Secrets), IndexPlan.Excludes([@"D:\Documents"]));
+        Assert.Equal(["d:/documents/appdata", "d:/documents/*/appdata", .. IndexPlan.DefaultExcludes, .. IndexPlan.Secrets],
+            IndexPlan.Excludes([@"D:\Documents"]));
     }
 
     [Fact]

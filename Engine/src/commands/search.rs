@@ -1177,7 +1177,7 @@ fn apply_filename_watch_event(
                 if !path.is_file() && !path.is_dir() {
                     continue;
                 }
-                if !should_include_path(path, options) {
+                if !watched_path_included(path, options) {
                     delete_filename_doc(writer, fields, &path.to_string_lossy());
                     deleted += 1;
                     continue;
@@ -7921,7 +7921,7 @@ fn apply_watch_event_to_writer(
                 if !path.is_file() && !path.is_dir() {
                     continue;
                 }
-                if !should_include_path(path, options) {
+                if !watched_path_included(path, options) {
                     let path_text = path.to_string_lossy().to_string();
                     writer.delete_term(Term::from_field_text(fields.path_exact, &path_text));
                     deleted += 1;
@@ -9068,6 +9068,30 @@ fn should_include_entry(path: &Path, is_file: bool, options: &FileSearchIndexOpt
 fn walk_entry_included(entry: &ignore::DirEntry, options: &FileSearchIndexOptions) -> bool {
     let is_dir = entry.file_type().is_some_and(|kind| kind.is_dir());
     (is_dir && entry.depth() > 0) || should_include_entry(entry.path(), !is_dir, options)
+}
+
+/// What a watcher may index: what the walk would take. Besides the rules,
+/// nothing Windows hides, nor anything in a folder it hides (AppData),
+/// between the chosen folder it's in and itself — the walk never goes there,
+/// so a change there must not bring it in until the next walk drops it.
+fn watched_path_included(path: &Path, options: &FileSearchIndexOptions) -> bool {
+    if !should_include_path(path, options) {
+        return false;
+    }
+    let root = options
+        .roots
+        .iter()
+        .chain(&options.filename_roots)
+        .map(Path::new)
+        .filter(|root| path.starts_with(root))
+        .max_by_key(|root| root.components().count());
+    let Some(root) = root else {
+        return true;
+    };
+    !path
+        .ancestors()
+        .take_while(|folder| *folder != root)
+        .any(|folder| fs::symlink_metadata(folder).is_ok_and(|meta| is_os_hidden(&meta)))
 }
 
 fn is_hidden(path: &Path) -> bool {
@@ -12937,6 +12961,65 @@ mod tests {
         drop(handle);
         assert!(scanned < 40, "went into node_modules: {scanned} entries scanned");
         assert_eq!(names, [".config", "chosen", "home", "zebra.txt", "zebrachosen.txt", "zebradot.txt"]);
+    }
+
+    /// The watchers take what the walk would: a change inside a folder Windows
+    /// hides (a profile's AppData) or to a hidden file doesn't come into
+    /// either index, with hidden folders off or on.
+    #[cfg(windows)]
+    #[test]
+    fn a_watcher_skips_what_windows_hides_below_the_chosen_folder() {
+        use notify::event::CreateKind;
+        let folder = TempFolder::new("watch");
+        let home = folder.0.join("home");
+        for file in ["notes.txt", "AppData/Roaming/Code/state.json", "hidden.txt"] {
+            let path = home.join(file);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(&path, b"zebra").unwrap();
+        }
+        for hidden in ["AppData", "hidden.txt"] {
+            assert!(std::process::Command::new("attrib").arg("+h").arg(home.join(hidden)).status().unwrap().success());
+        }
+        let events: Vec<Event> = ["notes.txt", "AppData/Roaming/Code/state.json", "hidden.txt"]
+            .iter()
+            .map(|file| Event::new(EventKind::Create(CreateKind::File)).add_path(home.join(file)))
+            .collect();
+
+        for include_hidden in [false, true] {
+            let options: FileSearchIndexOptions = serde_json::from_value(serde_json::json!({
+                "roots": [home], "includeHidden": include_hidden, "indexContent": true, "excludeFolders": [],
+            }))
+            .unwrap();
+            let names = |index: &Index, field: Field| -> Vec<String> {
+                let searcher = index.reader().unwrap().searcher();
+                let mut names: Vec<String> = searcher
+                    .search(&AllQuery, &TopDocs::with_limit(10).order_by_score())
+                    .unwrap()
+                    .into_iter()
+                    .map(|(_, address)| doc_text(&searcher.doc::<TantivyDocument>(address).unwrap(), field).unwrap())
+                    .collect();
+                names.sort();
+                names
+            };
+
+            let index = Index::create_in_ram(build_filename_index_schema());
+            let fields = extract_filename_index_fields(&index.schema()).unwrap();
+            let mut writer: IndexWriter = index.writer_with_num_threads(1, 15_000_000).unwrap();
+            for event in &events {
+                apply_filename_watch_event(event, &writer, &fields, &options);
+            }
+            writer.commit().unwrap();
+            assert_eq!(names(&index, fields.file_name), ["notes.txt"], "names, hidden folders {include_hidden}");
+
+            let index = Index::create_in_ram(build_search_schema());
+            let fields = extract_fields(&index.schema()).unwrap();
+            let mut writer: IndexWriter = index.writer_with_num_threads(1, 15_000_000).unwrap();
+            for event in &events {
+                apply_watch_event_to_writer(event, &mut writer, &fields, &options, 1024).unwrap();
+            }
+            writer.commit().unwrap();
+            assert_eq!(names(&index, fields.file_name), ["notes.txt"], "contents, hidden folders {include_hidden}");
+        }
     }
 
     /// The index's state database is shared with the index workers, which are

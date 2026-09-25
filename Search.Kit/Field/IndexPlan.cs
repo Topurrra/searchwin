@@ -89,8 +89,8 @@ public static class IndexPlan
     /// path, the chosen one's own parents too, so a folder picked under Temp
     /// or a `build` folder would come back empty. Such an exclusion is
     /// narrowed to below each chosen folder (not dropped: a `build` inside
-    /// another chosen folder is still skipped). With hidden folders on, each
-    /// chosen folder's dot-folders and AppData are skipped too.
+    /// another chosen folder is still skipped). Each chosen folder's AppData
+    /// is skipped too, and with hidden folders on its dot-folders.
     ///
     /// A folder chosen inside what another's rules skip (the profile and its
     /// `.config` or `AppData\Local\Notes`, a project and its `build\docs`) is
@@ -115,7 +115,10 @@ public static class IndexPlan
         foreach (var root in roots.OrderBy(r => r.Split('/').Length).ThenBy(r => r, StringComparer.Ordinal))
         {
             if (Skips(rules, root)) rules.Add("!" + root);
-            if (hidden) rules.AddRange([root + "/.*", root + "/*/.*", .. AppData(root)]);
+            if (hidden) rules.AddRange([root + "/.*", root + "/*/.*"]);
+            // AppData by rule even with hidden folders off, when the walk
+            // skips it for being hidden: the watcher goes by the rules.
+            rules.AddRange(AppData(root));
             // Right below the folder, and anywhere deeper: the excluded
             // folder itself and all it holds (a `*` pattern ending in a name
             // ends at a folder name, so `bin` isn't `binaries`).

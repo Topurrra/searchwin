@@ -211,7 +211,7 @@
             <div class="pa-hero-ico"><ScanLine /></div>
             <h2>Run your first privacy scan</h2>
             <p>
-                KeepItLocal checks which apps can use your
+                Search checks which apps can use your
                 <strong>microphone &amp; camera</strong>, which
                 <strong>browser extensions</strong> hold broad permissions, what
                 <strong>runs at startup</strong>, and whether

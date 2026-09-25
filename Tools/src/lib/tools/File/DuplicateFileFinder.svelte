@@ -2,7 +2,8 @@
     import { open } from '@tauri-apps/plugin-dialog';
     import { convertFileSrc } from '@tauri-apps/api/core';
     import { escToClear } from '$lib/actions/escToClear';
-    import { Ban, Copy, Eye, EyeOff, Files, FolderOpen, Search, ShieldCheck, Trash2, Plus } from '@lucide/svelte';
+    import { onMount } from 'svelte';
+    import { Ban, Copy, Eye, EyeOff, Files, FolderOpen, Search, ShieldCheck, Trash2, Plus, Undo2 } from '@lucide/svelte';
     import DropZone from '$lib/DropZone.svelte';
     import EmptyState from '$lib/components/EmptyState.svelte';
     import DuplicatePreview from './DuplicatePreview.svelte';
@@ -36,8 +37,11 @@
         duplicateSelectedPaths,
         duplicateExtensionFilter,
         duplicateProgress,
+        duplicateRecovery,
         formatBytes,
+        initDuplicateRecovery,
         moveSelectedDuplicates,
+        undoDuplicateMove,
         removeDuplicateRoot,
         scanDuplicateFiles,
         selectDuplicatesByLocation,
@@ -46,6 +50,9 @@
         toggleDuplicateSelection,
         type DuplicateGroup,
     } from '$lib/stores/duplicateFinder';
+
+    // The last move can be undone after the tab was closed and reopened.
+    onMount(() => void initDuplicateRecovery());
 
     async function pickFolders() {
         const picked = await open({ directory: true, multiple: true });
@@ -69,7 +76,7 @@
         if (!result) return;
 
         const lines = [
-            'KeepItLocal Duplicate File Finder Report',
+            'Duplicate File Finder Report',
             `Scanned files: ${result.scanned_files}`,
             `Hashed files: ${result.hashed_files}`,
             `Exact content groups: ${result.duplicate_groups.length}`,
@@ -179,11 +186,16 @@
         icon={Files}
         iconTint="#64748b"
         title="Byte-for-byte duplicates, with nothing deleted"
-        description="Size is used as a fast filter; matches are confirmed by full content hash. KeepItLocal never deletes — selected duplicates move to a review folder you choose, and one-click undo puts them back."
+        description="Size is used as a fast filter; matches are confirmed by full content hash. Nothing is deleted — selected duplicates move to a review folder you choose, and one-click undo puts them back."
         width="wide"
         fill={false}
     >
         {#snippet actions()}
+            {#if $duplicateRecovery}
+                <Button variant="secondary" icon={Undo2} onclick={undoDuplicateMove} disabled={busy} title={$duplicateRecovery.description}>
+                    Undo last move
+                </Button>
+            {/if}
             <Button variant="secondary" icon={Plus} onclick={pickFiles} disabled={busy}>Add files</Button>
             <Button variant="secondary" icon={FolderOpen} onclick={pickFolders} disabled={busy}>Add folders</Button>
             {#if $duplicateRoots.length}

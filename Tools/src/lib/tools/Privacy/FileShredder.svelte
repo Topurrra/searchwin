@@ -1,12 +1,13 @@
 <script lang="ts">
     import {open} from '@tauri-apps/plugin-dialog';
+    import { onMount } from 'svelte';
     import { get } from 'svelte/store';
     import DropZone from '$lib/DropZone.svelte';
     import {
         shredFiles, shredderTab, shredMethod, shredRandomize, shredRecursive,
         shredResults, shredProcessing, shredProgress,
         wipeDir, wipeProcessing, wipeProgress, wipeResult, wipePattern,
-        runShred, runWipe, cancelOperation,
+        runShred, runWipe, cancelOperation, initShredderListeners,
         clearShredHistory, clearWipeHistory, clearShredFiles,
         type Method, type WipePattern, type ShredderTab,
     } from '$lib/stores/shredder';
@@ -16,6 +17,9 @@
     import ToolCancelButton from '$lib/components/ToolCancelButton.svelte';
     import { ToolPage } from '$lib/ui';
 
+
+    // Progress arrives as events; listen from the page itself (once).
+    onMount(() => void initShredderListeners());
 
     let tab = $state<ShredderTab>(get(shredderTab));
     let confirmText = $state('');
@@ -396,7 +400,7 @@
             <AlertTriangle class="shredder-warning-icon" aria-hidden="true" />
             <div>
                 <strong>Free-space wipes are heavy operations.</strong>
-                <p>KeepItLocal fills the drive containing the selected folder with temporary data, then removes it. Do not run this on SSDs.</p>
+                <p>Search fills the drive containing the selected folder with temporary data, then removes it. Do not run this on SSDs.</p>
             </div>
         </div>
 
@@ -489,7 +493,7 @@
                         {$wipeDir ? 'Change' : 'Choose'} target
                     </button>
                 </div>
-                <p class="shredder-choice-note">The selected folder only identifies the drive. KeepItLocal creates and removes a temporary file in that location.</p>
+                <p class="shredder-choice-note">The selected folder only identifies the drive. Search creates and removes a temporary file in that location.</p>
             </section>
 
             <section class="shredder-panel shredder-pattern-panel" aria-labelledby="wipe-pattern-heading">

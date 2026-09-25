@@ -149,6 +149,8 @@ sha2 = "0.11.0"
 blake3 = "1.5"
 base64 = "0.22"
 urlencoding = "2.1"
+# dunce — canonical paths as people write them (`C:\x`, not `\\?\C:\x`).
+dunce = "1"
 hex = "0.4"
 aes-gcm = { version = "0.10.3", features = ["std", "stream"] }
 hkdf = "0.13"

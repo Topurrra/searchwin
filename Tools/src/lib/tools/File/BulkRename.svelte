@@ -426,7 +426,7 @@
                                 </span>
                                 <div class="br-loading-text">
                                     <div class="br-loading-step">{$bulkRenameApplying ? 'Applying safe rename plan…' : 'Building rename preview…'}</div>
-                                    <div class="br-sub">{$bulkRenameLastJob ?? 'KeepItLocal is checking conflicts before changing anything.'}</div>
+                                    <div class="br-sub">{$bulkRenameLastJob ?? 'Checking for conflicts before changing anything.'}</div>
                                 </div>
                                 <div class="br-bar" role="progressbar" aria-label="Rename progress">
                                     <div class="br-bar-fill br-indeterminate"></div>

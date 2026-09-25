@@ -56,10 +56,8 @@ export const diffFileText = writable('');
  *  by the folder and file tabs — persisted so the user's preference and
  *  the rendered file diff survive navigation. */
 export const diffViewMode = writable<'unified' | 'split'>('unified');
-/** DM-4 folder-sync result + Mirror confirmation gate. Persisted so the
- *  last sync summary and a pending-confirm Mirror survive a remount. */
+/** The last folder sync's summary, kept across a remount. */
 export const diffSyncResult = writable<SyncFoldersResult | null>(null);
-export const diffPendingMirror = writable(false);
 
 // ── 3-way merge tab ──
 export const mergeBase = writable('');

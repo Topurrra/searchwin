@@ -330,7 +330,7 @@
     async function copyReport() {
         if (!report) return;
         const lines = [
-            'KeepItLocal Cleaner / Analyzer Report',
+            'Cleaner / Analyzer Report',
             `Generated: ${new Date(report.generatedAtMs).toLocaleString()}`,
             `Cleanable cache: ${formatBytes(report.totalCleanableBytes)}`,
             `Old large files: ${report.oldLargeFiles.length}`,
@@ -692,7 +692,7 @@
                                     </div>
                                 {/each}
                             </div>
-                            <p class="ca-note">Review-only — KeepItLocal never deletes your files from the Cleaner.</p>
+                            <p class="ca-note">Review-only — the Cleaner never deletes your files.</p>
                         {/if}
                     {:else if detailTab === 'startup'}
                         {#if (report.startupItems ?? []).length === 0}

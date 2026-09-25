@@ -5,6 +5,8 @@
     // serves tool pages (see ToolsHost.cs), and this page only ever asks it
     // for the path the browser handed it or a sibling the engine listed.
     import { invoke, convertFileSrc } from '@tauri-apps/api/core';
+    import { listen } from '@tauri-apps/api/event';
+    import { untrack } from 'svelte';
     import * as positions from '$lib/player/positions';
     import { folderOf, inFolder, after } from '$lib/player/positions';
     import {
@@ -18,13 +20,17 @@
         Minimize,
         ListMusic,
         Music,
+        Captions,
     } from '@lucide/svelte';
 
-    // What WebView2 (Chromium) actually plays without the FFmpeg add-on.
-    // Kept in sync by hand with SearchKit.Field.FileKinds.Playable — see
+    // What WebView2 (Chromium) plays as it is, and what it plays once the
+    // FFmpeg pack has remuxed it (the browser's Player.cs). Kept in sync by
+    // hand with SearchKit.Field.FileKinds (Playable, Remuxable) — see
     // Search.Kit/Field/FieldRow.cs and its tests.
     const VIDEO_EXT = new Set(['mp4', 'm4v', 'webm', 'mov', 'ogv']);
     const AUDIO_EXT = new Set(['mp3', 'm4a', 'aac', 'wav', 'ogg', 'oga', 'opus', 'flac']);
+    const REMUX_VIDEO_EXT = new Set(['mkv', 'avi', 'wmv', 'flv', 'mpg', 'mpeg', 'm2ts', 'mts', '3gp']);
+    const REMUX_AUDIO_EXT = new Set(['wma', 'mka', 'ape', 'wv', 'aiff', 'aif']);
 
     type Kind = 'video' | 'audio' | 'unsupported';
 
@@ -34,9 +40,13 @@
     }
     function kindOf(path: string): Kind {
         const ext = extOf(path);
-        if (VIDEO_EXT.has(ext)) return 'video';
-        if (AUDIO_EXT.has(ext)) return 'audio';
+        if (VIDEO_EXT.has(ext) || REMUX_VIDEO_EXT.has(ext)) return 'video';
+        if (AUDIO_EXT.has(ext) || REMUX_AUDIO_EXT.has(ext)) return 'audio';
         return 'unsupported';
+    }
+    function remuxes(path: string): boolean {
+        const ext = extOf(path);
+        return REMUX_VIDEO_EXT.has(ext) || REMUX_AUDIO_EXT.has(ext);
     }
     function baseName(path: string): string {
         const m = /[^\\/]+$/.exec(path);
@@ -85,7 +95,127 @@
     const kind = $derived(kindOf(path));
     const name = $derived(path ? baseName(path) : '');
     const folder = $derived(path ? folderOf(path) : '');
-    const src = $derived(path ? convertFileSrc(path) : '');
+    // MARK: - what WebView2 can't play as it is: the FFmpeg pack
+
+    // How the file is being played: `direct`ly, or made playable by the
+    // browser (Player.cs) — streams copied (`remux`), or the video
+    // converted too (`transcode`, when a copy didn't play). A playback
+    // error moves one step along, and past `transcode` it's an error.
+    type How = 'direct' | 'remux' | 'transcode';
+    interface Prepared {
+        media?: string;
+        subtitles?: { path: string; label: string; language: string }[];
+        needsPack?: boolean;
+        playable?: boolean;
+    }
+    let how = $state<How>('direct');
+    let prepared = $state<Prepared | null>(null);
+    let preparing = $state(false);
+    let progress = $state<number | null>(null);
+    let needsPack = $state(false);
+    let prepareError = $state<string | null>(null);
+    let captions = $state(0);
+
+    const src = $derived(
+        !path ? '' : how === 'direct' ? convertFileSrc(path) : prepared?.media ? convertFileSrc(prepared.media) : '',
+    );
+    const subtitles = $derived(prepared?.subtitles ?? []);
+
+    // `check`: a file WebView2 should play as it is — does it decode every
+    // stream in it (an MP4 with AC-3 would play silent), and are there
+    // subtitle files beside it? Quiet: it plays meanwhile.
+    async function prepare(file: string, wanted: How | 'check') {
+        const quiet = wanted === 'check';
+        if (!quiet) {
+            how = wanted as How;
+            preparing = true;
+            progress = null;
+            prepared = null;
+        }
+        try {
+            const answer = await invoke<Prepared>('host:play.prepare', { path: file, how: wanted });
+            if (file !== path) return;
+            if (answer?.needsPack) needsPack = true;
+            else if (quiet && answer?.playable === false) void prepare(file, 'remux');
+            else if (quiet) prepared = { subtitles: answer?.subtitles ?? [] };
+            else prepared = answer;
+        } catch (error) {
+            if (file === path && !quiet) prepareError = String(error);
+        } finally {
+            if (file === path && !quiet) preparing = false;
+        }
+    }
+
+    // A new file: straight into the player if WebView2 plays it (with any
+    // subtitle files beside it), made playable first if it doesn't.
+    $effect(() => {
+        const file = path;
+        if (!file || kindOf(file) === 'unsupported') return;
+        how = 'direct';
+        prepared = null;
+        needsPack = false;
+        prepareError = null;
+        preparing = false;
+        if (remuxes(file)) void prepare(file, 'remux');
+        else void prepare(file, 'check');
+        return () => {
+            if (preparing) void invoke('host:play.cancel', { path: file }).catch(() => {});
+        };
+    });
+
+    function onMediaError() {
+        if (!media || !src || media.currentSrc !== src) return;
+        const next: How | null = how === 'direct' ? 'remux' : how === 'remux' && kindOf(path) === 'video' ? 'transcode' : null;
+        if (next) void prepare(path, next);
+        else mediaError = true;
+    }
+
+    // Progress from the browser while it makes the file playable, and the
+    // pack arriving while the page waits for it.
+    $effect(() => {
+        const stops = [
+            listen<{ path: string; fraction: number | null }>('play-progress', ({ payload }) => {
+                if (payload?.path?.toLowerCase() === path.replace(/\//g, '\\').toLowerCase()) progress = payload.fraction;
+            }),
+            listen<{ id: string; installed: string | null }>('packs-changed', ({ payload }) => {
+                if (payload?.id === 'ffmpeg' && payload.installed && needsPack) {
+                    needsPack = false;
+                    void prepare(path, how === 'direct' ? 'remux' : how);
+                }
+            }),
+        ];
+        return () => stops.forEach((stop) => void stop.then((unlisten) => unlisten()));
+    });
+
+    function getPack() {
+        void invoke('host:packs.open').catch(() => {});
+    }
+
+    // Subtitles: off, or one of the tracks — the first is on to begin with.
+    function showCaptions(which: number) {
+        captions = which;
+        const tracks = media?.textTracks;
+        if (!tracks) return;
+        for (let i = 0; i < tracks.length; i++) tracks[i].mode = i === which - 1 ? 'showing' : 'disabled';
+    }
+    function nextCaptions() {
+        showCaptions((captions + 1) % (subtitles.length + 1));
+    }
+    // Tracks arrive one by one (and Chromium may switch one on itself):
+    // whatever's chosen is applied again as each comes and as the media loads.
+    $effect(() => {
+        const tracks = media?.textTracks;
+        if (!tracks || subtitles.length === 0) return;
+        captions = 1;
+        const apply = () => showCaptions(untrack(() => captions));
+        tracks.addEventListener?.('addtrack', apply);
+        media?.addEventListener('loadedmetadata', apply);
+        apply();
+        return () => {
+            tracks.removeEventListener?.('addtrack', apply);
+            media?.removeEventListener('loadedmetadata', apply);
+        };
+    });
 
     let media = $state<HTMLVideoElement | HTMLAudioElement | null>(null);
     let stage = $state<HTMLDivElement | null>(null);
@@ -367,6 +497,10 @@
             case 'M':
                 toggleMute();
                 break;
+            case 'c':
+            case 'C':
+                if (subtitles.length > 0) nextCaptions();
+                break;
             case 'n':
             case 'N':
                 next();
@@ -393,25 +527,31 @@
     {:else if kind === 'unsupported'}
         <div class="unsupported">
             <Music size={28} />
-            <p>“{name}” needs the FFmpeg add-on — coming later.</p>
+            <p>Search can't play “{name}”.</p>
         </div>
     {:else}
         <div class="stage" bind:this={stage} class:fullscreen>
             {#if kind === 'video'}
+                <!-- Subtitles come from files.search, another origin: asked for with CORS. -->
                 <!-- svelte-ignore a11y_media_has_caption -->
                 <video
                     bind:this={media}
                     {src}
+                    crossorigin="anonymous"
                     ontimeupdate={onTimeUpdate}
                     onloadedmetadata={onLoadedMetadata}
                     onseeked={onSeeked}
                     onended={onEnded}
                     onplay={() => (playing = true)}
                     onpause={onPause}
-                    onerror={() => (mediaError = true)}
+                    onerror={onMediaError}
                     onclick={togglePlay}
                     ondblclick={toggleFullscreen}
-                ></video>
+                >
+                    {#each subtitles as sub (sub.path)}
+                        <track kind="subtitles" src={convertFileSrc(sub.path)} label={sub.label} srclang={sub.language || undefined} />
+                    {/each}
+                </video>
             {:else}
                 <div class="audio-face">
                     <Music size={48} />
@@ -426,13 +566,25 @@
                     onended={onEnded}
                     onplay={() => (playing = true)}
                     onpause={onPause}
-                    onerror={() => (mediaError = true)}
+                    onerror={onMediaError}
                 ></audio>
             {/if}
 
-            {#if mediaError}
+            {#if needsPack}
                 <div class="error-overlay">
-                    <p>“{name}” needs the FFmpeg add-on — coming later.</p>
+                    <p>“{name}” plays with the FFmpeg pack, which isn't installed.</p>
+                    <button class="get-pack" onclick={getPack}>Get the FFmpeg pack</button>
+                </div>
+            {:else if preparing}
+                <div class="error-overlay" aria-live="polite">
+                    <p>
+                        Getting “{name}” ready to play…{#if progress != null}
+                            {Math.round(progress * 100)}%{/if}
+                    </p>
+                </div>
+            {:else if prepareError || mediaError}
+                <div class="error-overlay">
+                    <p>“{name}” couldn't be played{prepareError ? `: ${prepareError}` : '.'}</p>
                 </div>
             {/if}
 
@@ -475,6 +627,16 @@
                 {#if tracks.length > 1}
                     <button class="icon" onclick={() => (showList = !showList)} title="Playlist">
                         <ListMusic size={18} />
+                    </button>
+                {/if}
+                {#if subtitles.length > 0}
+                    <button
+                        class="icon"
+                        class:on={captions > 0}
+                        onclick={nextCaptions}
+                        title={captions > 0 ? `Subtitles: ${subtitles[captions - 1]?.label} (c)` : 'Subtitles off (c)'}
+                    >
+                        <Captions size={18} />
                     </button>
                 {/if}
                 {#if kind === 'video'}
@@ -567,6 +729,8 @@
         position: absolute;
         inset: 0;
         display: flex;
+        flex-direction: column;
+        gap: 12px;
         align-items: center;
         justify-content: center;
         background: rgba(0, 0, 0, 0.75);
@@ -600,6 +764,17 @@
     .icon:disabled {
         opacity: 0.35;
         cursor: default;
+    }
+    .icon.on {
+        color: var(--color-accent, #b5352c);
+    }
+    .get-pack {
+        border: none;
+        border-radius: 6px;
+        padding: 7px 14px;
+        cursor: pointer;
+        background: var(--color-accent, #b5352c);
+        color: var(--color-accent-contrast, #fff);
     }
     .icon.primary {
         background: var(--color-accent, #b5352c);

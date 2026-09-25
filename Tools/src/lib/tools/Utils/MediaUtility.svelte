@@ -1,8 +1,9 @@
 <script lang="ts">
     import { onMount } from 'svelte';
     import { invoke } from '@tauri-apps/api/core';
+    import { listen } from '@tauri-apps/api/event';
     import { open, save } from '@tauri-apps/plugin-dialog';
-    import { FileVideo, FolderOpen, FolderOutput, Gauge, Music2, RefreshCw, Video } from '@lucide/svelte';
+    import { Download, FileVideo, FolderOpen, FolderOutput, Gauge, Music2, RefreshCw, Video } from '@lucide/svelte';
     import DropZone from '$lib/DropZone.svelte';
     import ToolCancelButton from '$lib/components/ToolCancelButton.svelte';
     import {
@@ -60,7 +61,16 @@
     onMount(() => {
         void initMediaUtility();
         void refreshFfmpeg();
+        // The pack installed (or removed) in Settings while this page is open.
+        const stop = listen<{ id: string }>('packs-changed', ({ payload }) => {
+            if (payload?.id === 'ffmpeg') void refreshFfmpeg();
+        });
+        return () => void stop.then((unlisten) => unlisten());
     });
+
+    function getPack(): void {
+        void invoke('host:packs.open').catch((cause) => (setupError = String(cause)));
+    }
 
     async function locateFfmpeg(): Promise<void> {
         try {
@@ -79,7 +89,7 @@
             setupError = message.includes('no_ffmpeg')
                 ? 'That folder does not contain ffmpeg.exe.'
                 : message.includes('not_runnable')
-                  ? 'KeepItLocal could not run that ffmpeg.exe.'
+                  ? 'Search could not run that ffmpeg.exe.'
                   : message;
         } finally {
             locating = false;
@@ -142,12 +152,13 @@
             <div class="notice" role="status">
                 <FileVideo aria-hidden="true" />
                 <div>
-                    <strong>FFmpeg is required.</strong>
-                    <p>Locate your ffmpeg.exe or add it to PATH. Your media stays on this device.</p>
+                    <strong>Media Utility runs on the FFmpeg pack.</strong>
+                    <p>Add it in Settings › Packs: a one-time download from its publisher. Your media stays on this device.</p>
                     {#if setupError}<p class="setup-error">{setupError}</p>{/if}
                     <div class="notice-actions">
-                        <Button variant="primary" size="sm" icon={FolderOpen} loading={locating} onclick={() => void locateFfmpeg()}>
-                            Locate FFmpeg
+                        <Button variant="primary" size="sm" icon={Download} onclick={getPack}>Get the FFmpeg pack</Button>
+                        <Button variant="secondary" size="sm" icon={FolderOpen} loading={locating} onclick={() => void locateFfmpeg()}>
+                            Use my own ffmpeg.exe
                         </Button>
                         <Button variant="secondary" size="sm" icon={RefreshCw} loading={checking} onclick={() => void refreshFfmpeg()}>
                             Re-check

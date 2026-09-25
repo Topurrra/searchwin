@@ -555,6 +555,11 @@ export const toolScreens: ToolScreen[] = [
         category: 'Media',
         description: 'Record your screen to a clean MP4 — fully on-device, nothing uploaded.',
         available: true,
+        // Hidden in Search (phase 3): the engine ships without its `screenrec`
+        // feature, and its region picker, redaction picker and floating
+        // toolbar were Tauri windows the headless engine can't open. Back
+        // when those are native Search overlays. FFmpeg itself is the pack.
+        hidden: true,
         icon: Video,
         kind: 'tool',
         loader: () => import('$lib/tools/Capture/ScreenRecorder.svelte'),
@@ -570,7 +575,7 @@ export const toolScreens: ToolScreen[] = [
         loader: () => import('$lib/tools/Utils/MediaUtility.svelte'),
         docs: {
             use: 'Choose a local video, then extract its audio or target a smaller video size.',
-            offline: 'Media conversion runs on your device through your local FFmpeg installation.',
+            offline: 'Media conversion runs on your device, with the FFmpeg pack (Settings › Packs).',
             tip: 'Choose a preset or enter any positive target size in MB. The tool warns before creating an unwatchable result.',
         },
     },

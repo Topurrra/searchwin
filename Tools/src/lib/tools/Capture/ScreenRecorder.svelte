@@ -16,7 +16,6 @@
     import { emit, listen, type UnlistenFn } from '@tauri-apps/api/event';
     import { getCurrentWindow } from '@tauri-apps/api/window';
     import { open } from '@tauri-apps/plugin-dialog';
-    import { openUrl } from '@tauri-apps/plugin-opener';
     import {
         startRecording,
         stopRecording,
@@ -104,7 +103,7 @@
         recorderAvailable: boolean;
         path: string | null;
         version: string | null;
-        source: 'user' | 'path' | 'none';
+        source: 'pack' | 'user' | 'path' | 'none';
     };
     const ffmpegStatus = writable<FfmpegStatus | null>(null);
     const ffmpegChecking = writable(true);
@@ -141,7 +140,7 @@
                 message.includes('no_ffmpeg')
                     ? 'That folder does not contain ffmpeg.exe.'
                     : message.includes('not_runnable')
-                      ? 'KeepItLocal could not run that ffmpeg.exe.'
+                      ? 'Search could not run that ffmpeg.exe.'
                       : message,
             );
         } finally {
@@ -149,11 +148,12 @@
         }
     }
 
+    /** Settings › Packs, where the FFmpeg pack is one click. */
     async function getFfmpeg() {
         try {
-            await openUrl('https://ffmpeg.org/download.html');
+            await invoke('host:packs.open');
         } catch (error) {
-            errorToast("Couldn't open the FFmpeg download page", error);
+            errorToast("Couldn't open Settings › Packs", error);
         }
     }
 
@@ -164,6 +164,7 @@
     // Toolbar "stopped" listener — lives for the whole view lifetime so a Stop
     // from the floating toolbar syncs this page's state.
     let stoppedUnlisten: UnlistenFn | null = null;
+    let packsUnlisten: UnlistenFn | null = null;
 
     function fmtTime(ms: number): string {
         const total = Math.floor(ms / 1000);
@@ -250,6 +251,10 @@
         // Reattach to a recording that was running before this view mounted.
         void poll();
         void refreshFfmpeg();
+        // The pack installed (or removed) in Settings while this page is open.
+        void listen<{ id: string }>('packs-changed', ({ payload }) => {
+            if (payload?.id === 'ffmpeg') void refreshFfmpeg();
+        }).then((un) => (packsUnlisten = un));
         // Sync when the user stops from the floating capture toolbar.
         void listen<string>('screenrec:stopped', (e) => {
             if (get(state) === 'recording' || get(state) === 'stopping') {
@@ -275,6 +280,7 @@
     onDestroy(() => {
         stopPoll();
         stoppedUnlisten?.();
+        packsUnlisten?.();
         for (const un of regionUnlistens) un();
         regionUnlistens = [];
         cleanupRedactListeners();
@@ -497,27 +503,27 @@
     {:else if $ffmpegChecking}
         <div class="sr-ffmpeg-card" aria-live="polite">
             <span class="sr-spin"><Loader2 size={18} /></span>
-            Checking your local FFmpeg setup…
+            Checking for FFmpeg…
         </div>
     {:else if !$ffmpegStatus?.recorderAvailable}
         <div class="sr-ffmpeg-card sr-ffmpeg-setup">
             <div class="sr-ffmpeg-icon"><AlertTriangle size={20} /></div>
             <div class="sr-ffmpeg-body">
-                <h3>{$ffmpegStatus?.available ? 'This FFmpeg cannot record your screen' : 'Screen Recorder needs FFmpeg'}</h3>
+                <h3>{$ffmpegStatus?.available ? 'This FFmpeg cannot record your screen' : 'Screen Recorder runs on the FFmpeg pack'}</h3>
                 <p>
                     {#if $ffmpegStatus?.available}
-                        Screen Recorder needs the Windows H.264 encoder (<code>h264_mf</code>). Choose a full Windows FFmpeg build.
+                        Screen Recorder needs the Windows H.264 encoder (<code>h264_mf</code>), which the FFmpeg pack has.
                     {:else}
-                        KeepItLocal does not bundle FFmpeg. Locate your own <code>ffmpeg.exe</code>, or add it to PATH. Your recordings stay local.
+                        Add it in Settings › Packs: a one-time download from its publisher. Your recordings stay on this device.
                     {/if}
                 </p>
                 {#if $ffmpegSetupError}<p class="sr-ffmpeg-error">{$ffmpegSetupError}</p>{/if}
                 <div class="sr-ffmpeg-actions">
-                    <Button variant="primary" icon={FolderOpen} loading={$ffmpegLocating} onclick={() => void locateFfmpeg()}>
-                        Locate FFmpeg
+                    <Button variant="primary" icon={Download} onclick={() => void getFfmpeg()}>
+                        Get the FFmpeg pack
                     </Button>
-                    <Button variant="secondary" icon={Download} onclick={() => void getFfmpeg()}>
-                        Get FFmpeg
+                    <Button variant="secondary" icon={FolderOpen} loading={$ffmpegLocating} onclick={() => void locateFfmpeg()}>
+                        Use my own ffmpeg.exe
                     </Button>
                     <Button variant="ghost" icon={RefreshCw} onclick={() => void refreshFfmpeg()}>
                         Re-check

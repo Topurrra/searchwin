@@ -6,7 +6,7 @@
     // for the path the browser handed it or a sibling the engine listed.
     import { invoke, convertFileSrc } from '@tauri-apps/api/core';
     import * as positions from '$lib/player/positions';
-    import { folderOf, inFolder, after } from '$lib/player/positions';
+    import { folderOf, inFolder, after, navigateHash } from '$lib/player/positions';
     import {
         Play,
         Pause,
@@ -122,13 +122,15 @@
 
     const index = $derived(tracks.findIndex((t) => sameFile(t.path, path)));
 
-    // A real history entry (so the tab's Back goes to the previous track, and
-    // the tab's address — what bench and a bookmark would see — names the
-    // file actually playing), pushed by hand rather than through `goto`:
-    // SvelteKit's hash router only matches the route from the hash, and
-    // drops a `?path=` living inside it on the way back out.
+    // The tab's address — what bench, a bookmark, and the tab's own title
+    // would see — names the file actually playing, set by hand rather than
+    // through `goto`: SvelteKit's hash router only matches the route from
+    // the hash, and drops a `?path=` living inside it on the way back out.
+    // `replaceState`, not `pushState`: next/previous/auto-advance and a
+    // playlist click change the file playing, not a place worth walking
+    // back to one track at a time.
     function go(newPath: string) {
-        history.pushState(history.state, '', `#/play?path=${encodeURIComponent(newPath)}`);
+        navigateHash(history, newPath);
         path = newPath;
     }
     function next() {

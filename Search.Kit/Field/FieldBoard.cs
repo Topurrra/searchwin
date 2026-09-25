@@ -45,42 +45,9 @@ public sealed class FieldCaps
     };
 }
 
-/// Laying the rows out for a new query: group order, one copy of each thing,
-/// caps, and the top hit.
+/// Which engine group, if any, a new query's top hit is kept for.
 public static class FieldLayout
 {
-    /// The top hit, when the local sources can decide it:
-    /// - `>…`: the best command; `!…`, `?…`: the bang or the question;
-    /// - `tabs:` / `history:`: the first of those;
-    /// - an address or words: an open tab whose address or title starts with
-    ///   what was typed, else the history place that the field is finishing
-    ///   (its key starts with the text), else the typed text's own row (go
-    ///   there, or search the web for it).
-    /// Answers and the engine scopes (`files:`, `apps:`, `clip:`) don't come
-    /// from here: their top hit is reserved (see `Reserve`).
-    public static FieldRow? TopHit(FieldQuery query, IReadOnlyList<FieldRow> rows)
-    {
-        FieldRow? First(Group group) => rows.FirstOrDefault(r => r.Group == group);
-        switch (query.Kind)
-        {
-            case QueryKind.Command: return First(Group.Commands);
-            case QueryKind.Bang or QueryKind.Ask: return First(Group.Search);
-            case QueryKind.Empty: return query.Scope is Scope.Tabs ? First(Group.Tabs) : query.Scope is Scope.History ? First(Group.History) : null;
-            case QueryKind.Words or QueryKind.Address:
-                if (query.Scope == Scope.Tabs) return First(Group.Tabs);
-                if (query.Scope == Scope.History) return First(Group.History);
-                if (query.Scope != Scope.All) return null;
-                var needle = Needles.Of(query.Text);
-                if (needle.Length == 0) return null;
-                var tab = rows.FirstOrDefault(r => r.Group == Group.Tabs && r.Score >= TabSource.Strong);
-                if (tab != null) return tab;
-                var place = rows.FirstOrDefault(r => r.Group == Group.History && r.Key.StartsWith("url:" + needle, StringComparison.Ordinal));
-                return place ?? First(Group.Search);
-            default:
-                return null;
-        }
-    }
-
     /// Which engine group the top hit waits for, if any: an answer for an
     /// answer query, the scope's group for `files:`/`apps:`/`clip:`. Only
     /// when a source for that group is going to be asked.
@@ -90,48 +57,6 @@ public static class FieldLayout
             : query.Scope is Scope.Files or Scope.Apps or Scope.Clipboard ? FieldCaps.ScopeGroup(query.Scope)
             : null;
         return wanted is { } group && asked.Contains(group) ? group : null;
-    }
-
-    /// The first layout for a query, from the local rows (in any order;
-    /// within a group, the source's order is kept). The top hit leads, or a
-    /// placeholder when it's `reserved`; then each group in order, capped,
-    /// with anything already shown dropped.
-    public static List<FieldRow> Build(FieldQuery query, IReadOnlyList<FieldRow> local, Group? reserved, FieldCaps caps)
-    {
-        var ordered = local.Select((row, index) => (row, index))
-            .OrderBy(p => p.row.Group).ThenBy(p => p.index)
-            .Select(p => p.row).ToList();
-        var laid = new List<FieldRow>();
-        var seen = new HashSet<string>(StringComparer.Ordinal);
-        if (reserved is { } waiting) laid.Add(FieldRow.Placeholder(waiting));
-        else if (TopHit(query, ordered) is { } top)
-        {
-            laid.Add(top with { Group = Group.TopHit });
-            seen.Add(top.Key);
-        }
-        var counts = new int[FieldCaps.Groups];
-        foreach (var row in ordered)
-        {
-            if (laid.Count >= caps.Total) break;
-            if (row.Group == Group.TopHit || counts[(int)row.Group] >= caps.For(row.Group, query)) continue;
-            if (!seen.Add(row.Key)) continue;
-            counts[(int)row.Group]++;
-            laid.Add(row);
-        }
-        return laid;
-    }
-
-    /// The rest of the top hit's address that the field draws after the
-    /// caret ("git" → "hub.com"), when it carries on from what was typed.
-    public static string? Ending(FieldQuery query, FieldRow? top)
-    {
-        if (top == null || top.Origin is not (Group.History or Group.Tabs)) return null;
-        if (query.Kind is not (QueryKind.Words or QueryKind.Address) || query.Scope != Scope.All) return null;
-        var needle = Needles.Of(query.Text);
-        if (needle.Length < 2 || !top.Key.StartsWith("url:", StringComparison.Ordinal)) return null;
-        var place = top.Key.AsSpan(4);
-        if (!place.StartsWith(needle, StringComparison.Ordinal) || place.Length == needle.Length) return null;
-        return place[needle.Length..].ToString();
     }
 }
 
@@ -178,9 +103,6 @@ public sealed class FieldBoard
 
     public int Generation { get; private set; }
 
-    /// The rest of the top hit's address, drawn after the caret.
-    public string? Ending { get; private set; }
-
     /// A snapshot of the rows, top first. Pending rows are reserved slots.
     public IReadOnlyList<FieldRow> Rows
     {
@@ -213,15 +135,8 @@ public sealed class FieldBoard
         get { lock (gate) return IndexOf(picked) == null && rows.Count > 0 && rows[0].IsPending && !settled.Contains(rows[0].Origin); }
     }
 
-    /// The fallback when a reserved top hit never comes: the first row of
-    /// the typed text's own group (search the web), if there is one.
-    public FieldRow? Fallback
-    {
-        get { lock (gate) return rows.FirstOrDefault(r => r.Origin == Group.Search && !r.IsPending); }
-    }
-
     /// A new question: new rows, nothing picked.
-    public void Reset(int generation, List<FieldRow> laid, string? ending)
+    public void Reset(int generation, List<FieldRow> laid)
     {
         lock (gate)
         {
@@ -232,7 +147,6 @@ public sealed class FieldBoard
             pickedBeside = false;
             heldBeside = false;
             settled.Clear();
-            Ending = ending;
         }
     }
 
@@ -299,20 +213,6 @@ public sealed class FieldBoard
     /// Something the user is about to press is on the list.
     private bool Steady() =>
         pointerOver || heldBeside || pickedBeside || IndexOf(held) != null || IndexOf(picked) != null;
-
-    /// The arrow keys: one row down or up, skipping reserved slots; off
-    /// either end lets go.
-    public void Walk(int step)
-    {
-        lock (gate)
-        {
-            var at = IndexOf(picked) ?? (step > 0 ? -1 : rows.Count);
-            do at += step;
-            while (at >= 0 && at < rows.Count && rows[at].IsPending);
-            picked = at >= 0 && at < rows.Count ? rows[at].Key : null;
-            pickedBeside = false;
-        }
-    }
 
     /// Picks a row by index (a click), `Beside` for one of the browser's own
     /// rows, or lets go with null.

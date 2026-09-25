@@ -28,7 +28,7 @@ public class FieldMixTests
         // A reserved top hit, filled in place, then files arriving below:
         // every local row stays at the index it had.
         var board = new FieldBoard();
-        board.Reset(1, [FieldRow.Placeholder(Group.Answer)], null);
+        board.Reset(1, [FieldRow.Placeholder(Group.Answer)]);
         var before = FieldMix.Compose(3, board.Rows);
         board.Arrive(1, Group.Answer, [Rows.Answer("1081")], 3, 16);
         board.Arrive(1, Group.Files, [Rows.File("a.txt"), Rows.File("b.txt")], 4, 16);

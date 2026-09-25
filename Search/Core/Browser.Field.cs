@@ -49,8 +49,7 @@ public sealed partial class Browser
                 new GatedSource(new ClipboardSource(calls), _ => ClipHistory.On),
             ]);
         var model = new FieldModel(
-            local: [],
-            engine: sources,
+            sources,
             new FieldOptions
             {
                 Bangs = Commands.Bangs,

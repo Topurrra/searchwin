@@ -152,41 +152,8 @@ public class EngineSourceTests
     }
 }
 
-public class LocalSourceTests
+public class RowKeyTests
 {
-    [Fact]
-    public void History_ranks_like_the_browser()
-    {
-        var now = new DateTime(2026, 9, 25, 0, 0, 0, DateTimeKind.Utc);
-        var places = new List<Place>
-        {
-            new("github.com/topurrra/search", "Search", "https://github.com/topurrra/search", 30, now),
-            new("github.com", "GitHub", "https://github.com/", 5, now.AddDays(-2)),
-            new("gist.github.com", "Gists", "https://gist.github.com/", 1, now.AddDays(-60)),
-            new("example.com/github", "Path only", "https://example.com/github", 50, now),
-        };
-        var source = new HistorySource(() => places, [("gitlab.com", "GitLab"), ("github.com", "GitHub")], () => now);
-        var rows = source.Suggest(FieldQuery.Read("git"), 5);
-        // The frequent deep page first, then the front door; a known name only where memory has nothing; never a path match.
-        Assert.Equal(["url:github.com/topurrra/search", "url:github.com", "url:gist.github.com", "url:gitlab.com"], rows.Select(r => r.Key));
-        Assert.Contains(source.Suggest(FieldQuery.Read("hub"), 5), r => r.Key == "url:github.com");
-        Assert.DoesNotContain(source.Suggest(FieldQuery.Read("g"), 5), r => r.Key == "url:example.com/github");
-        Assert.Empty(source.Suggest(FieldQuery.Read("23*47"), 5));
-    }
-
-    [Fact]
-    public void Tabs_match_titles_and_addresses_but_never_the_active_tab()
-    {
-        var active = new OpenPage(Guid.NewGuid(), "Rust Book", new Uri("https://doc.rust-lang.org/book/"), DateTime.UtcNow, Active: true);
-        var other = new OpenPage(Guid.NewGuid(), "The Rust Reference", new Uri("https://doc.rust-lang.org/reference/"), DateTime.UtcNow);
-        var source = new TabSource(() => [active, other]);
-        var row = Assert.Single(source.Suggest(FieldQuery.Read("rust"), 3));
-        Assert.Equal((RowAction.SwitchTab, other.Id), (row.Action, row.Tab));
-        // Keyed as the browser keys history: Address.Pretty, lower-cased.
-        Assert.Equal("url:doc.rust-lang.org/reference/", row.Key);
-        Assert.Single(source.Suggest(FieldQuery.Read("tabs:"), 3));
-    }
-
     [Fact]
     public void Keys_match_across_sources()
     {

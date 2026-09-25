@@ -63,7 +63,7 @@ public class AnswerTests
         {
             Answer = (_, _, _) => Task.FromResult(FakeEngine.Json("""{"type":"calculator","expression":"24/7","result":"3.428571"}""")),
         };
-        using var model = new FieldModel([], [new AnswerSource(engine)]);
+        using var model = new FieldModel([new AnswerSource(engine)]);
         model.Type("24/7");
         await model.WhenSettled.WaitAsync(TimeSpan.FromSeconds(5));
         var row = Assert.Single(model.Board.Rows);

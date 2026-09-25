@@ -148,7 +148,7 @@ public class FileKindsTests
         // `files: setup`: the first file is what Enter takes, unless it's a
         // program; that goes below, and the next file may lead.
         var board = new FieldBoard();
-        board.Reset(1, [FieldRow.Placeholder(Group.Files)], null);
+        board.Reset(1, [FieldRow.Placeholder(Group.Files)]);
         board.Arrive(1, Group.Files, [Rows.File("setup.exe"), Rows.File("setup.txt")], 12, 16);
         var rows = board.Rows;
         Assert.Equal((Group.TopHit, RowAction.OpenInTab), (rows[0].Group, rows[0].Action));
@@ -156,7 +156,7 @@ public class FileKindsTests
         Assert.Equal("setup.txt", board.EnterRow!.Title);
 
         // Only programs: nothing to take, and the empty slot goes.
-        board.Reset(2, [FieldRow.Placeholder(Group.Files)], null);
+        board.Reset(2, [FieldRow.Placeholder(Group.Files)]);
         board.Arrive(2, Group.Files, [Rows.File("setup.exe"), Rows.File("install.cmd")], 12, 16);
         Assert.True(board.Waiting);
         Assert.Null(board.EnterRow);
@@ -174,7 +174,7 @@ public class FileKindsTests
                 {"results":[{"path":"C:\\t\\setup.exe","fileName":"setup.exe","entryType":"file","extension":"exe"}]}
                 """)),
         };
-        using var model = new FieldModel([], [new FileNameSource(engine)]);
+        using var model = new FieldModel([new FileNameSource(engine)]);
         model.Type("files: setup");
         Assert.Null(await model.EnterAsync(TimeSpan.FromSeconds(5)));
         Assert.Contains(model.Board.Rows, r => r.Action == RowAction.Reveal);

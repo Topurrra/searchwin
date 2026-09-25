@@ -20,23 +20,22 @@ public sealed class FieldOptions
 
 /// The model behind the field's suggestions.
 ///
-/// `Type` is the keystroke: it reads the text, asks the local sources, lays
-/// the rows out, and returns (all on the UI thread, well under 5 ms). Then
-/// each engine source that wants the query is asked off the UI thread, after
-/// its own pause, and its rows join the board as they come (see FieldBoard
-/// for how they may and may not move things). The next keystroke cancels
-/// every engine question still out, and anything that answers anyway is
-/// dropped as stale.
+/// `Type` is the keystroke: it reads the text, keeps the top hit for an
+/// answer or a scope's first row, and returns (on the UI thread, well under
+/// 5 ms). Then each engine source that wants the query is asked off the UI
+/// thread, after its own pause, and its rows join the board as they come
+/// (see FieldBoard for how they may and may not move things). The next
+/// keystroke cancels every engine question still out, and anything that
+/// answers anyway is dropped as stale. The browser's own rows (places,
+/// commands, the search row) are its own, mixed in by FieldMix.
 public sealed class FieldModel : IDisposable
 {
-    private readonly IReadOnlyList<ILocalSource> local;
     private readonly IReadOnlyList<IEngineSource> engine;
     private readonly FieldOptions options;
     private Round round = new(0, [], null);
 
-    public FieldModel(IEnumerable<ILocalSource> local, IEnumerable<IEngineSource> engine, FieldOptions? options = null)
+    public FieldModel(IEnumerable<IEngineSource> engine, FieldOptions? options = null)
     {
-        this.local = [.. local];
         this.engine = [.. engine];
         this.options = options ?? new FieldOptions();
     }
@@ -59,42 +58,32 @@ public sealed class FieldModel : IDisposable
         round.Cancel.Cancel();
 
         var query = FieldQuery.Read(typed, options.Bangs, options.IsAddress);
-        var caps = options.Caps;
-        var rows = new List<FieldRow>();
-        foreach (var source in local)
-        {
-            // A source's trouble costs its rows, never the keystroke.
-            try { rows.AddRange(source.Suggest(query, caps.For(source.Group, query) + 2)); }
-            catch { }
-        }
         var asked = new List<IEngineSource>();
         foreach (var source in engine)
         {
+            // A source's trouble costs its rows, never the keystroke.
             try { if (source.Wants(query)) asked.Add(source); }
             catch { }
         }
         var reserved = FieldLayout.Reserve(query, asked.Select(s => s.Group));
-        var laid = FieldLayout.Build(query, rows, reserved, caps);
-        var top = laid.Count > 0 && laid[0].Group == Group.TopHit && !laid[0].IsPending ? laid[0] : null;
 
         var next = new Round(round.Generation + 1, asked, reserved);
         Query = query;
         round = next;
-        Board.Reset(next.Generation, laid, FieldLayout.Ending(query, top));
+        Board.Reset(next.Generation, reserved is { } waiting ? [FieldRow.Placeholder(waiting)] : []);
         Changed?.Invoke();
         foreach (var source in asked) _ = AskAsync(next, source, query);
     }
 
     /// Enter. The picked row or the top hit; if the top hit is an answer
-    /// still on its way, waits for it (up to `wait`), then falls back to the
-    /// typed text's own row. Null means nothing to take: the browser does
-    /// what it does with the bare text.
+    /// still on its way, waits for it (up to `wait`). Null means nothing to
+    /// take: the browser does what it does with the bare text.
     public async Task<FieldRow?> EnterAsync(TimeSpan wait)
     {
         if (!Board.Waiting) return Board.EnterRow;
         var filled = round.Filled.Task;
         await Task.WhenAny(filled, Task.Delay(wait)).ConfigureAwait(true);
-        return Board.EnterRow ?? Board.Fallback;
+        return Board.EnterRow;
     }
 
     public void Dispose() => round.Cancel.Cancel();

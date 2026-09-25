@@ -188,9 +188,8 @@ public sealed partial class Shield : Model
         var want = Enabled && Trouble == null;
         if (ward.Filtered == want) return;
         // One filter for everything the page and its frames ask for. Only the
-        // page's own requests: a service worker's are raised on every page
-        // with a filter that matches them, so they'd be heard once per tab
-        // (see ArmWorkers below for those).
+        // page's own requests: a worker's are decided on their own, from what
+        // the request says rather than from this tab (see ArmWorkers below).
         try
         {
             if (want) core.AddWebResourceRequestedFilter("*", CoreWebView2WebResourceContext.All, CoreWebView2WebResourceRequestSourceKinds.Document);
@@ -214,22 +213,15 @@ public sealed partial class Shield : Model
 
     /// A service worker's (or a shared worker's) own requests never cross
     /// the Document-only filter above, so ads and trackers a site fetches
-    /// from inside one went unblocked (a worker only registers once, in a
-    /// site's first tab, and every page on that site shares the same one).
-    /// Registered on a single page rather than every open one — a worker's
-    /// requests are raised once per page with a matching filter, so putting
-    /// it everywhere would decide the very same request once per open tab.
-    /// Moved to another page only once the one holding it turns out to be
-    /// gone: checked the cheap way, by touching it and seeing whether it
-    /// throws, whenever a fresh page starts.
-    private CoreWebView2? workerCore;
-
+    /// from inside one went unblocked. WebView2 raises such a request on
+    /// every page with a matching filter that the worker works for (seen:
+    /// with the filter on one page that wasn't the worker's, nothing came;
+    /// on three pages that all were, each request came three times), so
+    /// every page holds the filter, and the same request may be decided once
+    /// per open tab of that site — the same answer each time, since nothing
+    /// in it depends on the tab.
     private void ArmWorkers(CoreWebView2 core)
     {
-        if (workerCore != null)
-        {
-            try { _ = workerCore.Source; return; } catch { workerCore = null; }
-        }
         try
         {
             core.AddWebResourceRequestedFilter("*", CoreWebView2WebResourceContext.All,
@@ -237,33 +229,49 @@ public sealed partial class Shield : Model
         }
         catch { return; }
         core.WebResourceRequested += WorkerRequested;
-        workerCore = core;
     }
 
     /// A worker's own request, decided against the same list. A worker isn't
     /// one tab's, so the page it works for is what the request says: its
     /// Origin or Referer (SearchKit.Shields.WorkerRequest) — which makes a
     /// site's own requests first-party, lets `$domain=` rules hold, and
-    /// leaves a paused site's worker alone. Never a navigation the worker
-    /// fetches for a page: that is the page itself.
+    /// leaves a paused site's worker alone. What it fetches is judged as
+    /// what the page asked for (its Accept), never as the worker's fetch.
+    /// And never a navigation the worker fetches for a page: that is the
+    /// page itself.
     private void WorkerRequested(object? sender, CoreWebView2WebResourceRequestedEventArgs e)
     {
         if (!Enabled || Trouble != null) return;
         string raw;
         CoreWebView2WebResourceContext context;
         CoreWebView2HttpRequestHeaders headers;
-        try { context = e.ResourceContext; raw = e.Request.Uri; headers = e.Request.Headers; }
+        // Every handler on a view hears every request any of its filters
+        // matches: the page's own are the Ward's.
+        if (!FromWorker(e)) return;
+        try
+        {
+            context = e.ResourceContext;
+            raw = e.Request.Uri;
+            headers = e.Request.Headers;
+        }
         catch { return; }
+        var accept = Header(headers, "Accept");
         if (WorkerRequest.IsNavigation(context == CoreWebView2WebResourceContext.Document,
-                Header(headers, "Sec-Fetch-Mode"), Header(headers, "Sec-Fetch-Dest"))) return;
+                Header(headers, "Sec-Fetch-Mode"), Header(headers, "Sec-Fetch-Dest"), accept, Header(headers, "Upgrade-Insecure-Requests"))) return;
         if (!raw.StartsWith("http", StringComparison.OrdinalIgnoreCase) || !Uri.TryCreate(raw, UriKind.Absolute, out var url)) return;
         var page = WorkerRequest.Page(Header(headers, "Origin"), Header(headers, "Referer"));
         if (page != null && (Own(page) || IsPaused(Curtain.Host(page)))) return;
         bool refused;
-        try { refused = Refuses(url, Address.Host(page), context); }
+        try { refused = Refuses(url, Address.Host(page), WorkerRequest.Kind(Kind(context), accept)); }
         catch { return; }
         if (!refused || sender is not CoreWebView2 core) return;
         e.Response = core.Environment.CreateWebResourceResponse(null, 403, "Blocked", "");
+    }
+
+    private static bool FromWorker(CoreWebView2WebResourceRequestedEventArgs e)
+    {
+        try { return e.RequestedSourceKind is CoreWebView2WebResourceRequestSourceKinds.ServiceWorker or CoreWebView2WebResourceRequestSourceKinds.SharedWorker; }
+        catch { return false; }
     }
 
     private static string? Header(CoreWebView2HttpRequestHeaders headers, string name)
@@ -273,9 +281,9 @@ public sealed partial class Shield : Model
     }
 
     /// Whether a request from a page on `pageHost` should be refused.
-    private bool Refuses(Uri url, string? pageHost, CoreWebView2WebResourceContext context)
+    private bool Refuses(Uri url, string? pageHost, ResourceKind kind)
     {
-        if (list is { } rules) return rules.ShouldBlock(url, pageHost, Kind(context));
+        if (list is { } rules) return rules.ShouldBlock(url, pageHost, kind);
         // The built-in list: third parties only, as the Mac's rule list said
         // with its load type. A page that is itself on one of these domains
         // is that site, and its own requests are the site's.
@@ -478,6 +486,9 @@ public sealed partial class Shield : Model
 
         public void Requested(object? sender, CoreWebView2WebResourceRequestedEventArgs e)
         {
+            // A worker's requests reach every handler on this view as well;
+            // they are WorkerRequested's to decide.
+            if (FromWorker(e)) return;
             // Timed for the bench: this is the cost every request pays.
             var started = System.Diagnostics.Stopwatch.GetTimestamp();
             try { Decide(e); }
@@ -504,7 +515,7 @@ public sealed partial class Shield : Model
             if (document && IsTop(raw)) return;
             if (!Uri.TryCreate(raw, UriKind.Absolute, out var url)) return;
             bool refused;
-            try { refused = shield.Refuses(url, pageHost, context); }
+            try { refused = shield.Refuses(url, pageHost, Kind(context)); }
             catch { return; }
             if (!refused) return;
             if (!document)

@@ -4249,6 +4249,7 @@ fn start_isolated_index_worker(
     let child = command
         .spawn()
         .map_err(|error| format!("Cannot start isolated index worker: {error}"))?;
+    tie_worker_to_engine(&child);
     let worker = SearchIndexWorkerProcess {
         child: Arc::new(Mutex::new(child)),
         status_path: status_path.clone(),
@@ -4355,12 +4356,33 @@ fn configure_worker_process(
 ) {
 }
 
+/// The engine's long-lived index workers (content, filename, watch), in a job
+/// that kills them when its handle closes: kept open for the engine's life,
+/// it closes when the engine exits or is killed, so no worker outlives it.
+static ENGINE_WORKER_JOB: LazyLock<Option<JobAssigner>> = LazyLock::new(|| {
+    let job = MemoryCappedJob::new(None).ok()?;
+    let assigner = job.assigner();
+    // Never closed by us: the OS closes it with the engine.
+    std::mem::forget(job);
+    Some(assigner)
+});
+
+/// Ties a just-started index worker to this engine (`ENGINE_WORKER_JOB`).
+fn tie_worker_to_engine(child: &std::process::Child) {
+    if let Some(job) = ENGINE_WORKER_JOB.as_ref() {
+        if let Err(error) = job.assign(child) {
+            eprintln!("[search] index worker not tied to the engine: {error}");
+        }
+    }
+}
+
 /// A Windows Job Object with a hard per-process memory cap — used to sandbox
 /// the out-of-process content extractor children (Phase 4, task 11). The OS
 /// terminates any assigned process that exceeds the cap, so a pathological file
 /// can only ever take down one extractor child, never the whole app. The
 /// `KILL_ON_JOB_CLOSE` flag means dropping this handle also kills every child
 /// still assigned to it — a parent crash cannot leave orphan extractors.
+/// Without a cap (`None`) it's that last part alone.
 #[cfg(windows)]
 struct MemoryCappedJob {
     handle: windows::Win32::Foundation::HANDLE,
@@ -4369,7 +4391,7 @@ struct MemoryCappedJob {
 #[cfg(windows)]
 impl MemoryCappedJob {
     /// Create a job object capping every assigned process at `memory_limit_bytes`.
-    fn new(memory_limit_bytes: usize) -> Result<Self, String> {
+    fn new(memory_limit_bytes: Option<usize>) -> Result<Self, String> {
         use windows::core::PCWSTR;
         use windows::Win32::Foundation::CloseHandle;
         use windows::Win32::System::JobObjects::{
@@ -4384,9 +4406,11 @@ impl MemoryCappedJob {
             .map_err(|error| format!("Cannot create extractor job object: {error}"))?;
 
         let mut info = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
-        info.BasicLimitInformation.LimitFlags =
-            JOB_OBJECT_LIMIT_PROCESS_MEMORY | JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
-        info.ProcessMemoryLimit = memory_limit_bytes;
+        info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        if let Some(limit) = memory_limit_bytes {
+            info.BasicLimitInformation.LimitFlags |= JOB_OBJECT_LIMIT_PROCESS_MEMORY;
+            info.ProcessMemoryLimit = limit;
+        }
 
         // SAFETY: `info` is a fully-initialized struct of the size declared for
         // the `JobObjectExtendedLimitInformation` class.
@@ -4437,7 +4461,7 @@ struct MemoryCappedJob;
 
 #[cfg(not(windows))]
 impl MemoryCappedJob {
-    fn new(_memory_limit_bytes: usize) -> Result<Self, String> {
+    fn new(_memory_limit_bytes: Option<usize>) -> Result<Self, String> {
         Ok(Self)
     }
     fn assigner(&self) -> JobAssigner {
@@ -4779,7 +4803,7 @@ impl ExtractorPool {
         // all children when the pool drops. The cap is profile-aware:
         // `clamp_pool_for_available_ram` reduces it on low-RAM machines so we
         // never commit N × 512 MB on a 4 GB laptop.
-        let job = MemoryCappedJob::new(memory_cap_bytes)?;
+        let job = MemoryCappedJob::new(Some(memory_cap_bytes))?;
         let assigner = job.assigner();
 
         let (path_tx, path_rx) = sync_channel::<PathBuf>(EXTRACTOR_POOL_PATH_BUFFER);
@@ -5123,6 +5147,7 @@ fn start_isolated_filename_index_worker(
     let child = command
         .spawn()
         .map_err(|error| format!("Cannot start filename indexer: {error}"))?;
+    tie_worker_to_engine(&child);
     let worker = SearchIndexWorkerProcess {
         child: Arc::new(Mutex::new(child)),
         status_path,
@@ -5426,6 +5451,7 @@ fn start_isolated_watch_worker(
     let child = command
         .spawn()
         .map_err(|error| format!("Cannot start isolated index watcher: {error}"))?;
+    tie_worker_to_engine(&child);
     let worker = SearchIndexWorkerProcess {
         child: Arc::new(Mutex::new(child)),
         status_path: status_path.clone(),
@@ -13116,5 +13142,56 @@ mod tests {
 
         assert_eq!(find_contents(&files, "sample notes budget"), ["plan.txt"]);
         assert_eq!(find_contents(&files, "notes"), ["notes.txt", "memo 3.txt"]);
+    }
+
+    /// Stands in for an engine (run by the test below, never on its own): it
+    /// starts a long-lived worker, ties it to itself as the engine does its
+    /// index workers, says its process id, and waits to be killed.
+    #[cfg(windows)]
+    #[test]
+    #[ignore]
+    fn engine_stand_in() {
+        use std::io::Write;
+        let worker = std::process::Command::new("ping").args(["-n", "120", "127.0.0.1"]).stdout(Stdio::null()).spawn().unwrap();
+        tie_worker_to_engine(&worker);
+        println!("worker {}", worker.id());
+        std::io::stdout().flush().unwrap();
+        thread::sleep(Duration::from_secs(120));
+    }
+
+    /// An index worker does not outlive its engine: killed (a hard close, no
+    /// chance to stop its workers), the engine takes them with it.
+    #[cfg(windows)]
+    #[test]
+    fn an_index_worker_does_not_outlive_a_killed_engine() {
+        use std::io::BufRead;
+        use windows::Win32::Foundation::{CloseHandle, WAIT_OBJECT_0};
+        use windows::Win32::System::Threading::{
+            OpenProcess, TerminateProcess, WaitForSingleObject, PROCESS_SYNCHRONIZE, PROCESS_TERMINATE,
+        };
+
+        let mut engine = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--ignored", "--exact", "commands::search::tests::engine_stand_in", "--nocapture", "--test-threads=1"])
+            .stdout(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let lines = std::io::BufReader::new(engine.stdout.take().unwrap()).lines();
+        let worker: u32 = lines
+            .map_while(Result::ok)
+            // libtest may have started the line ("test … ... ").
+            .find_map(|line| line.split_once("worker ").and_then(|(_, pid)| pid.trim().parse().ok()))
+            .expect("the stand-in names its worker");
+        // SAFETY: a process handle opened, waited on and closed here.
+        let handle = unsafe { OpenProcess(PROCESS_SYNCHRONIZE | PROCESS_TERMINATE, false, worker) }.unwrap();
+        engine.kill().unwrap();
+        let _ = engine.wait();
+        let ended = unsafe { WaitForSingleObject(handle, 5_000) } == WAIT_OBJECT_0;
+        unsafe {
+            if !ended {
+                let _ = TerminateProcess(handle, 1);
+            }
+            let _ = CloseHandle(handle);
+        }
+        assert!(ended, "the worker outlived its engine");
     }
 }

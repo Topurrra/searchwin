@@ -37,6 +37,12 @@ Drive the Search you already have open, from the shell.
                                            type into the field (keys: one keystroke at a time, each timed),
                                            the rows once the engine has answered, then Enter or row N pressed
                                            — --test runs only
+    ./bench.ps1 clip [open | close | type TEXT | down | up | enter | go | secret TEXT]
+                                           Ctrl+Shift+V's list: open it (Enter pastes where the caret is now),
+                                           narrow it, walk it, paste (enter) or go there (go), put it away;
+                                           secret copies as a password is copied, which no history keeps.
+                                           Answers the rows as drawn (secrets as their kind), picked, aim, last
+                                           — --test runs only
     ./bench.ps1 ui KEY VALUE               settings/passwords/welcome/history/downloads/bookmarks/hidden on|off,
                                            look light|dark|system, sidebar on|off, spaces on|off, hides on|off,
                                            folded on|off, peek on|off
@@ -217,6 +223,14 @@ switch ($verb) {
                 default { Usage 'field TEXT [keys] [enter | pick N] [wait SECONDS]' }
             }
         }
+    }
+    'clip' {
+        $what = if ($rest.Count -gt 0) { $rest[0] } else { '' }
+        if ($what -in @('type', 'secret')) {
+            if ($rest.Count -ne 2) { Usage "clip $what TEXT" }
+            $request.act = $what; $request.text = $rest[1]
+        } elseif ($what -in @('open', 'close', 'down', 'up', 'enter', 'go')) { $request.act = $what }
+        elseif ($what) { Usage 'clip [open | close | type TEXT | down | up | enter | go | secret TEXT]' }
     }
     'engine' {
         if ($rest.Count -notin @(1, 2)) { Usage 'engine METHOD [PARAMS-JSON]' }

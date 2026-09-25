@@ -105,9 +105,12 @@ public sealed record FieldQuery(string Typed, QueryKind Kind, string Text, Scope
         ("history", Scope.History),
     ];
 
-    /// `clip: invoice`. Not `file:`, which starts a file:// address.
+    /// `clip: invoice`. Not `file:`, which starts a file:// address. The word
+    /// `clipboard` on its own is the whole history too, as it is in a launcher.
     private static FieldQuery? Scoped(string typed, string text)
     {
+        if (text.Equals("clipboard", StringComparison.OrdinalIgnoreCase))
+            return new(typed, QueryKind.Empty, "", Scope.Clipboard);
         var colon = text.IndexOf(':');
         if (colon < 3 || colon > 9) return null;
         var head = text.AsSpan(0, colon);

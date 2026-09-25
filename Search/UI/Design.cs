@@ -257,6 +257,10 @@ public static class Icons
     public const string App = "";
     public const string Calculator = "";
     public const string Clipboard = "";
+    // The clipboard list's own (ClipPopup).
+    public const string Unpin = "";
+    public const string Delete = "";
+    public const string Lock = "";
 
     public static readonly FontFamily Font = new("Segoe Fluent Icons, Segoe MDL2 Assets");
 

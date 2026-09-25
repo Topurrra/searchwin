@@ -614,6 +614,12 @@ public sealed partial class Browser : Model
             if (content.Contains(StandardDataFormats.Text)) text = await content.GetTextAsync();
         }
         catch { }
+        GoWith(text);
+    }
+
+    /// Text taken as the field would take it: a place, or a search.
+    public void GoWith(string? text)
+    {
         if (text == null || Google.Destination(text.Trim()) is not { } url)
         {
             Refusals++;

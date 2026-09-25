@@ -59,6 +59,7 @@ public sealed partial class Preferences : Model
         searchFolders = store.Strings("files.folders");
         fileContents = store.OptionalBool("files.contents") ?? true;
         appsInField = store.OptionalBool("field.apps") ?? true;
+        clipboardHistory = store.OptionalBool("clip.history") ?? true;
     }
 
     private bool bench;
@@ -184,6 +185,12 @@ public sealed partial class Preferences : Model
     private bool appsInField;
     /// Installed apps among the field's suggestions. On unless turned off.
     public bool AppsInField { get => appsInField; set { if (Set(ref appsInField, value)) store.Set("field.apps", value); } }
+
+    private bool clipboardHistory;
+    /// What you copy, kept by the engine for Ctrl+Shift+V and `clip:` in the
+    /// field — encrypted on this PC, secrets for minutes only, password
+    /// managers never. On unless turned off (the user's decision, 2026-09-25).
+    public bool ClipboardHistory { get => clipboardHistory; set { if (Set(ref clipboardHistory, value)) store.Set("clip.history", value); } }
 }
 
 public static class KnownFolders

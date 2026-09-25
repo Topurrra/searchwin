@@ -20,6 +20,7 @@ public sealed partial class Browser
         StartReader();
         StartBench();
         StartFiles();
+        StartClipboard();
         Updater.Shared.CheckIfDue(Announce);
     }
 
@@ -49,6 +50,7 @@ public sealed partial class Browser
     partial void StartReader();
     partial void StartBench();
     partial void StartFiles();
+    partial void StartClipboard();
 
     partial void PrepareCurtain(Tab tab);
     partial void PreparePasswords(Tab tab);

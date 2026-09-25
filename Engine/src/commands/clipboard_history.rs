@@ -2285,10 +2285,21 @@ fn run_listener_thread(_app: AppHandle) {
     use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
     use windows::Win32::System::DataExchange::AddClipboardFormatListener;
     use windows::Win32::UI::WindowsAndMessaging::{
-        CreateWindowExW, DefWindowProcW, DispatchMessageW, GetMessageW, RegisterClassExW,
-        TranslateMessage, HWND_MESSAGE, MSG, WINDOW_EX_STYLE, WINDOW_STYLE, WNDCLASSEXW,
-        WM_CLIPBOARDUPDATE,
+        CreateWindowExW, DefWindowProcW, DispatchMessageW, GetMessageW, KillTimer,
+        RegisterClassExW, SetTimer, TranslateMessage, HWND_MESSAGE, MSG, WINDOW_EX_STYLE,
+        WINDOW_STYLE, WM_CLIPBOARDUPDATE, WM_TIMER, WNDCLASSEXW,
     };
+
+    // Search: the copy is read a moment after Windows says it happened, not
+    // at once. An app that puts delay-rendered data on the clipboard (OLE's
+    // OleSetClipboard, then OleFlushClipboard) needs the clipboard again right
+    // after announcing it; opening it in that instant made about one copy in
+    // fifty fail in the copying app while history was on. One timer, armed by
+    // the first update and not re-armed by the ones behind it, so a burst
+    // still settles after SETTLE_MS.
+    const SETTLE_TIMER: usize = 1;
+    const SETTLE_MS: u32 = 60;
+    static SETTLING: AtomicBool = AtomicBool::new(false);
 
     // Window procedure — receives messages from Windows. C calling convention,
     // no closures with captures. WindowProc reaches our state via the STATE
@@ -2300,6 +2311,16 @@ fn run_listener_thread(_app: AppHandle) {
         lparam: LPARAM,
     ) -> LRESULT {
         if msg == WM_CLIPBOARDUPDATE {
+            if !SETTLING.swap(true, Ordering::SeqCst) && SetTimer(hwnd, SETTLE_TIMER, SETTLE_MS, None) == 0 {
+                // No timer to be had: read it now, as before.
+                SETTLING.store(false, Ordering::SeqCst);
+                on_clipboard_change();
+            }
+            return LRESULT(0);
+        }
+        if msg == WM_TIMER && wparam.0 == SETTLE_TIMER {
+            let _ = KillTimer(hwnd, SETTLE_TIMER);
+            SETTLING.store(false, Ordering::SeqCst);
             on_clipboard_change();
             return LRESULT(0);
         }

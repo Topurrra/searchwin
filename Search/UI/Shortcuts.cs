@@ -21,6 +21,18 @@ public static class Shortcuts
     {
         var b = Browser;
 
+        // The clipboard list has the keyboard: its field, its arrows, its
+        // Enter, Ctrl+P and Shift+Delete. Esc, or Ctrl+Shift+V again, puts it away.
+        if (b.Clipping)
+        {
+            if ((key == VirtualKey.Escape && !ctrl && !alt) || (key == VirtualKey.V && ctrl && shift && !alt))
+            {
+                b.HideClipboard();
+                return true;
+            }
+            return false;
+        }
+
         // Escape puts the page back. On a blank tab there is no page to put
         // back, so it belongs to whatever else wants it.
         if (key == VirtualKey.Escape && !ctrl && !alt)
@@ -128,8 +140,11 @@ public static class Shortcuts
             case VirtualKey.Y when !shift: b.Recalling = !b.Recalling; return true;
             case VirtualKey.H when !shift: b.Recalling = !b.Recalling; return true;
             case VirtualKey.J: b.Hoarding = !b.Hoarding; return true;
-            // Paste and go — but not over a page's own field, where Ctrl+Shift+V
-            // is Windows' paste without formatting.
+            // What you copied, to paste as plain text wherever the caret is
+            // (Shift+Enter in the list is paste and go). With the history
+            // off: paste and go — but not over a page's own field, where
+            // Ctrl+Shift+V is Windows' paste without formatting.
+            case VirtualKey.V when shift && ClipHistory.On: b.ShowClipboard(); return true;
             case VirtualKey.V when shift && !(inPage && b.Active?.Typing == true): b.PasteAndGo(); return true;
             case VirtualKey.P when !shift: b.PrintPage(); return true;
             case VirtualKey.F when !shift: b.OpenFind(); return true;

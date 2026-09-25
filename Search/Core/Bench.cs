@@ -238,6 +238,56 @@ public sealed class Bench
                 break;
             }
 
+            case "clip":
+            {
+                // Ctrl+Shift+V's list, as a person would use it: open (where
+                // the caret is now decides where Enter pastes), type to
+                // narrow, down/up, enter (paste) or go (Shift+Enter), close.
+                // `secret TEXT` copies the way Search copies a password, which
+                // no clipboard history may keep. Only on a SEARCH_PROBE run:
+                // it pastes into pages and writes the clipboard.
+                if (!Store.Testing) { answer(Error("clip only works on a --test run — it pastes into your pages")); return; }
+                var popup = App.Window?.Clips;
+                switch (Str(request, "act"))
+                {
+                    case "open": if (!b.Clipping) b.ShowClipboard(); break;
+                    case "close": b.HideClipboard(); break;
+                    case "type": popup?.Type(Str(request, "text") ?? ""); break;
+                    case "down": popup?.Step(1); break;
+                    case "up": popup?.Step(-1); break;
+                    case "enter": popup?.Enter(); break;
+                    case "go": popup?.Enter(go: true); break;
+                    case "secret": if (!QuietCopy.Copy(Str(request, "text") ?? "")) { answer(Error("the clipboard was busy")); return; } break;
+                    case null: break;
+                    default: answer(Error("clip acts are open, close, type, down, up, enter, go, secret")); return;
+                }
+                // The list reloads when the engine says the history changed.
+                UI.After(Num(request, "wait") ?? 0.5, () =>
+                {
+                    var now = App.Window?.Clips;
+                    var reply = new JsonObject
+                    {
+                        ["on"] = ClipHistory.On,
+                        ["paused"] = ClipHistory.Paused,
+                        ["open"] = b.Clipping,
+                        ["aim"] = b.ClipAim,
+                        ["kept"] = ClipHistory.Last.Count,
+                        ["announced"] = b.Announcement,
+                        ["typed"] = b.Typed,
+                    };
+                    if (now != null)
+                    {
+                        var (rows, picked) = now.Seen;
+                        reply["rows"] = new JsonArray([.. rows.Select(r => (JsonNode)r)]);
+                        reply["picked"] = picked;
+                        reply["drawMs"] = Math.Round(now.DrawMs, 2);
+                    }
+                    if (b.LastPaste is { } last) reply["last"] = new JsonObject { ["kind"] = last.Kind, ["aim"] = last.Aim };
+                    answer(reply);
+                });
+                break;
+            }
+
             case "tabs":
                 answer(new JsonObject { ["tabs"] = new JsonArray([.. b.Tabs.Select(t => (JsonNode)Describe(t))]) });
                 break;

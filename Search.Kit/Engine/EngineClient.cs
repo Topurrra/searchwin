@@ -43,6 +43,16 @@ public sealed class EngineClient : IAsyncDisposable
     /// An engine event: its name and payload. Raised on a background thread.
     public event Action<string, JsonNode?>? EventReceived;
 
+    /// A new connection: the first, or one to an engine started again after
+    /// the last went away. What a running engine was asked to keep doing (the
+    /// clipboard listener) has to be asked of this one again. Raised on a
+    /// background thread, after the call that connected is under way.
+    public event Action? Connected;
+
+    /// The engine went away (it exited, or crashed). Nothing reconnects until
+    /// the next call. Raised on a background thread.
+    public event Action? Disconnected;
+
     public bool IsConnected => stream?.IsConnected == true;
 
     public async Task<JsonNode?> CallAsync(string method, JsonNode? args = null, CancellationToken cancel = default)
@@ -106,6 +116,7 @@ public sealed class EngineClient : IAsyncDisposable
             writer = new StreamWriter(attempt, new UTF8Encoding(false)) { NewLine = "\n", AutoFlush = false };
             var reading = new StreamReader(attempt, new UTF8Encoding(false));
             _ = Task.Run(() => ReadAsync(attempt, reading), CancellationToken.None);
+            if (Connected is { } told) _ = Task.Run(() => { try { told(); } catch { } }, CancellationToken.None);
         }
         finally
         {
@@ -188,11 +199,18 @@ public sealed class EngineClient : IAsyncDisposable
         catch (ObjectDisposedException) { }
         finally
         {
-            if (ReferenceEquals(stream, from)) Drop();
+            // Only when this was the connection in use: one closed on purpose
+            // (DisposeAsync) or already replaced isn't the engine going away.
+            var gone = ReferenceEquals(stream, from);
+            if (gone) Drop();
             foreach (var id in pending.Keys)
             {
                 if (pending.TryRemove(id, out var waiting))
                     waiting.TrySetException(new EngineException("The engine went away."));
+            }
+            if (gone)
+            {
+                try { Disconnected?.Invoke(); } catch { }
             }
         }
     }

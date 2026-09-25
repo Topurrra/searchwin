@@ -28,6 +28,14 @@ public static class EngineLauncher
         info.ArgumentList.Add("--linger");
         info.ArgumentList.Add(setup.LingerSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture));
         using var started = Process.Start(info);
+        // Background work, beside a browser that is in front: when the two
+        // want the processor at once (an index being built while a page
+        // loads), the page goes first. Its workers inherit this.
+        try
+        {
+            if (started != null && OperatingSystem.IsWindows()) started.PriorityClass = ProcessPriorityClass.BelowNormal;
+        }
+        catch (Exception error) when (error is InvalidOperationException or System.ComponentModel.Win32Exception) { }
         return Task.CompletedTask;
     }
 }

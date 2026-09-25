@@ -177,10 +177,10 @@ public sealed partial class Browser
         Relist();
     }
 
+    /// Marked so no clipboard history keeps it — Search's own included.
     public void Copy(Login login)
     {
-        Copy(login.Password);
-        Announce("Password copied");
+        Announce(QuietCopy.Copy(login.Password) ? "Password copied" : "Couldn't copy — try again");
     }
 
     // MARK: - bringing things in

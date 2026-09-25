@@ -15,13 +15,14 @@ namespace Search;
 /// as for the tab you are on.
 public sealed partial class SettingsPanel : Grid
 {
-    private enum Page { General, Tabs, Search, Extensions, Passwords, Downloads, Privacy, About }
+    private enum Page { General, Tabs, Search, Clipboard, Extensions, Passwords, Downloads, Privacy, About }
 
     private static readonly (Page page, string raw, string title, string icon)[] Pages =
     [
         (Page.General, "general", "General", Icons.Window),
         (Page.Tabs, "tabs", "Tabs", Icons.Tabs),
         (Page.Search, "search", "Search", Icons.Search),
+        (Page.Clipboard, "clipboard", "Clipboard", Icons.Clipboard),
         (Page.Extensions, "extensions", "Extensions", Icons.Puzzle),
         (Page.Passwords, "passwords", "Passwords", Icons.Key),
         (Page.Downloads, "downloads", "Downloads", Icons.Download),
@@ -181,8 +182,15 @@ public sealed partial class SettingsPanel : Grid
         return content;
     }
 
+    /// The page last drawn: drawn again (a folder added, an app taken off a
+    /// list), it stays scrolled where it was.
+    private Page? drawn;
+
     private void Show()
     {
+        var again = drawn == page;
+        var offset = scroller.VerticalOffset;
+        drawn = page;
         foreach (var (item, row) in rows) row.On = item == page;
         heading.Text = Pages.First(p => p.page == page).title;
         sideHides = null;
@@ -193,6 +201,7 @@ public sealed partial class SettingsPanel : Grid
             case Page.General: body.Children.Add(General()); break;
             case Page.Tabs: body.Children.Add(Tabs()); break;
             case Page.Search: Finding(body); break;
+            case Page.Clipboard: Clipping(body); break;
             case Page.Extensions: body.Children.Add(new ExtensionsPage(browser)); break;
             case Page.Passwords: Passwords(body); break;
             case Page.Downloads: body.Children.Add(Downloads()); break;
@@ -200,7 +209,8 @@ public sealed partial class SettingsPanel : Grid
             case Page.About: About(body); break;
         }
         scroller.Content = body;
-        scroller.ChangeView(null, 0, null, true);
+        if (again) UI.Soon(() => scroller.ChangeView(null, offset, null, true));
+        else scroller.ChangeView(null, 0, null, true);
     }
 
     // MARK: - keeping up
@@ -403,6 +413,134 @@ public sealed partial class SettingsPanel : Grid
         prefs.SearchFolders = [.. prefs.SearchFolders.Where(f => !SearchKit.Field.IndexPlan.Covers([path], f)), path];
         browser.Announce("Indexing " + Path.GetFileName(path.TrimEnd('\\', '/')));
         if (page == Page.Search) Show();
+    }
+
+    // MARK: - clipboard
+
+    /// What the engine last said about its history's settings; drawn at once,
+    /// asked again each time the page is, and drawn again if it changed.
+    private ClipHistory.Choices? clip;
+
+    /// What you copy, kept for Ctrl+Shift+V and `clip:` — on unless turned
+    /// off; secrets for minutes, pictures for days, password managers never.
+    private void Clipping(StackPanel body)
+    {
+        if (!Engine.Available)
+        {
+            body.Children.Add(Parts.Card(new Line("Clipboard history", "Needs Search's engine, which isn't installed beside it", null)));
+            return;
+        }
+        body.Children.Add(Parts.Card(
+            new Line("Keep clipboard history",
+                "What you copy, for Ctrl+Shift+V and clip: in the field. Encrypted on this PC and never sent anywhere. Passwords, keys and card numbers stay hidden until clicked and are forgotten within minutes.",
+                new Switch(prefs.ClipboardHistory, on =>
+                {
+                    prefs.ClipboardHistory = on;
+                    Show();
+                }))));
+        if (!prefs.ClipboardHistory) return;
+        _ = AskClipboard();
+        if (clip is not { } now)
+        {
+            body.Children.Add(Parts.Card(new Line("Asking…", null, null)));
+            return;
+        }
+
+        var days = new List<(int, string)> { (1, "A day"), (7, "A week"), (14, "2 weeks"), (30, "A month") };
+        if (!days.Any(d => d.Item1 == now.Days)) days.Add((now.Days, now.Days == 0 ? "Always" : $"{now.Days} days"));
+        body.Children.Add(Parts.Card(
+            new Line("Keep for", "The newest 200 either way; pinned ones until you unpin them",
+                new Segmented<int>(days, now.Days, d =>
+                {
+                    clip = (clip ?? now) with { Days = d };
+                    _ = ClipHistory.KeepFor(d);
+                })),
+            new Line("Keep pictures", $"Screenshots and copied images, for {(now.ImageDays == 1 ? "a day" : $"{now.ImageDays} days")} — they're big",
+                new Switch(now.Images, on =>
+                {
+                    clip = (clip ?? now) with { Images = on };
+                    _ = ClipHistory.KeepPictures(on);
+                })),
+            new Line("Pause", "Nothing new is kept until this is off again, or Search restarts",
+                new Switch(now.Paused, on =>
+                {
+                    clip = (clip ?? now) with { Paused = on };
+                    _ = ClipHistory.Pause(on);
+                }))));
+
+        // The apps whose copies are never kept, by the name Windows runs them under.
+        body.Children.Add(Caption.Make("Never kept when copied from"));
+        var apps = Parts.Card();
+        foreach (var app in now.Exclusions)
+            apps.Add(new Line(app, null, new Pill("Remove", () => Exclude(now, [.. now.Exclusions.Where(a => a != app)]))));
+        var name = Kit.Field(12.5);
+        name.Width = 130;
+        var typed = new Border { CornerRadius = new CornerRadius(8), Background = Palette.Wash, Padding = new Thickness(9, 4, 9, 4), Child = Kit.Placeheld(name, "keepassxc", 12.5) };
+        void add()
+        {
+            var app = name.Text.Trim().ToLowerInvariant();
+            if (app.EndsWith(".exe", StringComparison.Ordinal)) app = app[..^4];
+            if (app.Length == 0 || now.Exclusions.Contains(app)) return;
+            Exclude(now, [.. now.Exclusions, app]);
+        }
+        name.KeyDown += (_, e) =>
+        {
+            if (e.Key != Windows.System.VirtualKey.Enter) return;
+            add();
+            e.Handled = true;
+        };
+        var adding = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+        adding.Children.Add(typed);
+        adding.Children.Add(new Pill("Add", add));
+        apps.Add(new Line("Another app", "Its program's name, as Task Manager shows it", adding));
+        apps.Add(new Line("Password managers", "KeePassXC, 1Password, Bitwarden and the others this list started with", new Pill("Put back", () =>
+        {
+            clip = null;
+            _ = ClipHistory.ExcludePasswordManagers().ContinueWith(_ => UI.Do(() => { if (page == Page.Clipboard) Show(); }));
+        })));
+        body.Children.Add(apps);
+
+        body.Children.Add(Parts.Card(
+            new Line("Clear clipboard history", "Everything except what you pinned", new Pill("Clear…", ClearClipboard))));
+    }
+
+    private void Exclude(ClipHistory.Choices now, List<string> apps)
+    {
+        clip = now with { Exclusions = apps };
+        _ = ClipHistory.Exclude(apps);
+        Show();
+    }
+
+    /// The engine's answer, drawn again only if it differs from what's shown.
+    private async Task AskClipboard()
+    {
+        var read = await ClipHistory.Read();
+        if (page != Page.Clipboard || read == null) return;
+        if (clip is { } was && was.Days == read.Days && was.Images == read.Images && was.ImageDays == read.ImageDays
+            && was.Paused == read.Paused && was.Exclusions.SequenceEqual(read.Exclusions)) return;
+        clip = read;
+        Show();
+    }
+
+    private async void ClearClipboard()
+    {
+        if (App.Root?.XamlRoot is not { } root) return;
+        var dialog = new ContentDialog
+        {
+            XamlRoot = root,
+            RequestedTheme = App.Root.RequestedTheme,
+            Title = "Clear clipboard history?",
+            Content = "Everything you copied goes, except what you pinned. This can't be undone.",
+            PrimaryButtonText = "Clear",
+            CloseButtonText = "Cancel",
+            DefaultButton = ContentDialogButton.Close,
+        };
+        bool sure;
+        try { sure = await dialog.ShowAsync() == ContentDialogResult.Primary; }
+        catch { sure = false; }
+        if (!sure) return;
+        ClipHistory.Clear();
+        browser.Announce("Clipboard history cleared");
     }
 
     // MARK: - passwords

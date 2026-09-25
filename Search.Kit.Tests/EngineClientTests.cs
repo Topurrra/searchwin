@@ -157,6 +157,33 @@ public class EngineClientTests
         Assert.Equal(2, starts);
         await engine!;
     }
+
+    [Fact]
+    public async Task Each_connection_and_each_loss_of_one_is_told()
+    {
+        var pipe = NewPipe();
+        var connected = 0;
+        var lost = new SemaphoreSlim(0);
+        var told = new SemaphoreSlim(0);
+        Task? engine = null;
+        await using var client = new EngineClient(pipe, _ =>
+        {
+            engine = FakeEngine(pipe, _ => new JsonObject { ["result"] = 1 }, calls: 1);
+            return Task.CompletedTask;
+        });
+        client.Connected += () => { Interlocked.Increment(ref connected); told.Release(); };
+        client.Disconnected += () => lost.Release();
+
+        await client.CallAsync("one");
+        Assert.True(await told.WaitAsync(2000));
+        await engine!;
+        // The engine answered its one call and left.
+        Assert.True(await lost.WaitAsync(2000));
+        await client.CallAsync("two");
+        Assert.True(await told.WaitAsync(2000));
+        Assert.Equal(2, Volatile.Read(ref connected));
+        await engine!;
+    }
 }
 
 /// The real engine, when it has been built (Engine/target/debug/kil-engine.exe).

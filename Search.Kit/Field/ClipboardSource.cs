@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Text.Json.Nodes;
 
 namespace SearchKit.Field;
 
@@ -17,18 +16,10 @@ public sealed class ClipboardSource : IEngineSource
 {
     public const string ChangedEvent = "clipboard-history-updated";
 
-    /// One entry, read out of the engine's JSON once. The text is kept only
-    /// for entries that aren't secrets.
-    private sealed record Entry(long Id, bool Image, string Text, IReadOnlyList<string> Kinds, string Label,
-        string From, bool Pinned, long Width, long Height)
-    {
-        public bool Sensitive => Kinds.Count > 0;
-    }
-
     private readonly IEngineCalls engine;
     private readonly bool inField;
     private readonly object gate = new();
-    private IReadOnlyList<Entry>? cache;
+    private IReadOnlyList<ClipEntry>? cache;
     private int version;
     private int cached = -1;
     private long fetchedAt;
@@ -70,7 +61,7 @@ public sealed class ClipboardSource : IEngineSource
         return [.. pinned.Concat(rest).Take(limit)];
     }
 
-    private async Task<IReadOnlyList<Entry>> LoadAsync(CancellationToken cancel)
+    private async Task<IReadOnlyList<ClipEntry>> LoadAsync(CancellationToken cancel)
     {
         var now = Volatile.Read(ref version);
         lock (gate)
@@ -78,7 +69,8 @@ public sealed class ClipboardSource : IEngineSource
             if (cache != null && cached == now && Environment.TickCount64 - fetchedAt < maxAge) return cache;
         }
         var answer = await engine.CallAsync("get_clipboard_history", null, cancel).ConfigureAwait(false);
-        var list = Nodes.Items(answer).Select(Read).OfType<Entry>().ToList();
+        // A secret's text is dropped as it's read: a row never needs it.
+        var list = ClipList.Read(answer, secrets: false);
         lock (gate)
         {
             cache = list;
@@ -88,45 +80,14 @@ public sealed class ClipboardSource : IEngineSource
         return list;
     }
 
-    private static Entry? Read(JsonNode node)
-    {
-        var id = Nodes.Long(node, "id");
-        var image = Nodes.Str(node, "kind") == "image";
-        var kinds = Nodes.Strings(node, "sensitiveKinds");
-        var text = image || kinds.Count > 0 ? "" : Nodes.Str(node, "text");
-        if (!image && kinds.Count == 0 && text.Length == 0) return null;
-        return new Entry(id, image, text, kinds, Nodes.Str(node, "pinLabel"), Nodes.Str(node, "sourceApp"),
-            Nodes.Bool(node, "isPinned"), Nodes.Long(node, "imageWidth"), Nodes.Long(node, "imageHeight"));
-    }
-
-    private static FieldRow? Row(Entry entry, string needle, bool scoped)
+    private static FieldRow? Row(ClipEntry entry, string needle, bool scoped)
     {
         if (!scoped && (entry.Sensitive || entry.Image)) return null;
-        string title;
-        bool matches;
-        if (entry.Sensitive)
-        {
-            // Matched on its label and kind only, never on the secret itself.
-            var kinds = entry.Kinds.Where(k => k != "sensitive").Select(k => k.Replace('_', ' ')).ToList();
-            title = "Hidden: " + (kinds.Count > 0 ? string.Join(", ", kinds) : "secret");
-            matches = Has(title, needle) || Has(entry.Label, needle);
-        }
-        else if (entry.Image)
-        {
-            title = entry.Width > 0 && entry.Height > 0 ? $"Image {entry.Width}×{entry.Height}" : "Image";
-            matches = Has(title, needle) || Has(entry.Label, needle);
-        }
-        else
-        {
-            title = Nodes.Line(entry.Text, 90);
-            matches = Has(entry.Text, needle) || Has(entry.Label, needle);
-        }
-        if (!matches) return null;
+        // A secret is matched on its label and kind only, never on itself.
+        if (!entry.Matches(needle)) return null;
+        var title = entry.Sensitive || entry.Image ? entry.Face : Nodes.Line(entry.Text, 90);
         var detail = entry.Label.Length > 0 ? entry.Label : entry.From.Length > 0 ? entry.From : "Clipboard";
         return new FieldRow(Group.Clipboard, RowKey.Clip(entry.Id), title, detail, RowAction.CopyClip,
             entry.Id.ToString(CultureInfo.InvariantCulture)) { Sensitive = entry.Sensitive };
     }
-
-    private static bool Has(string text, string needle) =>
-        needle.Length == 0 || text.Contains(needle, StringComparison.OrdinalIgnoreCase);
 }

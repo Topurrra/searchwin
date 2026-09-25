@@ -5,7 +5,8 @@ using SearchKit.Field;
 namespace Search;
 
 // The field's reach past the browser: files by name and by what's inside
-// them, apps, and instant answers (`23*47`, `10 km to mi`, `sha256 hello`),
+// them, apps, what you copied (`clip:`), and instant answers (`23*47`,
+// `10 km to mi`, `sha256 hello`),
 // asked of the engine as you type (SearchKit.Field) and shown below the
 // field's own rows, which are decided at once, the way they always were.
 // What the engine finds arrives a moment later and never moves a row you
@@ -39,6 +40,9 @@ public sealed partial class Browser
                 new GatedSource(new FileNameSource(calls), files, chosen),
                 new GatedSource(new FileContentSource(calls), q => files(q) && Prefs.FileContents, chosen),
                 new GatedSource(new AppSource(calls), _ => Engine.Available && Prefs.AppsInField),
+                // `clip:` and `clipboard` list it; words find a couple of
+                // matches among the rest. Secrets only ever by their kind.
+                new GatedSource(new ClipboardSource(calls, inField: true), _ => ClipHistory.On),
                 // Hashes and colours are worked out here; sums, units and
                 // encodings need the engine.
                 new GatedSource(new AnswerSource(calls), q => Engine.Available || Answers.Plan(q) == null),

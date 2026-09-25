@@ -103,7 +103,15 @@ public static class AppMenu
         here.Items.Add(Item("Hidden on This Site…", "Ctrl+Shift+U", null, () => b.Reviewing = true, page));
         here.Items.Add(new MenuFlyoutSeparator());
         here.Items.Add(Item("Copy Address", "Ctrl+Shift+C", null, b.CopyAddress, page));
-        here.Items.Add(Item("Paste and Go", "Ctrl+Shift+V", null, b.PasteAndGo));
+        if (ClipHistory.On)
+        {
+            here.Items.Add(Item("Paste and Go", null, null, b.PasteAndGo));
+            here.Items.Add(Item("Clipboard History…", "Ctrl+Shift+V", Icons.Clipboard, b.ShowClipboard));
+        }
+        else
+        {
+            here.Items.Add(Item("Paste and Go", "Ctrl+Shift+V", null, b.PasteAndGo));
+        }
         here.Items.Add(Item("Print…", "Ctrl+P", null, b.PrintPage, page));
         here.Items.Add(new MenuFlyoutSeparator());
         here.Items.Add(Item("Developer Tools", "F12", null, () => Inspector.Toggle(b), page));

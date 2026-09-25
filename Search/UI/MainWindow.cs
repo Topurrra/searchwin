@@ -23,6 +23,8 @@ public sealed partial class MainWindow : Window
     private readonly Press foldEdge = new() { Width = 6, HorizontalAlignment = HorizontalAlignment.Left };
     private readonly Omnibox omnibox;
     private readonly Grid panels = new();
+    /// Ctrl+Shift+V's list, over everything else.
+    private readonly Grid clips = new();
     private readonly Bars bars;
     private readonly UISettings system = new();
     private Later? leaving;
@@ -78,6 +80,7 @@ public sealed partial class MainWindow : Window
         root.Children.Add(omnibox);
 
         root.Children.Add(panels);
+        root.Children.Add(clips);
 
         // Every shortcut, from the page or from the browser's own fields alike
         // (see KeyHook).
@@ -233,6 +236,9 @@ public sealed partial class MainWindow : Window
             case nameof(Browser.Reviewing):
                 ShowPanels();
                 break;
+            case nameof(Browser.Clipping):
+                ShowClips();
+                break;
             case nameof(Browser.Tabs):
             case nameof(Browser.MakingSpace):
                 Regions();
@@ -339,6 +345,21 @@ public sealed partial class MainWindow : Window
         if (browser.FieldShowing || browser.EditingTab != null) return;
         UI.Soon(() => browser.Active?.Built?.Focus(FocusState.Programmatic));
     }
+
+    /// Ctrl+Shift+V's list. Nothing dims: the page, and the box the text is
+    /// going into, stay in sight. A click anywhere else puts it away.
+    private void ShowClips()
+    {
+        clips.Children.Clear();
+        if (!browser.Clipping) return;
+        var clear = new Grid { Background = Palette.Clear };
+        clear.Tapped += (_, _) => browser.HideClipboard();
+        clips.Children.Add(clear);
+        clips.Children.Add(new ClipPopup(browser));
+    }
+
+    /// The popup, for the bench.
+    public ClipPopup? Clips => clips.Children.OfType<ClipPopup>().FirstOrDefault();
 
     /// The panels. All the same kind of thing, so they are built the same way:
     /// a dimmed ground a click on which puts the panel away.

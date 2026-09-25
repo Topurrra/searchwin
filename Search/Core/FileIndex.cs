@@ -39,7 +39,7 @@ public static class FileIndex
         await telling.WaitAsync();
         try
         {
-            var options = IndexPlan.Options(folders, contents);
+            var options = IndexPlan.Options(folders, contents, Store.Folder);
             await Engine.Client.CallAsync("save_file_search_index_options", new JsonObject { ["options"] = options.DeepClone() });
             if (folders.Count == 0)
             {
@@ -79,7 +79,7 @@ public static class FileIndex
         if (prefs.SearchFolders.Count == 0 || !Engine.Available) return;
         try
         {
-            await Build(IndexPlan.Options(prefs.SearchFolders, prefs.FileContents), prefs.FileContents);
+            await Build(IndexPlan.Options(prefs.SearchFolders, prefs.FileContents, Store.Folder), prefs.FileContents);
         }
         catch (EngineException error)
         {

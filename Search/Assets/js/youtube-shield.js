@@ -173,23 +173,34 @@
     return true;
   }
 
+  // ---- Idempotency tracking, without marking anything page-visible --------
+  // Each patch used to stamp a `__searchShield` property on the function or
+  // constructor it wrapped, so a page could detect Shields by checking for
+  // that name (`JSON.parse.__searchShield`, `window.fetch.__searchShield`,
+  // `XMLHttpRequest.__searchShield`). A WeakSet keyed by the wrapped object
+  // does the same "already patched?" check without adding anything a page
+  // can see with `in`, `Object.keys`, or a property read.
+  var patched = typeof WeakSet === 'function' ? new WeakSet() : null;
+  function markPatched(obj) { try { if (patched) patched.add(obj); } catch (e) { /* ignore */ } }
+  function isPatched(obj) { try { return !!(patched && patched.has(obj)); } catch (e) { return false; } }
+
   // ---- JSON.parse patch ---------------------------------------------------
   // Wraps `JSON.parse` so any result that looks like player data gets
   // pruned before the caller sees it. Anything else round-trips untouched.
   function patchJsonParse(jsonLike) {
-    if (!jsonLike || typeof jsonLike.parse !== 'function' || jsonLike.parse.__searchShield) {
+    if (!jsonLike || typeof jsonLike.parse !== 'function' || isPatched(jsonLike.parse)) {
       return false;
     }
     var original = jsonLike.parse;
-    function patched(text, reviver) {
+    function wrapped(text, reviver) {
       var result = original.call(jsonLike, text, reviver);
       if (isPlayerResponseShape(result)) {
         try { pruneAdFields(result); } catch (e) { /* leave result as parsed */ }
       }
       return result;
     }
-    patched.__searchShield = true;
-    jsonLike.parse = patched;
+    markPatched(wrapped);
+    jsonLike.parse = wrapped;
     return true;
   }
 
@@ -197,9 +208,9 @@
   // Only touches the two youtubei endpoints that carry player data; every
   // other fetch passes straight through to the original, untouched.
   function patchFetch(win) {
-    if (!win || typeof win.fetch !== 'function' || win.fetch.__searchShield) return false;
+    if (!win || typeof win.fetch !== 'function' || isPatched(win.fetch)) return false;
     var original = win.fetch;
-    function patched(input, init) {
+    function wrapped(input, init) {
       var url = typeof input === 'string' ? input : (input && input.url) || '';
       var result = original.call(win, input, init);
       if (!AD_ENDPOINT_PATTERN.test(String(url))) return result;
@@ -221,8 +232,8 @@
         });
       });
     }
-    patched.__searchShield = true;
-    win.fetch = patched;
+    markPatched(wrapped);
+    win.fetch = wrapped;
     return true;
   }
 
@@ -230,12 +241,21 @@
   // Records whether the requested URL matches an ad-bearing endpoint, then
   // wraps `responseText`/`response` so a matching request's body is pruned
   // the moment the page reads it. Non-matching requests are never touched.
+  // Which instances matched lives in a WeakMap, not a `__searchShieldMatch`
+  // property on the instance itself — a page could otherwise read that
+  // property off any XHR it made to tell whether Shields had flagged it.
+  var xhrMatches = typeof WeakMap === 'function' ? new WeakMap() : null;
+  function markXhrMatch(xhr, matched) { try { if (xhrMatches) xhrMatches.set(xhr, matched); } catch (e) { /* ignore */ } }
+  function xhrMatched(xhr) { try { return !!(xhrMatches && xhrMatches.get(xhr)); } catch (e) { return false; } }
+
   function patchXhr(XHRCtor) {
-    if (!XHRCtor || !XHRCtor.prototype || XHRCtor.__searchShield) return false;
+    if (!XHRCtor || !XHRCtor.prototype || isPatched(XHRCtor)) return false;
     var proto = XHRCtor.prototype;
     var originalOpen = proto.open;
     proto.open = function (method, url) {
-      try { this.__searchShieldMatch = AD_ENDPOINT_PATTERN.test(String(url)); } catch (e) { this.__searchShieldMatch = false; }
+      var matched;
+      try { matched = AD_ENDPOINT_PATTERN.test(String(url)); } catch (e) { matched = false; }
+      markXhrMatch(this, matched);
       return originalOpen.apply(this, arguments);
     };
     var textDescriptor = Object.getOwnPropertyDescriptor(proto, 'responseText');
@@ -244,7 +264,7 @@
         configurable: true,
         get: function () {
           var value = textDescriptor.get.call(this);
-          if (this.__searchShieldMatch && typeof value === 'string') {
+          if (xhrMatched(this) && typeof value === 'string') {
             try { return pruneJsonText(value); } catch (e) { return value; }
           }
           return value;
@@ -257,7 +277,7 @@
         configurable: true,
         get: function () {
           var value = responseDescriptor.get.call(this);
-          if (!this.__searchShieldMatch) return value;
+          if (!xhrMatched(this)) return value;
           if (typeof value === 'string') {
             try { return pruneJsonText(value); } catch (e) { return value; }
           }
@@ -268,7 +288,7 @@
         },
       });
     }
-    XHRCtor.__searchShield = true;
+    markPatched(XHRCtor);
     return true;
   }
 

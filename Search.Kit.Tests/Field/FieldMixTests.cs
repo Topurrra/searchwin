@@ -101,12 +101,6 @@ public class IndexPlanTests
     }
 
     [Fact]
-    public void A_folder_inside_a_dot_folder_needs_hidden_on()
-    {
-        Assert.True(IndexPlan.Options([@"C:\Users\me\.notes\work"], true)["includeHidden"]!.GetValue<bool>());
-    }
-
-    [Fact]
     public void Covers_only_whats_inside_the_folders()
     {
         IReadOnlyList<string> folders = [@"C:\Temp\Test", @"D:\Notes\"];

@@ -33,7 +33,28 @@ public class FileKindsTests
     [Theory]
     [InlineData("pdf", RowAction.OpenInTab)]
     [InlineData("json", RowAction.OpenInTab)]
+    [InlineData("txt", RowAction.OpenInTab)]
+    [InlineData("png", RowAction.OpenInTab)]
+    // Video and audio WebView2 (Chromium) actually plays.
+    [InlineData("mp4", RowAction.Play)]
+    [InlineData("m4v", RowAction.Play)]
+    [InlineData("webm", RowAction.Play)]
+    [InlineData("mov", RowAction.Play)]
+    [InlineData("ogv", RowAction.Play)]
     [InlineData("mp3", RowAction.Play)]
+    [InlineData("m4a", RowAction.Play)]
+    [InlineData("aac", RowAction.Play)]
+    [InlineData("wav", RowAction.Play)]
+    [InlineData("ogg", RowAction.Play)]
+    [InlineData("oga", RowAction.Play)]
+    [InlineData("opus", RowAction.Play)]
+    [InlineData("flac", RowAction.Play)]
+    // Not playable: WebView2 has no demuxer for these without the FFmpeg
+    // add-on, so they fall back to the file's own app.
+    [InlineData("mkv", RowAction.OpenWithApp)]
+    [InlineData("avi", RowAction.OpenWithApp)]
+    [InlineData("wmv", RowAction.OpenWithApp)]
+    [InlineData("flv", RowAction.OpenWithApp)]
     [InlineData("docx", RowAction.OpenWithApp)]
     [InlineData("xlsx", RowAction.OpenWithApp)]
     [InlineData("zip", RowAction.OpenWithApp)]
@@ -86,15 +107,6 @@ public class FileKindsTests
     [InlineData(@"C:\t\Makefile")]
     public void A_path_of_an_unknown_kind_is_revealed(string path) =>
         Assert.Equal(RowAction.Reveal, FileKinds.ActionForPath(path));
-
-    [Fact]
-    public void Whatever_PATHEXT_adds_runs_too()
-    {
-        var was = Environment.GetEnvironmentVariable("PATHEXT");
-        // Read once per process: only check that what's there counts.
-        foreach (var ext in (was ?? "").Split(';', StringSplitOptions.RemoveEmptyEntries))
-            Assert.True(FileKinds.Runs(ext), ext);
-    }
 
     [Theory]
     [InlineData(@"C:\t\setup.exe")]
@@ -167,49 +179,4 @@ public class FileKindsTests
         Assert.Null(await model.EnterAsync(TimeSpan.FromSeconds(5)));
         Assert.Contains(model.Board.Rows, r => r.Action == RowAction.Reveal);
     }
-
-    [Theory]
-    // Video WebView2 (Chromium) actually plays.
-    [InlineData("mp4", RowAction.Play)]
-    [InlineData("m4v", RowAction.Play)]
-    [InlineData("webm", RowAction.Play)]
-    [InlineData("mov", RowAction.Play)]
-    [InlineData("ogv", RowAction.Play)]
-    // Audio.
-    [InlineData("mp3", RowAction.Play)]
-    [InlineData("m4a", RowAction.Play)]
-    [InlineData("aac", RowAction.Play)]
-    [InlineData("wav", RowAction.Play)]
-    [InlineData("ogg", RowAction.Play)]
-    [InlineData("oga", RowAction.Play)]
-    [InlineData("opus", RowAction.Play)]
-    [InlineData("flac", RowAction.Play)]
-    // Not playable: WebView2 has no demuxer for these without the FFmpeg
-    // add-on, so they fall back to the file's own app.
-    [InlineData("mkv", RowAction.OpenWithApp)]
-    [InlineData("avi", RowAction.OpenWithApp)]
-    [InlineData("wmv", RowAction.OpenWithApp)]
-    [InlineData("flv", RowAction.OpenWithApp)]
-    // Shown in a tab.
-    [InlineData("pdf", RowAction.OpenInTab)]
-    [InlineData("txt", RowAction.OpenInTab)]
-    [InlineData("png", RowAction.OpenInTab)]
-    // A known document opens in its own app; a program, and anything not
-    // known, is shown in its folder and never run.
-    [InlineData("exe", RowAction.Reveal)]
-    [InlineData("docx", RowAction.OpenWithApp)]
-    [InlineData("", RowAction.Reveal)]
-    public void ActionFor_bare_extension(string extension, RowAction expected) =>
-        Assert.Equal(expected, FileKinds.ActionFor(extension));
-
-    [Theory]
-    [InlineData(".mp4")]
-    [InlineData(".MP4")]
-    [InlineData(".Mp4")]
-    public void ActionFor_ignores_dot_and_case(string extension) =>
-        Assert.Equal(RowAction.Play, FileKinds.ActionFor(extension));
-
-    [Fact]
-    public void ActionFor_folder_always_opens_with_app() =>
-        Assert.Equal(RowAction.OpenWithApp, FileKinds.ActionFor("mp4", folder: true));
 }

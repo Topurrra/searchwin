@@ -17,7 +17,6 @@ public sealed class ClipboardSource : IEngineSource
     public const string ChangedEvent = "clipboard-history-updated";
 
     private readonly IEngineCalls engine;
-    private readonly bool inField;
     private readonly object gate = new();
     private IReadOnlyList<ClipEntry>? cache;
     private int version;
@@ -25,11 +24,9 @@ public sealed class ClipboardSource : IEngineSource
     private long fetchedAt;
     private readonly long maxAge;
 
-    /// `inField`: whether plain words (no `clip:`) show clipboard matches too.
-    public ClipboardSource(IEngineCalls engine, bool inField = true, TimeSpan? maxAge = null)
+    public ClipboardSource(IEngineCalls engine, TimeSpan? maxAge = null)
     {
         this.engine = engine;
-        this.inField = inField;
         this.maxAge = (long)(maxAge ?? TimeSpan.FromSeconds(30)).TotalMilliseconds;
         engine.EventReceived += (name, _) =>
         {
@@ -41,7 +38,7 @@ public sealed class ClipboardSource : IEngineSource
 
     public bool Wants(FieldQuery query) =>
         (query.Scope == Scope.Clipboard && query.Kind is QueryKind.Words or QueryKind.Empty)
-        || (inField && query.Scope == Scope.All && query.Kind == QueryKind.Words && query.Text.Length >= 3);
+        || (query.Scope == Scope.All && query.Kind == QueryKind.Words && query.Text.Length >= 3);
 
     public TimeSpan Delay(FieldQuery query) => TimeSpan.Zero;
 

@@ -1,3 +1,4 @@
+using SearchKit.Commands;
 using SearchKit.Field;
 
 namespace SearchKit.Tests.Field;
@@ -36,10 +37,11 @@ public class EngineSourceTests
         var apps = new AppSource(engine);
         var clip = new ClipboardSource(engine);
         var answers = new AnswerSource(engine);
+        var bangs = new Bangs();
 
         bool[] Wants(string typed)
         {
-            var q = FieldQuery.Read(typed);
+            var q = FieldQuery.Read(typed, bangs);
             return [names.Wants(q), contents.Wants(q), apps.Wants(q), clip.Wants(q), answers.Wants(q)];
         }
         Assert.Equal([true, true, true, true, false], Wants("invoice"));
@@ -52,7 +54,9 @@ public class EngineSourceTests
         Assert.Equal([false, false, true, false, false], Wants("apps:"));
         Assert.Equal([false, false, false, true, false], Wants("clip:"));
         Assert.Equal([false, false, false, false, false], Wants(">close"));
-        Assert.False(new ClipboardSource(engine, inField: false).Wants(FieldQuery.Read("invoice")));
+        Assert.Equal([false, false, false, false, false], Wants("!yt cats"));
+        Assert.Equal([false, false, false, false, false], Wants("? what"));
+        Assert.Equal([false, false, false, false, false], Wants(""));
     }
 
     [Fact]

@@ -177,12 +177,11 @@ public static class FileKinds
     /// would run it.
     public static bool Runs(string extension) => Everything.Value.Contains(Bare(extension));
 
-    /// `extension` with or without its dot. A folder always opens in
-    /// Explorer; a program or a script is only ever shown there, and so is
-    /// anything that isn't a known document.
-    public static RowAction ActionFor(string extension, bool folder = false)
+    /// `extension` with or without its dot. A program or a script is only
+    /// ever shown in its folder, and so is anything that isn't a known
+    /// document.
+    internal static RowAction ActionFor(string extension)
     {
-        if (folder) return RowAction.OpenWithApp;
         var bare = Bare(extension);
         if (Runs(bare)) return RowAction.Reveal;
         if (Playable.Contains(bare)) return RowAction.Play;

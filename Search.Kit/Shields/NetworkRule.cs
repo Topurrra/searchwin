@@ -22,9 +22,14 @@ public sealed class NetworkRule
 
     private readonly AbpPattern pattern;
 
+    /// A `||` rule whose name the host dictionary can't hold (see
+    /// BuildPattern): the pattern starts at the host or at one of its dots.
+    private readonly bool hostAnchored;
+
     private NetworkRule(bool isException, bool important, ResourceKinds kinds, bool? thirdParty,
-        string[]? domainIncludes, string[]? domainExcludes, string? anchorDomain, AbpPattern pattern)
+        string[]? domainIncludes, string[]? domainExcludes, string? anchorDomain, AbpPattern pattern, bool hostAnchored = false)
     {
+        this.hostAnchored = hostAnchored;
         IsException = isException;
         Important = important;
         Kinds = kinds;
@@ -144,8 +149,8 @@ public sealed class NetworkRule
             if (kinds == ResourceKinds.None) { unsupported = true; return false; }
         }
 
-        var (anchorDomain, pattern) = BuildPattern(patternText);
-        rule = new NetworkRule(isException, important, kinds, thirdParty, domainIncludes, domainExcludes, anchorDomain, pattern);
+        var (anchorDomain, pattern, hostAnchored) = BuildPattern(patternText);
+        rule = new NetworkRule(isException, important, kinds, thirdParty, domainIncludes, domainExcludes, anchorDomain, pattern, hostAnchored);
         return true;
     }
 
@@ -184,11 +189,27 @@ public sealed class NetworkRule
 
     /// `lowerUrl` is the full request URL, already lower-cased once by the
     /// caller and shared across every rule it tries; `afterHost` is the
-    /// index right after the request's `scheme://host[:port]`.
-    public bool MatchesUrl(string lowerUrl, int afterHost, string requestHost)
+    /// index right after the request's `scheme://host[:port]`. A match must
+    /// start within the first `limit` characters (FilterList.MatchedLength).
+    public bool MatchesUrl(string lowerUrl, int afterHost, string requestHost, int limit = int.MaxValue)
     {
         if (AnchorDomain != null && !HostMatches(requestHost, AnchorDomain)) return false;
-        return pattern.IsMatch(lowerUrl, AnchorDomain != null ? afterHost : 0);
+        if (hostAnchored) return MatchesAtHost(lowerUrl, afterHost, limit);
+        return pattern.IsMatch(lowerUrl, AnchorDomain != null ? afterHost : 0, limit);
+    }
+
+    // At the start of the host, or just after one of its dots: where
+    // `scheme://` (or `user@`) ends, up to the end of the authority.
+    private bool MatchesAtHost(string lowerUrl, int afterHost, int limit)
+    {
+        var scheme = lowerUrl.IndexOf("://", StringComparison.Ordinal);
+        if (scheme < 0 || afterHost > lowerUrl.Length) return false;
+        var hostStart = scheme + 3;
+        var at = lowerUrl.LastIndexOf('@', afterHost - 1, afterHost - hostStart);
+        if (at >= 0) hostStart = at + 1;
+        for (var i = hostStart; i < afterHost; i++)
+            if ((i == hostStart || lowerUrl[i - 1] == '.') && pattern.IsMatch(lowerUrl, i, limit)) return true;
+        return false;
     }
 
     /// Every whole word this pattern could be indexed under
@@ -270,20 +291,26 @@ public sealed class NetworkRule
     // anchor domain, matched against the request's actual host; what's left
     // (often nothing, or just the `^`) is parsed as a pattern that has to
     // follow the domain immediately.
-    private static (string? AnchorDomain, AbpPattern Pattern) BuildPattern(string text)
+    //
+    // A name the dictionary can't hold (an underscore, no dot, a wildcard:
+    // `||ad_host.example^`, `||adhost/`, `||*.cdn.example/px`) keeps what
+    // `||` means — the pattern starts at the host or at one of its dots —
+    // and is matched as text from there. Parsed as a plain pattern instead,
+    // its `||` would be a literal `|` no address holds, and it never matched.
+    private static (string? AnchorDomain, AbpPattern Pattern, bool HostAnchored) BuildPattern(string text)
     {
         var lower = text.ToLowerInvariant();
         if (!lower.StartsWith("||", StringComparison.Ordinal))
-            return (null, AbpPattern.Parse(lower));
+            return (null, AbpPattern.Parse(lower), false);
 
         var rest = lower[2..];
         var end = 0;
         while (end < rest.Length && rest[end] is not ('^' or '/' or '*')) end++;
         var domain = rest[..end];
         if (domain.Length == 0 || !IsPlausibleDomain(domain))
-            return (null, AbpPattern.Parse(lower)); // an odd `||` line — fall back to matching it as plain text
+            return (null, AbpPattern.Parse(rest, forceStartAnchor: true), true);
 
-        return (domain, AbpPattern.Parse(rest[end..], forceStartAnchor: true));
+        return (domain, AbpPattern.Parse(rest[end..], forceStartAnchor: true), false);
     }
 
     private static bool IsPlausibleDomain(string domain) =>
@@ -301,6 +328,7 @@ public sealed class NetworkRule
         WriteStrings(w, DomainExcludes);
         w.Write(AnchorDomain != null);
         if (AnchorDomain != null) w.Write(AnchorDomain);
+        w.Write(hostAnchored);
         pattern.WriteTo(w);
     }
 
@@ -313,8 +341,9 @@ public sealed class NetworkRule
         var includes = ReadStrings(r);
         var excludes = ReadStrings(r);
         var anchorDomain = r.ReadBoolean() ? r.ReadString() : null;
+        var hostAnchored = r.ReadBoolean();
         var pattern = AbpPattern.ReadFrom(r);
-        return new NetworkRule(isException, important, kinds, thirdParty, includes, excludes, anchorDomain, pattern);
+        return new NetworkRule(isException, important, kinds, thirdParty, includes, excludes, anchorDomain, pattern, hostAnchored);
     }
 
     private static void WriteStrings(BinaryWriter w, string[]? values)

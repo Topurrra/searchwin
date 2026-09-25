@@ -131,6 +131,16 @@ public class FilterBenchmarkTests
         output.WriteLine($"{requests.Length} requests ({blocked} blocked): {each:N2} µs a request on average.");
 
         Assert.True(each < 20.0, $"Average match took {each:N2} µs; budget is 20 µs.");
+
+        // And the worst a page can ask for: an address made of every word
+        // the index is filed under, each opening its bucket (PatternSpeedTests).
+        foreach (var length in (int[])[16 * 1024, 65_000])
+        {
+            var url = new Uri(PatternSpeedTests.AllWords(list.IndexWords, length));
+            var worst = PatternSpeedTests.Each(list, url, 20);
+            output.WriteLine($"Every indexed word, {url.AbsoluteUri.Length:N0} characters: {worst:N3} ms a request.");
+            Assert.True(worst < 1.0, $"took {worst:N3} ms a request at {url.AbsoluteUri.Length:N0} characters; budget is 1 ms.");
+        }
     }
 
     // What a news page asks for: its own files, a CDN, and the usual ad and

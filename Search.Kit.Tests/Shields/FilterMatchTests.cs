@@ -177,6 +177,44 @@ public class FilterMatchTests
         Assert.Equal(original.CssFor("example.com"), loaded.CssFor("example.com"));
     }
 
+    // A `||` line whose name isn't one the host dictionary can hold (an
+    // underscore, no dot, a wildcard) still means "starting at the host, or
+    // at one of its dots" — never a literal `|` that no address contains.
+    [Theory]
+    [InlineData("||ad_server.example.com^", "https://ad_server.example.com/x.js", true)]
+    [InlineData("||ad_server.example.com^", "https://cdn.ad_server.example.com/x.js", true)]
+    [InlineData("||ad_server.example.com^", "https://bad_server.example.com/x.js", false)]
+    [InlineData("||ad_server.example.com^", "https://ad_server.example.com.evil.net/x.js", false)]
+    [InlineData("||ad_server.example.com^", "https://site.com/?u=ad_server.example.com/", false)]
+    [InlineData("||adhost/banner", "https://adhost/banner.png", true)]
+    [InlineData("||adhost/banner", "https://cdn.adhost/banner.png", true)]
+    [InlineData("||adhost/banner", "https://myadhost/banner.png", false)]
+    [InlineData("||*.tracker.example/px", "https://a.tracker.example/px.gif", true)]
+    [InlineData("||*.tracker.example/px", "https://site.com/px.gif", false)]
+    // The shape the real lists have (17 lines of EasyList + EasyPrivacy).
+    [InlineData("||collector-*.luigisbox.com^", "https://collector-12.luigisbox.com/v1/t", true)]
+    [InlineData("||collector-*.luigisbox.com^", "https://www.luigisbox.com/", false)]
+    public void A_double_bar_rule_with_an_odd_name_is_anchored_at_the_host(string rule, string url, bool blocked)
+    {
+        var list = Compile(rule);
+        Assert.Equal(1, list.Stats.NetworkRules);
+        Assert.Equal(blocked, list.ShouldBlock(new Uri(url), "page.com", ResourceKind.Script));
+
+        // And the same after a save and load.
+        using var stream = new MemoryStream();
+        list.Save(stream);
+        stream.Position = 0;
+        Assert.Equal(blocked, FilterList.Load(stream).ShouldBlock(new Uri(url), "page.com", ResourceKind.Script));
+    }
+
+    [Fact]
+    public void An_exception_with_an_odd_name_still_excepts()
+    {
+        var list = FilterList.Compile(["/banner/*", "@@||ad_server.example.com/banner/"]);
+        Assert.False(list.ShouldBlock(new Uri("https://ad_server.example.com/banner/1.png"), "page.com", ResourceKind.Image));
+        Assert.True(list.ShouldBlock(new Uri("https://other.example.com/banner/1.png"), "page.com", ResourceKind.Image));
+    }
+
     // MARK: - the token index
 
     // A rule's word is only a whole word of the address when the rule says

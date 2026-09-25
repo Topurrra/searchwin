@@ -84,7 +84,13 @@ internal sealed class AbpPattern
     /// to right, which keeps a rule with many wildcards linear in the
     /// address instead of growing with a power of its length. Only a piece
     /// held at an end by `|` is looked for there instead.
-    public bool IsMatch(string haystack, int from)
+    ///
+    /// `limit`: a piece looked for is only looked for starting at or before
+    /// it, so a rule reads that much of a very long address and no more.
+    /// A piece held at the end is still checked at the real end (it takes
+    /// only its own few characters), so a match found is always a real one;
+    /// what is missed is only a match that starts further on.
+    public bool IsMatch(string haystack, int from, int limit = int.MaxValue)
     {
         if (tokens.Length == 0) return true;
         var pos = from;
@@ -95,7 +101,7 @@ internal sealed class AbpPattern
             var heldEnd = i == pieces.Length - 1 && endAnchor;
             if (heldEnd)
                 return heldStart ? MatchAt(start, end, haystack, pos) == haystack.Length : EndsWith(start, end, haystack, pos);
-            pos = heldStart ? MatchAt(start, end, haystack, pos) : Find(start, end, haystack, pos);
+            pos = heldStart ? MatchAt(start, end, haystack, pos) : Find(start, end, haystack, pos, limit);
             if (pos < 0) return false;
         }
         return true;
@@ -165,22 +171,27 @@ internal sealed class AbpPattern
         return pos;
     }
 
-    /// Where the piece ends at its earliest place at or after `from`, or -1.
-    private int Find(int start, int end, string haystack, int from)
+    /// Where the piece ends at its earliest place at or after `from` and at
+    /// or before `limit`, or -1.
+    private int Find(int start, int end, string haystack, int from, int limit)
     {
         if (start == end) return from;
+        var last = Math.Min(limit, haystack.Length);
+        if (from > last) return -1;
         if (tokens[start].Kind == Kind.Literal)
         {
             var text = tokens[start].Text;
-            for (var at = haystack.IndexOf(text, from, StringComparison.Ordinal); at >= 0;
-                 at = haystack.IndexOf(text, at + 1, StringComparison.Ordinal))
+            // Where the text may end: it may run past `last`, not start past it.
+            var stop = (int)Math.Min(haystack.Length, (long)last + text.Length);
+            for (var at = haystack.IndexOf(text, from, stop - from, StringComparison.Ordinal); at >= 0;
+                 at = at < last ? haystack.IndexOf(text, at + 1, stop - at - 1, StringComparison.Ordinal) : -1)
             {
                 var found = MatchAt(start, end, haystack, at);
                 if (found >= 0) return found;
             }
             return -1;
         }
-        for (var at = from; at <= haystack.Length; at++)
+        for (var at = from; at <= last; at++)
         {
             var found = MatchAt(start, end, haystack, at);
             if (found >= 0) return found;

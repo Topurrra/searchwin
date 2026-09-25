@@ -25,15 +25,15 @@ public static class ShieldLists
 
     private static readonly TimeSpan Every = TimeSpan.FromDays(1);
     private static HttpClient? http;
-    private static bool loaded;
     private static int running;
     private static int queuedForce;
     private static Microsoft.UI.Dispatching.DispatcherQueueTimer? hourly;
 
-    /// Bumped by Forget, so a worker already in flight can tell it has been
-    /// overtaken and undo whatever it was about to write instead of quietly
-    /// bringing back what Forget just deleted.
-    private static int generation;
+    /// Advanced by Forget, so a worker already in flight can tell it has
+    /// been overtaken and undo whatever it wrote instead of quietly bringing
+    /// back what Forget just deleted. Whether a list is loaded belongs to a
+    /// turn too: one loaded in a turn Forget ended isn't.
+    private static readonly ListGeneration turns = new();
 
     /// The saved list soon after the first window; the daily check a little
     /// after that, out of the first pages' way, and then every hour (it only
@@ -83,28 +83,30 @@ public static class ShieldLists
         // Forget can run on the UI thread at any moment this worker is out
         // here on its own — between reading this and every write below —
         // and delete what it's about to write right back into existence.
-        // Overtaken is Cleanup's job to notice and undo.
-        var gen = Volatile.Read(ref generation);
+        // So every write is checked again after it lands (Overtaken), and
+        // Publish checks once more on the UI thread, where Forget runs.
+        var gen = turns.Current;
         Directory.CreateDirectory(Folder);
         var state = Saved.Read(Path.Combine(Folder, State));
-        if (!loaded && LoadSaved() is { } saved)
+        if (!turns.Loaded && LoadSaved() is { } saved)
         {
-            loaded = true;
-            Publish(saved);
+            turns.MarkLoaded(gen);
+            Publish(saved, gen);
         }
         if (!download) return;
-        if (!force && loaded && DateTime.UtcNow - state.Checked < Every) return;
+        if (!force && turns.Loaded && DateTime.UtcNow - state.Checked < Every) return;
 
         var changed = false;
         foreach (var source in ListSource.BuiltIn)
         {
             if (Browser.Shared is not { Prefs.ShieldLists: true }) return;
-            if (Volatile.Read(ref generation) != gen) { Cleanup(); return; }
+            if (turns.Overtaken(gen, Cleanup)) return;
             var entry = state.Lists.GetValueOrDefault(source.Name) ?? new Saved.Entry();
             try
             {
                 if (await Fetch(source, entry).ConfigureAwait(false)) changed = true;
                 state.Lists[source.Name] = entry;
+                if (turns.Overtaken(gen, Cleanup)) return;
             }
             catch (Exception e)
             {
@@ -113,13 +115,9 @@ public static class ShieldLists
         }
         state.Checked = DateTime.UtcNow;
 
-        if (Volatile.Read(ref generation) != gen)
-        {
-            if (changed) Cleanup();
-            return;
-        }
+        if (turns.Overtaken(gen, Cleanup)) return;
 
-        if (changed || !loaded)
+        if (changed || !turns.Loaded)
         {
             var paths = ListSource.BuiltIn.Select(s => Path.Combine(Folder, FileOf(s))).Where(File.Exists).ToArray();
             if (paths.Length > 0)
@@ -127,16 +125,18 @@ public static class ShieldLists
                 var started = System.Diagnostics.Stopwatch.GetTimestamp();
                 var list = FilterList.Compile(paths.Select(File.ReadLines));
                 var took = System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds;
-                if (Volatile.Read(ref generation) != gen) { Cleanup(); return; }
+                if (turns.Overtaken(gen, Cleanup)) return;
                 Save(list);
+                if (turns.Overtaken(gen, Cleanup)) return;
                 state.Rules = Rules(list);
-                loaded = true;
-                Publish(list);
+                turns.MarkLoaded(gen);
+                Publish(list, gen);
                 Log.Write($"shield lists: compiled {state.Rules} rules in {took:F0} ms");
             }
         }
-        if (Volatile.Read(ref generation) == gen && Browser.Shared is { Prefs.ShieldLists: true })
-            state.Write(Path.Combine(Folder, State));
+        if (turns.Overtaken(gen, Cleanup) || Browser.Shared is not { Prefs.ShieldLists: true }) return;
+        state.Write(Path.Combine(Folder, State));
+        turns.Overtaken(gen, Cleanup);
     }
 
     /// One list, if it has changed since last time. The publisher is asked
@@ -257,25 +257,25 @@ public static class ShieldLists
     }
 
     /// Into Shield, on the UI thread, with its 200 KB stylesheet already
-    /// written out here.
-    private static void Publish(FilterList list)
+    /// written out here — unless Forget has run since `gen` began. Checked
+    /// on the UI thread, where Forget runs, so it can't change in between.
+    private static void Publish(FilterList list, int gen)
     {
         var literal = Shield.Prepare(list);
         UI.Do(() =>
         {
-            if (Browser.Shared is { Prefs.ShieldLists: true }) Shield.Shared.Use(list, literal);
+            if (turns.Holds(gen) && Browser.Shared is { Prefs.ShieldLists: true }) Shield.Shared.Use(list, literal);
         });
     }
 
     /// Turned off: back to the built-in list, and the downloads deleted.
     public static void Forget()
     {
-        // Bumped before the deletion itself: a worker already past this
-        // point in a download checks it before its next write and, finding
+        // Advanced before the deletion itself: a worker already past this
+        // point in a download checks it after its next write and, finding
         // itself overtaken, takes back out whatever it wrote rather than
         // silently undoing what Forget is about to do.
-        Interlocked.Increment(ref generation);
-        loaded = false;
+        turns.Advance();
         Shield.Shared.Use(null, null);
         Cleanup();
     }
@@ -287,7 +287,10 @@ public static class ShieldLists
         try
         {
             foreach (var name in (string[])[Blob, State, .. ListSource.BuiltIn.Select(FileOf)])
+            {
                 File.Delete(Path.Combine(Folder, name));
+                File.Delete(Path.Combine(Folder, name + ".part"));
+            }
         }
         catch { }
     }

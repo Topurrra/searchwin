@@ -43,9 +43,18 @@ public static class Messages
         ["downloadMismatchBody"] = "\"$1\" is actually a $2, not what its name suggests. Do not open it unless you trust the source.",
     };
 
+    /// Whether this key has a sentence. Every reason the engine gives has one.
+    public static bool Knows(string key) => Text.ContainsKey(key);
+
+    /// Safe Browsing's reason keys: the only ones a Safe Browsing answer may carry.
+    public static bool IsSafeBrowsing(string key) => key.StartsWith("reasonGsb", StringComparison.Ordinal) && Knows(key);
+
+    /// The sentence for a key, or "" for a key it doesn't know. Never the key
+    /// itself: a key that came from outside (a page's facts) would otherwise
+    /// put its own words on Search's warning.
     public static string Sentence(string key, IReadOnlyList<string> args)
     {
-        if (!Text.TryGetValue(key, out var text)) return key;
+        if (!Text.TryGetValue(key, out var text)) return "";
         for (int i = args.Count; i >= 1; i--) text = text.Replace("$" + i, args[i - 1], StringComparison.Ordinal);
         return text;
     }

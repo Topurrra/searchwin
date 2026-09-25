@@ -37,6 +37,9 @@ public static class FormAction
         foreach (var raw in aitm.FormActions)
         {
             var host = JsText.Lower(raw);
+            // The destination is named on the warning, and the page supplied
+            // it: anything that isn't a host name is the page's own text.
+            if (!PageFacts.IsHost(host)) continue;
             var dest = Signals.IsIpAddress(host) ? host : data.Psl.RegistrableDomain(host);
             if (dest == registrable) continue;
             if (IsExfil(host))

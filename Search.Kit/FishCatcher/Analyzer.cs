@@ -101,11 +101,13 @@ public static class Analyzer
                 reasons.Add(new Signal("reasonYoungDomain", 25, days.ToString(System.Globalization.CultureInfo.InvariantCulture)));
             }
 
-            // S18: Google Safe Browsing (opt-in), an authoritative third-party verdict.
-            if (!string.IsNullOrEmpty(facts.GsbThreat))
+            // S18: Google Safe Browsing (opt-in), an authoritative third-party
+            // verdict. Only its own reason keys: the key becomes the sentence
+            // on the warning, so free text here would be words put in Search's mouth.
+            if (facts.GsbThreat is { } gsb && Messages.IsSafeBrowsing(gsb))
             {
                 score += 60;
-                reasons.Add(new Signal(facts.GsbThreat, 60));
+                reasons.Add(new Signal(gsb, 60));
             }
 
             // M8: AiTM composite, then S20 (the form's destination rides in the same payload).

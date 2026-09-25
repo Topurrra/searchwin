@@ -31,8 +31,9 @@ public sealed class Verdict
     /// The brand's real domain, when the address imitates one ("Open paypal.com instead").
     public string? RealSite { get; init; }
 
-    /// Why, as sentences (empty for a clean address).
-    public IReadOnlyList<string> Reasons => Signals.Select(s => s.Sentence).ToArray();
+    /// Why, as sentences (empty for a clean address). A signal with no
+    /// sentence of its own is left out rather than shown as its key.
+    public IReadOnlyList<string> Reasons => Signals.Select(s => s.Sentence).Where(s => s.Length > 0).ToArray();
 
     /// One line for the level ("Multiple phishing indicators…").
     public string Summary => Messages.ForLevel(Level);

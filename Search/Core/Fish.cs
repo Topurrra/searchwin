@@ -39,6 +39,9 @@ public sealed partial class Tab
     /// How long the address check took, in milliseconds. The bench says so.
     public double FishMs { get; set; }
 
+    /// How many more fish.facts this tab's document may send (see FishFacts).
+    internal ProbeBudget FishBudget { get; } = new();
+
     private FishNote? caution;
     /// The quiet line at the bottom, while this tab is on a site with a few
     /// unusual signs (see Bars).
@@ -166,6 +169,10 @@ public sealed partial class Browser
             stopped = url;
         };
 
+        // A new document may be heard from again. ContentLoading comes before
+        // any of its scripts run, and never for a navigation that was stopped.
+        core.ContentLoading += (_, _) => tab.FishBudget.NewDocument();
+
         // Document requests only — the page and its frames, not the pictures
         // and scripts inside them — so this costs a lookup per page, not per
         // request.
@@ -264,7 +271,7 @@ public sealed partial class Browser
     /// The quiet line: the strongest reason, and what to do about it.
     private static string Say(Verdict verdict)
     {
-        var strongest = verdict.Signals.OrderByDescending(s => s.Weight).FirstOrDefault();
+        var strongest = verdict.Signals.Where(s => s.Sentence.Length > 0).OrderByDescending(s => s.Weight).FirstOrDefault();
         return strongest is null ? verdict.Summary : $"{strongest.Sentence}. Double-check the address.";
     }
 
@@ -286,17 +293,22 @@ public sealed partial class Browser
     /// The probe's facts about the page on screen: the address check again,
     /// with what the page asks for. Only a stronger word than the address
     /// alone gave is acted on.
+    ///
+    /// The page can post this message itself, so it is the page's word: read
+    /// with PageFacts.FromProbe (the probe's fields, within its limits, never
+    /// a Safe Browsing verdict or a domain age), and heard at most a handful
+    /// of times per document, since each is parsed and scored on this thread.
     private void FishFacts(Tab tab, JsonElement body)
     {
         if (!Prefs.WarnsOfScams || Showing(tab) is not { } url || !Watched(url)) return;
-        if (body.ValueKind != JsonValueKind.Object) return;
+        if (body.ValueKind != JsonValueKind.Object || !tab.FishBudget.Take()) return;
         // From a page the tab has since left.
         if (body.TryGetProperty("href", out var href) && href.ValueKind == JsonValueKind.String
             && Uri.TryCreate(href.GetString(), UriKind.Absolute, out var from) && !SameHost(from, url)) return;
-        if (PageFacts.From(body) is not { } facts) return;
+        if (tab.Failure is { Kind: TroubleKind.Scam }) return;
+        if (PageFacts.FromProbe(body) is not { } facts) return;
         var verdict = Catcher.Check(url, facts);
         if (verdict == null) return;
-        if (tab.Failure is { Kind: TroubleKind.Scam }) return;
         if (tab.Fish is { } said && verdict.Level <= said.Level)
         {
             // Nothing to say out loud, but the bench sees the fuller score.

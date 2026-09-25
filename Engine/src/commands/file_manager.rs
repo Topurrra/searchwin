@@ -812,6 +812,7 @@ fn recycle_paths(paths: &[String], result: &mut FmDeleteResult) {
     use windows::Win32::UI::Shell::{
         FileOperation, IFileOperation, IShellItem, SHCreateItemFromParsingName,
         FOFX_RECYCLEONDELETE, FOF_ALLOWUNDO, FOF_NOCONFIRMATION, FOF_SILENT,
+        FOF_WANTNUKEWARNING,
     };
 
     unsafe {
@@ -823,8 +824,16 @@ fn recycle_paths(paths: &[String], result: &mut FmDeleteResult) {
 
         let mut perform = || -> windows::core::Result<()> {
             let op: IFileOperation = CoCreateInstance(&FileOperation, None, CLSCTX_ALL)?;
+            // The page already asked "to the Recycle Bin?". An item that
+            // can't go there (too big, or a drive without one) would be
+            // destroyed silently under FOF_NOCONFIRMATION; the nuke warning
+            // asks again for exactly those, as Explorer does.
             op.SetOperationFlags(
-                FOF_ALLOWUNDO | FOFX_RECYCLEONDELETE | FOF_NOCONFIRMATION | FOF_SILENT,
+                FOF_ALLOWUNDO
+                    | FOFX_RECYCLEONDELETE
+                    | FOF_NOCONFIRMATION
+                    | FOF_WANTNUKEWARNING
+                    | FOF_SILENT,
             )?;
 
             let mut queued = 0usize;

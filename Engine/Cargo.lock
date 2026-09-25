@@ -2846,6 +2846,7 @@ dependencies = [
  "diffy",
  "docx-rs",
  "docxide-pdf",
+ "dunce",
  "evalexpr",
  "fancy-regex",
  "fastembed",

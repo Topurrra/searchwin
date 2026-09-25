@@ -99,6 +99,11 @@ pub fn forbid_system_path<P: AsRef<Path>>(input: P) -> Result<PathBuf, String> {
     } else {
         return Err("Invalid path".to_string());
     };
+    // canonicalize answers `\\?\C:\…`. Callers show the path and hand it
+    // back (the browser refuses `\\?\` from a tool page as a device path),
+    // and the drive-root check below expects `C:\`: keep it plain whenever
+    // it can be written plainly.
+    let candidate = dunce::simplified(&candidate).to_path_buf();
 
     let lower = candidate.to_string_lossy().to_lowercase();
     for forbidden in FORBIDDEN_PATH_SUBSTRINGS {
@@ -250,5 +255,23 @@ mod tests {
         // passes the substring check.
         assert!(validate_user_path(&inside).is_ok());
         fs::remove_dir_all(&temp).ok();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn answers_paths_as_people_write_them() {
+        // Tool pages show these paths and send them back to the browser,
+        // which refuses a `\\?\` path from a page as a device path.
+        let dir = std::env::temp_dir().join("keepitlocal-plain-path-test");
+        fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("in.txt");
+        fs::write(&file, b"x").unwrap();
+        let read = validate_user_path(&file).unwrap();
+        let write = validate_user_write_target(dir.join("out.zip")).unwrap();
+        fs::remove_dir_all(&dir).ok();
+        for path in [read, write] {
+            let text = path.to_string_lossy().to_string();
+            assert!(!text.starts_with(r"\\?\"), "verbatim path handed back: {text}");
+        }
     }
 }

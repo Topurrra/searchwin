@@ -259,8 +259,12 @@ public sealed class Bench
                     case "enter": popup?.Enter(); break;
                     case "go": popup?.Enter(go: true); break;
                     case "secret": if (!QuietCopy.Copy(Str(request, "text") ?? "")) { answer(Error("the clipboard was busy")); return; } break;
+                    // Everything but what's pinned — same as Settings ›
+                    // Clipboard's own Clear — so a test can check the
+                    // thumbnail cache actually drops with the entries.
+                    case "clear": _ = ClipHistory.Clear(); break;
                     case null: break;
-                    default: answer(Error("clip acts are open, close, type, down, up, enter, go, secret")); return;
+                    default: answer(Error("clip acts are open, close, type, down, up, enter, go, secret, clear")); return;
                 }
                 // The list reloads when the engine says the history changed.
                 UI.After(Num(request, "wait") ?? 0.5, () =>
@@ -275,6 +279,7 @@ public sealed class Bench
                         ["kept"] = SearchKit.Field.ClipList.Since(ClipHistory.Last, RunStartedMs).Count,
                         ["announced"] = b.Announcement,
                         ["typed"] = b.Typed,
+                        ["thumbnails"] = ClipPopup.CachedThumbnails,
                     };
                     if (now != null)
                     {

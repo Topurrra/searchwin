@@ -38,11 +38,13 @@ Drive the Search you already have open, from the shell.
                                            the browser's side, as Ctrl+L does; ctrlk: the Ctrl+K switcher),
                                            the rows once the engine has answered, then Enter or row N pressed
                                            — --test runs only
-    ./bench.ps1 clip [open | close | type TEXT | down | up | enter | go | secret TEXT]
+    ./bench.ps1 clip [open | close | type TEXT | down | up | enter | go | secret TEXT | clear]
                                            Ctrl+Shift+V's list: open it (Enter pastes where the caret is now),
                                            narrow it, walk it, paste (enter) or go there (go), put it away;
-                                           secret copies as a password is copied, which no history keeps.
-                                           Answers the rows as drawn (secrets as their kind), picked, aim, last;
+                                           secret copies as a password is copied, which no history keeps;
+                                           clear drops everything but what's pinned (Settings' own Clear).
+                                           Answers the rows as drawn (secrets as their kind), picked, aim, last,
+                                           and thumbnails (pictures' decoded-thumbnail cache size);
                                            rows copied before this run began show only as a placeholder.
                                            A test world keeps no history unless its settings.json has
                                            "clip.history": true — --test runs only
@@ -235,8 +237,8 @@ switch ($verb) {
         if ($what -in @('type', 'secret')) {
             if ($rest.Count -ne 2) { Usage "clip $what TEXT" }
             $request.act = $what; $request.text = $rest[1]
-        } elseif ($what -in @('open', 'close', 'down', 'up', 'enter', 'go')) { $request.act = $what }
-        elseif ($what) { Usage 'clip [open | close | type TEXT | down | up | enter | go | secret TEXT]' }
+        } elseif ($what -in @('open', 'close', 'down', 'up', 'enter', 'go', 'clear')) { $request.act = $what }
+        elseif ($what) { Usage 'clip [open | close | type TEXT | down | up | enter | go | secret TEXT | clear]' }
     }
     'engine' {
         if ($rest.Count -notin @(1, 2)) { Usage 'engine METHOD [PARAMS-JSON]' }

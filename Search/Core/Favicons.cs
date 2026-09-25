@@ -44,10 +44,11 @@ public sealed class Favicons
         await Keep(png, host, shy: false);
     }
 
-    /// Asks the page for the icon it declared, and keeps it.
+    /// Asks the page for the icon it declared, and keeps it — under its
+    /// site's name, or a tool page's own (Address.IconKey).
     public void Fetch(Tab tab)
     {
-        if (tab.Core is not { } core || Address.Host(tab.Address) is not { } host || !Address.IsWeb(tab.Address)) return;
+        if (tab.Core is not { } core || Address.IconKey(tab.Address) is not { } host || !Address.IsWeb(tab.Address)) return;
         if (!busy.Add(host)) return;
         _ = Take(core, host, tab.Shy);
     }

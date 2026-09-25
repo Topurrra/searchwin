@@ -152,7 +152,7 @@ public sealed partial class Tab : Model
             // address is how a tab put down loses the only thing that could
             // bring it back.
             if (fresh.AbsoluteUri == "about:blank") return;
-            var moved = Search.Address.Host(fresh) != Search.Address.Host(Address);
+            var moved = Search.Address.IconKey(fresh) != Search.Address.IconKey(Address);
             Address = fresh;
             if (moved) AdoptIcon();
         };
@@ -335,7 +335,7 @@ public sealed partial class Tab : Model
 
     private void AdoptIcon()
     {
-        if (Search.Address.Host(Address) is { } host) Icon = Favicons.Shared.Cached(host);
+        if (Search.Address.IconKey(Address) is { } key) Icon = Favicons.Shared.Cached(key);
     }
 
     // MARK: - going places

@@ -68,6 +68,9 @@ public static class Address
     public static string? Host(Uri? url) =>
         url is { IsAbsoluteUri: true } && !string.IsNullOrEmpty(url.Host) ? url.IdnHost.ToLowerInvariant() : null;
 
+    /// Whose icon a page wears: its site's, or, for a tool page, the tool's own.
+    public static string? IconKey(Uri? url) => SearchKit.Web.ToolAddress.IconKey(url) ?? Host(url);
+
     /// What the tab says before the page has told us its title: the address,
     /// with the parts nobody reads taken off.
     public static string Pretty(Uri url)

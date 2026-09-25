@@ -53,4 +53,17 @@ public static class ToolAddress
 
     private static string Keep(string path) =>
         path.Replace("%", "%25").Replace("&", "%26").Replace("#", "%23").Replace("+", "%2B");
+
+    /// A tool page's own icon, among the pages that share its host: the name
+    /// its icon is kept under ("tools.search-hash-check"). Null for any other
+    /// page, which wears its host's.
+    public static string? IconKey(Uri? url)
+    {
+        if (url is not { IsAbsoluteUri: true } || url.Host != Host || !url.Fragment.StartsWith(Tool, StringComparison.Ordinal))
+            return null;
+        var id = new string([.. Uri.UnescapeDataString(url.Fragment[Tool.Length..])
+            .ToLowerInvariant()
+            .Where(c => c is (>= 'a' and <= 'z') or (>= '0' and <= '9') or '-')]);
+        return id.Length == 0 ? null : $"{Host}-{id}";
+    }
 }

@@ -11,12 +11,15 @@ public static class Commands
     public static readonly CommandRegistry Registry = new();
     public static readonly Bangs Bangs = new(Store.File("bangs.json"));
 
-    private static bool attached;
+    private static Browser? attached;
 
     public static void Attach(Browser b)
     {
-        if (attached) return;
-        attached = true;
+        if (attached != null) return;
+        attached = b;
+        // The tool pages' commands, a moment after the window is up, so the
+        // first keystroke doesn't pay for reading them.
+        UI.After(2, () => _ = Tools);
 
         void add(string id, string title, Tier tier, string[] words, Action<CommandCall> run, string? keys = null, string? group = null) =>
             Registry.Add(new Command(id, title, tier, words, Group: group, Keys: keys), run);
@@ -60,13 +63,39 @@ public static class Commands
         add("sites.clear", "Clear Cookies and Site Data", Tier.AlwaysAsks, ["clear cookies", "clear site data"], _ => b.ClearSites(), group: "Privacy");
     }
 
-    /// `>tools` opens the list; `>tools hash` opens a tool whose id starts with it.
+    /// `>tools` opens the list; `>tools hash` opens the tool it names.
     private static void OpenTools(Browser b, string argument)
     {
-        var id = argument.Trim().ToLowerInvariant().Replace(' ', '-');
+        var wanted = argument.Trim();
+        OpenTool(b, wanted.Length == 0 ? "" : ToolCatalog.Offer(Tools, wanted)?.Id ?? wanted.ToLowerInvariant().Replace(' ', '-'));
+    }
+
+    private static void OpenTool(Browser b, string id)
+    {
         if (ToolsHost.Resolve(id.Length == 0 ? "search://tools" : $"search://tools/{id}") is { } url && b.Active is { } tab)
             b.Go(tab, url);
     }
+
+    private static IReadOnlyList<ToolEntry>? tools;
+
+    /// The tool pages, each a command (`>image studio`): read from the
+    /// pages' catalog after launch, or the first time the field asks.
+    public static IReadOnlyList<ToolEntry> Tools
+    {
+        get
+        {
+            if (tools != null || attached is not { } b) return tools ?? [];
+            tools = ToolsHost.Catalog();
+            ToolCatalog.Register(Registry, tools, id => OpenTool(b, id));
+            return tools;
+        }
+    }
+
+    /// A row for the tool whose name is being typed, if one is.
+    public static Suggestion? ToolRow(string typed) =>
+        ToolCatalog.Offer(Tools, typed) is { } tool && Registry.Get($"tools.{tool.Id}") is { } command
+            ? new Suggestion(tool.Name, "Tool", Address(command, ""), SuggestionKind.Command)
+            : null;
 
     /// Runs a command typed in the field. Always-asks commands ask here.
     public static async void Run(Command command, string argument)

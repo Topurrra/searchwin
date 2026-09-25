@@ -196,7 +196,7 @@ public sealed partial class HistoryPanel : Plate
             ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
             var mark = new Mark(16) { VerticalAlignment = VerticalAlignment.Center };
-            mark.Show(Favicons.Shared.Cached(Address.Host(trace.Url) ?? ""),
+            mark.Show(Favicons.Shared.Cached(Address.IconKey(trace.Url) ?? ""),
                 trace.Key.Length > 0 ? trace.Key[..1].ToUpperInvariant() : "•");
             Children.Add(mark);
 

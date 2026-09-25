@@ -484,3 +484,51 @@ the fix lives. *(uncertain)* marks things that weren't proven.
 - **Agents mirroring docs one way can overwrite each other's docs.** The notes
   agent's vault → repo `/MIR` reverted the integration agents' committed
   `docs/brain`; recovered with `git checkout -- docs/brain`. Sync from the newer side only.
+
+## Phase 3: Tools as pages + packs (2026-09-27)
+
+### JSON and AOT
+- **`JsonArray.Add(JsonObject)` binds to generic `Add<T>` under AOT,** triggering IL2026/IL3050 warnings. Only a full AOT publish shows them; Debug is silent. **Fix:** type values as `JsonNode`, not `JsonObject`. Apply this to packs.json parsing.
+
+### Media and Chromium
+- **Chromium plays AC-3 audio in MP4 silently instead of raising an error.** A remux check using playback readyState and currentTime can't detect the codec mismatch. **Fix:** probe FFmpeg streams (ffprobe) before trusting a playable container. Player.cs does this; live checked: a problem AC-3 MP4 probed with 'ac3' audio codec, got converted, and played correctly after.
+- **A hidden or minimised WebView2 tab never loads.** `readyState` stays 0, `play()` never settles, media tests hang. **Fix:** ShowWindow(SW_RESTORE) + SetForegroundWindow on the Search process itself before driving media. (Other agents' test windows can also minimise yours; it's a shared screen.) A bench tab's minimise point is the frame value (-32000).
+
+### FFmpeg and security
+- **BtbN daily FFmpeg builds are deleted after ~2 weeks.** Month-end autobuilds are kept long-term (back to 2024-10) with a `checksums.sha256` file. **Fix:** always pin a month-end build tag (e.g. `autobuild-2026-08-31-13-27`), never 'latest' or a daily tag. The NOTICE should say this, but said '~30 MB' instead (actually 144 MB unpacked); updated on merge.
+- **FFmpeg can be tricked by file content, not name.** If a user downloads a crafted HLS playlist as 'film.mkv', FFmpeg's demuxer reads the content and fetches from `file://` URLs inside it, potentially reading other local files. **Fix:** add `-protocol_whitelist file,pipe` before every `-i`, and force sidecar subtitle demuxers from their extension (ffprobe doesn't get the protocol list, so it can also be tricked). Kit RemuxTests has no case for this yet; it's a real gap.
+
+### Drag and drop with WebView2
+- **WebView2's `postMessageWithAdditionalObjects` only accepts disk-backed `File` objects.** Synthetic Files (created in JS) are rejected ('not a file on the disk'). **Fix:** the bench and unit tests can't exercise real drag-drop; wrap the page's postMessage in the test and answer `host:drop.paths` with the objects it sends, so no native dialog is needed.
+
+### SvelteKit and routing
+- **Setting `location.hash` under SvelteKit's hash router (`kit.router.type = "hash"`) triggers `location.reload()`.** It's treated as a user edit to the address bar. **Fix:** navigate using goto() or click a link. For playback, read `location.hash` directly and use `history.pushState()` for navigation; listen to `popstate` and `hashchange` events.
+- **SvelteKit hash router refuses `+server.ts` routes entirely,** even with prerender. A build-time JSON file needs a post-build script using Vite's `ssrLoadModule` to import and run the server code at build time.
+
+### Theme and design tokens
+- **Tool pages already follow the browser's theme for free.** Every tab gets the same `CoreWebView2Profile.PreferredColorScheme` from the browser (set per profile), so `@media (prefers-color-scheme: dark)` switches live. No host call or event needed; theme token changes are instant across all open tabs.
+- **Per-tool inline `<style>` blocks with hard-coded fallback colors contradict a central token layer.** Examples: CSV Toolkit's pink icon tile `var(--color-accent, #6d7cff)` versus the actual `--color-accent: #b5352c` (red) from styles.css. These fallbacks are now unreachable; the central mapping defines all token names. Future: a tool audit could remove the mismatched fallbacks.
+
+### Tauri shim and window labelling
+- **The Tauri shim labels every tool tab `window.label = 'tool'`,** so any Workspace layout code gated on `if (label !== 'overlay')` was running in every tool tab (voice listeners, push-to-talk, command mode). **Lesson:** check for window-label gates when porting Workspace code. The solution is to either remove the code (if it belongs in the browser only) or add a real gate (if it's per-pack).
+
+### Favicons and tabs
+- **All tool tabs at `https://tools.search/…` shared one favicon** because they're all on the same host. HistoryPanel, Tab.AdoptIcon, and Favicons.Fetch all keyed by hostname. **Fix:** key by `Address.IconKey` (hostname, or tools.search-<id>) so each tool gets its own per-tool favicon (a Lucide SVG in the browser's muted colour, drawn per tool).
+- **A bench `shot` screenshot times out if the test window is minimised** (frame -32000). `probe` command shows the frame value; call ShowWindow(SW_RESTORE) on your own test process to fix it. Don't assume one agent's test windows don't minimise yours.
+
+### Svelte 5 event handling
+- **Svelte 5 delegates `onkeydown` and similar handlers to the document root.** Synthetic test events need `bubbles: true` to reach the handler. Unit tests (vitest, node --test) failed to trigger key handlers until this was fixed.
+
+### Git workflow and CRLF files
+- **`git diff --check` flags every added line in a CRLF file as trailing whitespace** because `core.whitespace` isn't set to `cr-at-eol`. This is a repo-wide false positive for any CRLF file edit. Run `git -c core.whitespace=cr-at-eol diff --check` instead. Don't set `core.whitespace` globally (out of scope; touches shared config). A Git Bash `sed -i` can silently normalize CRLF to LF on read, even without the `-i` flag; use PowerShell `[System.IO.File]::ReadAllBytes/GetString` for reliable byte inspection on Windows.
+- **A bench stray file can be accidentally swept into a merge-resolution commit** via `git add -A`. After committing a conflict resolution, re-check `git status --short` to catch unintended additions.
+
+### Integration testing and safety
+- **Parallel builds by multiple agents can race on a test world.** If Builder A and Builder B both use a SEARCH_PROBE world with the same name, they interfere. Use machine-unique names (UUID or timestamp) and communicate the name through the task description or a shared file, never as a side effect of builder A's run.
+- **Rebuild the engine before shipping.** A leftover binary from an hours-old cargo build gets shipped silently; fixes committed since then are lost in AOT only. The publish-aot.cmd script should run `cargo build --release` first or refuse to ship when the binary is older than its source files.
+
+### File operations and latency
+- **File.Exists() and ToolsHost.ServeFile's range-request checking block on the UI thread.** For network shares or offline mapped drives, each check can block for seconds. During media playback (one check per chunk request), this multiplies. **Fix:** move checks into `Task.Run` and report via `UI.Do`, or drop the check and rely on exceptions for the 404 response. The player (Server-side ToolsHost.ServeFile) still has this issue; it's not critical for local files but noticeable on network storage.
+
+### Cut lists and hidden screens
+- **A screen marked `hidden: true` in appScreens.ts is not the same as removing it from the index catalog.** When two different code paths manage visibility (appScreens.ts's inline `hidden: true` and offInSearch.ts filtering), the last write wins silently. Tools that should be hidden but appear in the field, index and catalog.json are a subtle bug. **Fix:** a single source of truth (offInSearch.ts only) and one test asserting all offInSearch ids are actually excluded (not just checking that the ones in offInSearch don't appear; also checking that tools with stale `hidden: true` don't appear either).

@@ -271,3 +271,40 @@ Newest at the bottom.
   pack. Word ⇄ PDF (D24: Word silently, else LibreOffice) moves to phase 4.
 - **Why:** the user's call, to keep phase 3 focused.
 - **Until then:** the Word converter tool page stays out of the tools index.
+
+### D34 · Tools organize by packs; packs are downloads (2026-09-27)
+- **Decision:** Search ships **32 tools** across **8 packs** (Utilities, Files, Privacy, Images, Documents, Development, Media, Focus). Tool pages are restyled with Search's design tokens, not Workspace's. Each pack can be installed, updated and removed through Settings › Packs.
+- **Core pack (always on):** field, shields, FishCatcher, converters, bangs, clipboard, file search. Core never downloads.
+- **Optional packs:** Utilities, Files, Privacy, Images, Documents, Development, Media, Focus are all optional and download on demand. Each tool is a web page at `https://tools.search/tool/<id>`.
+- **Packs framework:** manifest (embedded at build, specifies id, version, size, SHA-256, https URL, licence, build page, exact source commit), download + stream + hash while downloading, stage atomically, verify before unpacking, list only specified files, move into place if complete. Remove is also atomic; old version stays until new one is in place, crash leftover swept on next install.
+- **Why:** keeps the binary lean (no tools bundled); every tool update is optional; each tool is independently removable. Manifest is the source of truth; the exact source commit is always in version control.
+- **Revisit:** when more packs land (Voice/Tesseract/OCR/semantic search).
+
+### D35 · FFmpeg pack: BtbN month-end build, LGPL, pinned commit (2026-09-27)
+- **Decision:** the FFmpeg pack uses BtbN's month-end autobuild (`autobuild-2026-08-31-13-27`, ffmpeg-n8.1.2-50-g1a748fe2cd), win64 LGPL shared, without x264/x265. Download is 70.8 MB; installed is 144 MB.
+- **Why:** month-end builds are kept long-term; daily builds are deleted after ~2 weeks, causing broken links. LGPL (not GPL or AGPL) allows redistribution. Shared (not static) is smaller. h264_mf (Windows hardware encoder) and no x264 save 50+ MB.
+- **Exact source:** commit 1a748fe2cd43e3ead22fafb1b5b7d77f153898a8 (verified on GitHub). Licence LGPL 3.0-or-later in `third_party/FFmpeg-NOTICE.md`. Settings › Packs shows the licence, build page and source link.
+- **How:** pack manifest specifies version, size, SHA-256, URL, licence URL, build URL, and source. Player (remux, transcode), Media Utility (extract MP3, compress) use it when installed. Without pack: gate shows "plays with the FFmpeg pack" + Settings › Packs button.
+- **Updates:** if a newer month-end build exists, update packs.json version, size, sha256, url, source. Test with `pnpm build` + `cargo test` + live in SEARCH_PROBE world. No force re-download; installed versions persist until removed.
+- **Revisit:** when FFmpeg's monthly builds expire or when a significant codec is added/removed.
+
+### D36 · OCR: Windows Core + Tesseract pack (deferred post-phase-3) (2026-09-27)
+- **Decision:** following the Master Plan, OCR should use Windows' built-in OCR in Core, with Tesseract as an optional pack. Neither is wired yet; OcrTool and CamScanner show a "locate Tesseract" gate (shell-out only).
+- **Why:** Windows OCR doesn't require a download; Tesseract adds ~80 MB for users who need other languages or batch OCR. Splitting them (Core + pack) keeps the binary small.
+- **Current:** shell-out pattern in `Engine/src/commands/ocr.rs` (bundled exe, PATH, or Program Files). No pack integration, no Windows-OCR fallback.
+- **Next step:** Builder A's packs framework (core/packs.rs, bin_dir()) is ready; sync with Builder A on a shared `resolve_*` helper (for FFmpeg and Tesseract) before implementing either pack. Cross-team coordination needed (task 2591b36a).
+- **Revisit:** after Tesseract pack is wired and Windows-OCR fallback is added.
+
+### D37 · Reminders and Cron task scoping bug (known issue, not fixed in phase 3) (2026-09-27)
+- **Decision:** the Reminders tool is listed and ships in phase 3 despite a known bug: opening Reminders calls `reconcile_reminder_tasks`, which deletes all `\KeepItLocal\*` scheduled tasks — including Cron panel tasks and Workspace's own Reminders. The scoping is wrong.
+- **Why shipped:** the bug was discovered during merge verification and documented in [[Log/2026-09-27#Blockers]]. Shipping phase 3 and fixing this in a follow-up is faster than rolling back. The bug only manifests if someone opens the Reminders tool; it's not a silent issue.
+- **Workaround:** don't open Reminders in a Workspace world. Test worlds should not have real Workspace reminders/tasks anyway (D31 keeps them isolated).
+- **Fix:** match exact folder `'\\KeepItLocal\\'` instead of wildcard, or move Search's tasks to `\\Search\\<world>\\Reminders\\` per world. For now, add 'reminders' to `offInSearch.ts` (hide it) until Cron is scoped.
+- **Revisit:** in phase 4 when background mode (Cron for global hotkeys) is wired, scope both Reminders and Cron to their own per-world folders.
+
+### D38 · Screen Recorder shipped but broken (known issue in phase 3 installer) (2026-09-27)
+- **Decision:** Screen Recorder is listed in the tools index and field despite a known blocker: the engine is built without screenrec feature, and its Tauri toolbar/region-picker/redaction windows don't work in the WebView2 shim.
+- **What happened:** Builder A set `hidden: true` in appScreens.ts and added it to offInSearch.ts. Builder B's change to appScreens.ts line 834 (`tool.hidden = tool.id in offInSearch`) overwrites the inline `hidden: true`, and searchTools.ts filters only on offInSearch membership. Screen Recorder was never added to offInSearch.ts.
+- **Result:** it's in dist/catalog.json, the tools index, and the field. Users can open it but get a "Screen recorder is not available in this build" message.
+- **Fix:** add `'screen-recorder': '…'` to `offInSearch.ts`, add a regression test in index.test.ts asserting it's not listed, rebuild and re-publish the installer.
+- **Revisit:** in phase 4+ when the engine is built with screenrec and native Search overlays replace the Tauri windows.

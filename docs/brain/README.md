@@ -23,6 +23,8 @@ behave like the Mac app, with the same UI, keys and data.
 | [[Architecture]] | How the code is put together, file by file |
 | [[Build and Release]] | Building (debug, Native AOT), publishing, the installer |
 | [[Testing]] | Test worlds, the bench, how to verify on screen, the checklist |
+| [[Tools]] | Tool inventory by pack: what ships, what's cut and why, status of each |
+| [[Packs]] | How the packs framework works: download, verify, install, update, remove; FFmpeg pack specs |
 | [[Windows vs Mac]] | Where the port differs from the Mac app on purpose, and what's missing |
 | [[Decisions]] | Why things are the way they are (ADR log) |
 | [[Lessons Learned]] | Every gotcha we hit: symptom, cause, fix |
@@ -35,6 +37,7 @@ behave like the Mac app, with the same UI, keys and data.
 | [[Ideas/Media, Downloads and Documents]] | FFmpeg player, yt-dlp downloads, Word ⇄ PDF, what the installer carries, licences |
 | [[Conventions]] | Rules for working on it: git identity, code style, don't-touch list |
 | [[Changelog]] | What landed, commit by commit |
+| [[Log/2026-09-27]] | Phase 3 completion: 5 builders, packs, FFmpeg, 32 tools, merge, installer |
 | [[Log/2026-09-24]] | Session journal |
 
 ## Rules of thumb

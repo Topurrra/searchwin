@@ -49,8 +49,8 @@ Paused on the usage limit before the fix round started. `main` is at `c7001c7`,
    (`Search.Kit/Media/Remux.cs:53`, `Search/Core/Player.cs:117,141`); force
    the sidecar subtitle demuxer from its extension. RemuxTests row.
 7. **OCR:** OcrTool and CamScanner only know Tesseract. The plan says Windows
-   OCR in core: add a host call using `Windows.Media.Ocr`, Tesseract later as
-   a pack (`Engine/src/core/packs.rs` `bin_dir()` is ready).
+   OCR in core: add a host call using `Windows.Media.Ocr`, **PaddleOCR** later as
+   a pack (D39) (`Engine/src/core/packs.rs` `bin_dir()` is ready).
 
 ## Low
 8. `Engine/src/commands/ffmpeg.rs:96`: the user's own ffmpeg.exe should win

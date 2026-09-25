@@ -308,3 +308,13 @@ Newest at the bottom.
 - **Result:** it's in dist/catalog.json, the tools index, and the field. Users can open it but get a "Screen recorder is not available in this build" message.
 - **Fix:** add `'screen-recorder': '…'` to `offInSearch.ts`, add a regression test in index.test.ts asserting it's not listed, rebuild and re-publish the installer.
 - **Revisit:** in phase 4+ when the engine is built with screenrec and native Search overlays replace the Tauri windows.
+
+### D39 · PaddleOCR, not Tesseract, as the OCR pack (2026-09-27)
+- **Decision:** Windows OCR stays in core; the optional OCR pack is PaddleOCR.
+- **Why:** the user's call. Tesseract was only needed for Georgian, which
+  PaddleOCR doesn't support; Search is international, so that's acceptable.
+
+### D40 · Each feature keeps its own optimization note (2026-09-27)
+- **Decision:** [[Optimization]] covers what exists now; every future feature
+  or phase gets its own optimization note, linked from it.
+- **Also planned:** T3 Code inside Search, for the agentic browser (Master Plan › Future).

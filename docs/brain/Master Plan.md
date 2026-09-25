@@ -28,7 +28,7 @@ Back to [[README]] · Built from [[Ideas/Agentic Browser]], [[Ideas/Built-in Too
   you visit with Microsoft is a different thing. It stays **off**, and
   **FishCatcher replaces it**, fully on the device. Settings › Privacy could
   later offer it as an opt-in.
-- **OCR:** Windows' built-in OCR in Core; Tesseract as an optional pack.
+- **OCR:** Windows' built-in OCR in Core; **PaddleOCR** as the optional pack, not Tesseract (user, 2026-09-27). Tesseract was only needed for Georgian, which PaddleOCR lacks; Search is international, so that's acceptable.
 - **Order:** protection first (phase 1), then the universal field.
 - **KeepItLocal Redact is not integrated, in any form.** It's the user's
   upcoming **paid** product (on-device redaction of files, audio and video).
@@ -203,6 +203,14 @@ in KeepItLocal Redact" when it's installed: a hand-off, not an integration.
 Each phase ships something usable. Phases 1 and 2 alone already make Search
 better than most browsers.
 
+## Future (added 2026-09-27, user)
+- **T3 Code inside the browser.** The user's T3 Code (an agentic coding app)
+  runs as part of Search, so the agentic browser can also write and run code.
+  Fits phases 5–6 (Ask, Act); needs its own plan note and its own
+  optimization note.
+- **PaddleOCR pack** replaces the Tesseract pack (see Decided).
+- See [[Optimization]] for what to speed up in what exists now.
+
 ## What happens to Workspace (the standalone app)
 **Decided:** Search is the product, and there's no second frontend. The
 Workspace repo stays as it is (kept, not deleted, not modified). Search's
@@ -226,7 +234,7 @@ Workspace repo stays as it is (kept, not deleted, not modified). Search's
 ## Decisions
 - [x] Tray/background mode: **off by default**.
 - [x] Workspace: **no standalone frontend**; the repo is kept untouched.
-- [x] OCR: **Windows OCR in Core, Tesseract as a pack**.
+- [x] OCR: **Windows OCR in Core, PaddleOCR as a pack** (was Tesseract; changed 2026-09-27).
 - [x] Site checks: **Edge SmartScreen off, FishCatcher instead**; installer signing through the **Microsoft Store**.
 - [x] Phase order: **protection first**.
 - [x] KeepItLocal Redact: **not integrated**; a possible hand-off later.

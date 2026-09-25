@@ -26,6 +26,7 @@ behave like the Mac app, with the same UI, keys and data.
 | [[Tools]] | Tool inventory by pack: what ships, what's cut and why, status of each |
 | [[Packs]] | How the packs framework works: download, verify, install, update, remove; FFmpeg pack specs |
 | [[Fixes]] | What phase 3 left to fix (paused 2026-09-27) |
+| [[Optimization]] | What to speed up in what exists now; each future feature gets its own note |
 | [[Windows vs Mac]] | Where the port differs from the Mac app on purpose, and what's missing |
 | [[Decisions]] | Why things are the way they are (ADR log) |
 | [[Lessons Learned]] | Every gotcha we hit: symptom, cause, fix |

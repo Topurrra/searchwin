@@ -117,17 +117,20 @@
     try { return Array.prototype.slice.call(doc.querySelectorAll(selector)); } catch (e) { return []; }
   }
 
+  // One read of innerText: each read lays the page out and walks it again.
   function bodyText(doc) {
     var body = doc.body;
-    var text = body && typeof body.innerText === 'string' ? body.innerText : '';
-    return text;
+    var text = body ? body.innerText : '';
+    return typeof text === 'string' ? text : '';
   }
 
   /**
    * The AiTM facts, or null when the page asks for no identity interaction at
    * all — ordinary pages (and pages that merely mention passwords) say nothing.
+   * `text` is the page's text when the caller has read it already ('' to
+   * leave the text alone); left out, it is read here.
    */
-  function collectAitm(doc, win) {
+  function collectAitm(doc, win, text) {
     var here = win.location.href;
     var kinds = [];
     function add(k) { if (k && kinds.indexOf(k) === -1) kinds.push(k); }
@@ -155,7 +158,7 @@
       add(aitmKindForText(accText(controls[k])));
     }
 
-    var text = bodyText(doc);
+    if (text === undefined) text = bodyText(doc);
     if (text && text.length < MAX_TEXT && matchDeviceCodeScam(text, doc.title)) add('deviceCode');
 
     if (!kinds.length) return null;
@@ -229,9 +232,9 @@
   var SECRET_RE = /seed phrase|recovery phrase|mnemonic|private key|secret phrase/i;
   var TOLL_FREE = /\b1[\s.\-]?\(?8(?:00|88|77|66|55|44|33)\)?[\s.\-]?\d{3}[\s.\-]?\d{4}\b/;
 
-  /** The scam-pack booleans, or null on an ordinary page. */
-  function collectScam(doc, win) {
-    var whole = bodyText(doc);
+  /** The scam-pack booleans, or null on an ordinary page. `text` as for collectAitm. */
+  function collectScam(doc, win, whole) {
+    if (whole === undefined) whole = bodyText(doc);
     var text = whole.length < MAX_TEXT ? whole : whole.slice(0, MAX_TEXT);
     var cryptoSeed = scamCryptoSeedText(text);
     var techScare = scamTechSupportText(text);
@@ -256,33 +259,51 @@
     var fullscreen = false;
     if (techScare) {
       phone = TOLL_FREE.test(text);
-      fullscreen = !!doc.fullscreenElement;
-      if (!fullscreen && typeof win.getComputedStyle === 'function') {
-        var vw = win.innerWidth;
-        var vh = win.innerHeight;
-        var boxes = all(doc, 'div,section,main,dialog,[class*="overlay" i],[class*="modal" i]');
-        for (var j = 0; j < boxes.length; j++) {
-          var s = win.getComputedStyle(boxes[j]);
-          if (s.position !== 'fixed' && s.position !== 'absolute') continue;
-          if (s.display === 'none' || s.visibility === 'hidden') continue;
-          var r = boxes[j].getBoundingClientRect();
-          if (r.width >= vw * 0.9 && r.height >= vh * 0.9) { fullscreen = true; break; }
-        }
-      }
+      fullscreen = !!doc.fullscreenElement || coveredByOverlay(doc, win);
     }
     return { cryptoSeed: cryptoSeed, seedInput: seedInput, techScare: techScare, phone: phone, fullscreen: fullscreen };
+  }
+
+  /**
+   * A fixed or absolute box over nearly the whole window. Anything that
+   * covers 90% of the window, and is in it, covers its middle: so only the
+   * handful of elements stacked at that one point are looked at, not every
+   * div on the page (probe.js styled and measured each of them).
+   */
+  function coveredByOverlay(doc, win) {
+    if (typeof win.getComputedStyle !== 'function' || typeof doc.elementsFromPoint !== 'function') return false;
+    var vw = win.innerWidth;
+    var vh = win.innerHeight;
+    var stack;
+    try { stack = doc.elementsFromPoint(vw / 2, vh / 2) || []; } catch (e) { return false; }
+    for (var j = 0; j < stack.length && j < 64; j++) {
+      var s = win.getComputedStyle(stack[j]);
+      if (s.position !== 'fixed' && s.position !== 'absolute') continue;
+      if (s.display === 'none' || s.visibility === 'hidden') continue;
+      var r = stack[j].getBoundingClientRect();
+      if (r.width >= vw * 0.9 && r.height >= vh * 0.9) return true;
+    }
+    return false;
   }
 
   /**
    * Everything worth telling the browser about this page, or null when
    * there is nothing: most pages. `href` lets the browser drop facts that
    * arrive after the tab has moved on.
+   *
+   * The page's text is read once, for both (innerText lays the page out, so
+   * it is the costly part), and only when `readText` isn't false: the first
+   * look, while the page is still arriving, is structural only.
    */
-  function collect(doc, win) {
+  function collect(doc, win, readText) {
     var aitm = null;
     var scam = null;
-    try { aitm = collectAitm(doc, win); } catch (e) { aitm = null; }
-    try { scam = collectScam(doc, win); } catch (e) { scam = null; }
+    var text = '';
+    if (readText !== false) {
+      try { text = bodyText(doc); } catch (e) { text = ''; }
+    }
+    try { aitm = collectAitm(doc, win, text); } catch (e) { aitm = null; }
+    try { scam = collectScam(doc, win, text); } catch (e) { scam = null; }
     if (!aitm && !scam) return null;
     var facts = { href: String(win.location.href) };
     if (aitm) facts.aitm = aitm;
@@ -312,7 +333,15 @@
   // (sign-in pages often draw their form late), and when a password or code
   // field is first focused. Each posts only if it found something new, and
   // there are never more than a handful of looks per page.
+  //
+  // Reading the page's text lays the whole page out, so the first look
+  // leaves the text alone (fields and forms only: a sign-in page is caught
+  // there); the text is read once the page has loaded and settled, when the
+  // browser is idle (or a few seconds after it was parsed, for a page that
+  // never finishes loading), and on that first focus.
   var SETTLE_MS = 1200;
+  var STUCK_MS = 5000;
+  var IDLE_MS = 1000;
   var MAX_LOOKS = 6;
 
   function init(win) {
@@ -326,11 +355,11 @@
     var said = '';
     var looks = 0;
 
-    function look() {
+    function look(readText) {
       if (looks >= MAX_LOOKS) return;
       looks++;
       try {
-        var facts = collect(doc, win);
+        var facts = collect(doc, win, readText);
         if (!facts) return;
         var text = JSON.stringify(facts);
         if (text === said) return;
@@ -339,10 +368,31 @@
       } catch (e) { /* never throw into the page */ }
     }
 
+    function later(fn, ms) {
+      if (typeof win.setTimeout === 'function') win.setTimeout(fn, ms);
+      else setTimeout(fn, ms);
+    }
+    function whenIdle() {
+      if (typeof win.requestIdleCallback === 'function') win.requestIdleCallback(function () { look(true); }, { timeout: IDLE_MS });
+      else look(true);
+    }
+    // The text look, once: after load has settled, or when load is stuck.
+    var settling = false;
+    function settle(ms) {
+      if (settling) return;
+      settling = true;
+      later(whenIdle, ms);
+    }
+    function parsed() {
+      look(false);
+      later(function () { settle(0); }, STUCK_MS);
+    }
+
     try {
-      if (doc.readyState === 'loading') doc.addEventListener('DOMContentLoaded', look, { once: true });
-      else look();
-      win.addEventListener('load', function () { setTimeout(look, SETTLE_MS); }, { once: true });
+      if (doc.readyState === 'loading') doc.addEventListener('DOMContentLoaded', parsed, { once: true });
+      else parsed();
+      if (doc.readyState === 'complete') settle(SETTLE_MS);
+      else win.addEventListener('load', function () { settle(SETTLE_MS); }, { once: true });
       var focused = false;
       doc.addEventListener('focusin', function (e) {
         if (focused) return;
@@ -350,7 +400,7 @@
         if (!t || t.tagName !== 'INPUT') return;
         if (t.type !== 'password' && t.getAttribute('autocomplete') !== 'one-time-code') return;
         focused = true;
-        look();
+        look(true);
       }, true);
     } catch (e) { /* never throw into the page */ }
   }

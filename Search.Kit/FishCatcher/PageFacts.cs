@@ -143,25 +143,44 @@ public sealed class PageFacts
     }
 }
 
-/// How many fish.facts one document may send. The probe looks at most six
-/// times a page (and speaks only when something changed); a page that posts
-/// the message itself, over and over, would otherwise have each one parsed
-/// and scored on the UI thread. One per tab, from the UI thread only.
-public sealed class ProbeBudget
+/// How often one document's fish.facts are heard. The probe looks at most
+/// six times a page (and speaks only when something changed); a page that
+/// posts the message itself, over and over, would otherwise have each one
+/// parsed and scored on the UI thread. A handful at once, then one every
+/// RefillMs: a hard cap of six would let the page's own scripts, which run
+/// before the probe has looked, spend all of it and leave the probe unheard
+/// for the rest of the document. One per tab, from the UI thread only.
+public sealed class ProbeBudget(Func<long>? clock = null)
 {
     public const int PerDocument = 6;
-    private int heard;
+    public const long RefillMs = 2_000;
+
+    private readonly Func<long> clock = clock ?? (() => Environment.TickCount64);
+    private int left = PerDocument;
+    private long since;
 
     /// Whether one more may be heard; counts it.
     public bool Take()
     {
-        if (heard >= PerDocument) return false;
-        heard++;
+        var now = clock();
+        if (left >= PerDocument) since = now; // a full budget saves nothing up
+        else
+        {
+            var earned = (int)Math.Min(PerDocument - left, Math.Max(0, now - since) / RefillMs);
+            left += earned;
+            since = left >= PerDocument ? now : since + earned * RefillMs;
+        }
+        if (left == 0) return false;
+        left--;
         return true;
     }
 
     /// A new document starts with a full budget.
-    public void NewDocument() => heard = 0;
+    public void NewDocument()
+    {
+        left = PerDocument;
+        since = clock();
+    }
 }
 
 /// The AiTM probe's facts (M8): which identity interactions the page has, the

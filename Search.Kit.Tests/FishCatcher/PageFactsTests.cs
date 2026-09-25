@@ -164,14 +164,57 @@ public class PageFactsTests
     }
 
     [Fact]
-    public void A_document_is_heard_a_handful_of_times()
+    public void A_document_is_heard_a_handful_of_times_at_once()
     {
-        var budget = new ProbeBudget();
+        long now = 0;
+        var budget = new ProbeBudget(() => now);
         for (int i = 0; i < ProbeBudget.PerDocument; i++) Assert.True(budget.Take());
         Assert.False(budget.Take());
         Assert.False(budget.Take());
         budget.NewDocument();
         Assert.True(budget.Take());
+    }
+
+    // The page's own scripts run before the probe has looked, and can post
+    // fish.facts themselves: spending the whole budget first must not
+    // leave the probe unheard for the rest of the document.
+    [Fact]
+    public void A_page_that_spends_the_budget_first_does_not_silence_the_probe()
+    {
+        long now = 0;
+        var budget = new ProbeBudget(() => now);
+        for (int i = 0; i < ProbeBudget.PerDocument; i++) Assert.True(budget.Take()); // the page, at once
+        now = 1_200; // the probe's settled look
+        Assert.False(budget.Take());
+        now = ProbeBudget.RefillMs;
+        Assert.True(budget.Take());
+        Assert.False(budget.Take());
+        now = 5_000; // the probe's last look: the one due at 4 s
+        Assert.True(budget.Take());
+        Assert.False(budget.Take());
+        now = 3 * ProbeBudget.RefillMs;
+        Assert.True(budget.Take());
+    }
+
+    [Fact]
+    public void A_page_heard_once_a_refill_is_heard_at_most_that_often()
+    {
+        long now = 0;
+        var budget = new ProbeBudget(() => now);
+        var heard = 0;
+        for (now = 0; now < 60_000; now += 100) if (budget.Take()) heard++;
+        // The first handful, then one every RefillMs.
+        Assert.Equal(ProbeBudget.PerDocument + (int)(59_900 / ProbeBudget.RefillMs), heard);
+    }
+
+    [Fact]
+    public void Time_spent_quiet_is_not_saved_up()
+    {
+        long now = 0;
+        var budget = new ProbeBudget(() => now);
+        now = 600_000;
+        for (int i = 0; i < ProbeBudget.PerDocument; i++) Assert.True(budget.Take());
+        Assert.False(budget.Take());
     }
 
     [Fact]

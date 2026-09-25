@@ -548,21 +548,36 @@ public sealed partial class Tab : Model
         core.Navigate(url.AbsoluteUri);
     }
 
+    /// The document that sent the message being handled, while its handler
+    /// runs (it is called synchronously, and this is null again after): the
+    /// engine's word, where the message's body is only the page's. Null for
+    /// a sender whose address can't be read.
+    internal Uri? MessageSource { get; private set; }
+
     private void Received(CoreWebView2WebMessageReceivedEventArgs e)
     {
         if (Core is { } tools && ToolsHost.Take(this, tools, e)) return;
         JsonElement message;
+        Uri? source;
         try
         {
-            using var doc = JsonDocument.Parse(e.WebMessageAsJson);
+            // Parsed on this thread before any handler can refuse it, so a
+            // page's megabytes aren't read at all (SearchKit.Web.PageMessage).
+            var json = e.WebMessageAsJson;
+            if (!SearchKit.Web.PageMessage.Fits(json)) return;
+            source = Uri.TryCreate(e.Source, UriKind.Absolute, out var from) ? from : null;
+            using var doc = JsonDocument.Parse(json);
             message = doc.RootElement.Clone();
         }
         catch { return; }
-        if (message.ValueKind != JsonValueKind.Object || !message.TryGetProperty("name", out var nameEl)) return;
+        if (message.ValueKind != JsonValueKind.Object || !message.TryGetProperty("name", out var nameEl) || nameEl.ValueKind != JsonValueKind.String) return;
         var body = message.TryGetProperty("body", out var b) ? b : default;
         var which = nameEl.GetString() ?? "";
         if (which == Scroll.Name) { Scroll.Take(this, body); return; }
-        if (Bridge.Handlers.TryGetValue(which, out var handle)) handle(this, body);
+        if (!Bridge.Handlers.TryGetValue(which, out var handle)) return;
+        MessageSource = source;
+        try { handle(this, body); }
+        finally { MessageSource = null; }
     }
 
     // MARK: - scripts

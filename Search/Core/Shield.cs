@@ -753,13 +753,13 @@ public sealed partial class Browser
         if (!body.TryGetProperty("canonical", out var said) || said.ValueKind != System.Text.Json.JsonValueKind.String) return;
         if (!Uri.TryCreate(said.GetString(), UriKind.Absolute, out var canonical) || !Address.IsWeb(canonical)) return;
         if (!Uri.TryCreate(tab.Core?.Source, UriKind.Absolute, out var here) || !Address.IsWeb(here)) return;
-        // The message names the page that sent it (its own address, not the
-        // canonical). A page that posted this and has since navigated away —
-        // this tab may already be showing something else by the time the
-        // message is handled — must not get to replace() whatever loaded
-        // after it with its own idea of where it should have gone.
-        if (!body.TryGetProperty("href", out var sender) || sender.ValueKind != System.Text.Json.JsonValueKind.String) return;
-        if (!string.Equals(sender.GetString(), here.AbsoluteUri, StringComparison.Ordinal)) return;
+        // A page that posted this and has since navigated away — this tab
+        // may already be showing something else by the time the message is
+        // handled — must not get to replace() whatever loaded after it with
+        // its own idea of where it should have gone. Which document sent it
+        // is the engine's word (the message's Source), not an address the
+        // page put in the body.
+        if (!SearchKit.Web.PageMessage.SameDocument(tab.MessageSource, here)) return;
         if (Shield.Shared.IsPaused(Curtain.Host(here)) || canonical.Host.EndsWith(".search", StringComparison.OrdinalIgnoreCase)) return;
         if (tab.LeftAmp == here.AbsoluteUri) return;
         tab.LeftAmp = here.AbsoluteUri;

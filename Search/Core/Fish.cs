@@ -296,15 +296,18 @@ public sealed partial class Browser
     ///
     /// The page can post this message itself, so it is the page's word: read
     /// with PageFacts.FromProbe (the probe's fields, within its limits, never
-    /// a Safe Browsing verdict or a domain age), and heard at most a handful
-    /// of times per document, since each is parsed and scored on this thread.
+    /// a Safe Browsing verdict or a domain age), and heard a handful of times
+    /// at once, then one every two seconds (ProbeBudget), since each is
+    /// parsed and scored on this thread.
     private void FishFacts(Tab tab, JsonElement body)
     {
         if (!Prefs.WarnsOfScams || Showing(tab) is not { } url || !Watched(url)) return;
+        // From a page the tab has since left. Which page sent it is the
+        // engine's word (the message's Source), never an address in the
+        // body: a page could name the site it is about to go to, and have
+        // that site warned about with what it said.
+        if (!SearchKit.Web.PageMessage.SameHost(tab.MessageSource, url)) return;
         if (body.ValueKind != JsonValueKind.Object || !tab.FishBudget.Take()) return;
-        // From a page the tab has since left.
-        if (body.TryGetProperty("href", out var href) && href.ValueKind == JsonValueKind.String
-            && Uri.TryCreate(href.GetString(), UriKind.Absolute, out var from) && !SameHost(from, url)) return;
         if (tab.Failure is { Kind: TroubleKind.Scam }) return;
         if (PageFacts.FromProbe(body) is not { } facts) return;
         var verdict = Catcher.Check(url, facts);

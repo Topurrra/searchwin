@@ -36,11 +36,21 @@ public sealed class NetworkRule
     }
 
     /// Parses one non-comment, non-cosmetic line. `unsupported` is true for
-    /// a line whose *shape* is a network rule but that leans on an option
-    /// this engine doesn't act on ($redirect, $csp, $removeparam, anything
-    /// else outside the documented set) — the whole rule is dropped rather
-    /// than applied as a plain block, which would over-block whatever the
-    /// missing option was meant to narrow it to.
+    /// a line whose *shape* is a network rule but that this engine can't
+    /// honour, and the rule is dropped and counted:
+    /// - a `/regex/` pattern;
+    /// - an option that makes the rule about something other than whether a
+    ///   request may load ($redirect, $csp, $removeparam, $document,
+    ///   $elemhide, $popup, $badfilter…) — as a plain block or allow it
+    ///   would do something the list never asked for;
+    /// - on a block, an option outside the set below: dropping the rule
+    ///   under-blocks, while ignoring the option would over-block whatever
+    ///   it was meant to narrow the rule to.
+    ///
+    /// An exception with an option it can't judge (`$match-case`, a new
+    /// one) is kept without that option instead. It then allows a little
+    /// more than the list meant; dropping it would block what the list
+    /// says must load, and that breaks sites.
     public static bool TryParse(string line, out NetworkRule? rule, out bool unsupported)
     {
         rule = null;
@@ -50,6 +60,7 @@ public sealed class NetworkRule
         var isException = false;
         if (text.StartsWith("@@", StringComparison.Ordinal)) { isException = true; text = text[2..]; }
         if (text.Length == 0) return false;
+        if (IsRegex(text)) { unsupported = true; return false; }
 
         var dollarAt = text.IndexOf('$');
         var patternText = dollarAt >= 0 ? text[..dollarAt] : text;
@@ -79,33 +90,45 @@ public sealed class NetworkRule
                 var value = eq >= 0 ? key[(eq + 1)..] : null;
                 if (eq >= 0) key = key[..eq];
 
-                switch (key.ToLowerInvariant())
+                switch (key = key.ToLowerInvariant())
                 {
-                    case "third-party":
+                    case "third-party" or "3p":
                         thirdParty = !negate;
+                        break;
+                    case "first-party" or "1p":
+                        thirdParty = negate;
                         break;
                     case "important":
                         important = true;
                         break;
-                    case "domain":
+                    case "domain" or "from":
                         if (value is null or "") { unsupported = true; return false; }
                         (domainIncludes, domainExcludes) = SplitDomainOption(value);
                         break;
                     case "script": Flag(ResourceKinds.Script); break;
                     case "image": Flag(ResourceKinds.Image); break;
-                    case "stylesheet": Flag(ResourceKinds.Stylesheet); break;
-                    case "xmlhttprequest": Flag(ResourceKinds.XmlHttpRequest); break;
-                    case "subdocument": Flag(ResourceKinds.Subdocument); break;
+                    case "stylesheet" or "css": Flag(ResourceKinds.Stylesheet); break;
+                    case "xmlhttprequest" or "xhr": Flag(ResourceKinds.XmlHttpRequest); break;
+                    case "subdocument" or "frame": Flag(ResourceKinds.Subdocument); break;
                     case "media": Flag(ResourceKinds.Media); break;
                     case "font": Flag(ResourceKinds.Font); break;
+                    // What WebView2 has no kind of its own for comes as Other
+                    // (the browser's Kind maps Ping, Websocket, Manifest… there).
+                    case "other" or "ping" or "beacon" or "websocket" or "object" or "object-subrequest":
+                        Flag(ResourceKinds.Other);
+                        break;
+                    // Real kinds of request that never reach the filter: a
+                    // rule for only these never fires.
+                    case "webrtc" or "webbundle":
+                        Flag(ResourceKinds.None);
+                        break;
                     default:
-                        // $redirect(-rule), $csp, $removeparam, $popup,
-                        // $genericblock/$generichide, $ping, $websocket,
-                        // $object, $document, $match-case, $badfilter… none
-                        // of these change what "block" or "allow" means in a
-                        // way a plain match/no-match can stand in for.
-                        unsupported = true;
-                        return false;
+                        if (!isException || OtherMeaning.Contains(key))
+                        {
+                            unsupported = true;
+                            return false;
+                        }
+                        break; // an exception without the one option it can't judge
                 }
                 continue;
 
@@ -116,13 +139,38 @@ public sealed class NetworkRule
                 }
             }
 
-            if (hasPositive) kinds = positive;
+            if (hasPositive) kinds = positive & ~negative;
             else if (hasNegative) kinds = ResourceKinds.All & ~negative;
+            if (kinds == ResourceKinds.None) { unsupported = true; return false; }
         }
 
         var (anchorDomain, pattern) = BuildPattern(patternText);
         rule = new NetworkRule(isException, important, kinds, thirdParty, domainIncludes, domainExcludes, anchorDomain, pattern);
         return true;
+    }
+
+    /// Options that turn a rule into something other than "this request
+    /// may (not) load": a redirect, a CSP header, a parameter taken off, a
+    /// whole page or its cosmetics let off, a popup, another rule cancelled.
+    /// An exception carrying one isn't an allow, so it's never kept as one.
+    private static readonly HashSet<string> OtherMeaning = new(StringComparer.Ordinal)
+    {
+        "redirect", "redirect-rule", "rewrite", "empty", "mp4", "csp", "permissions", "removeparam", "queryprune",
+        "replace", "urltransform", "uritransform", "urlskip", "header", "removeheader", "cookie", "jsonprune",
+        "document", "doc", "all", "popup", "popunder", "elemhide", "ehide", "generichide", "ghide",
+        "specifichide", "shide", "genericblock", "badfilter", "inline-script", "inline-font", "cname",
+        "urlblock", "content", "jsinject", "extension", "stealth", "network", "app", "sitekey",
+    };
+
+    // `/…/`, with or without options after it: a regular expression, which
+    // this engine doesn't run. A path pattern that happens to start with a
+    // slash (`/ads/*`, `/banner.gif`) ends with something else.
+    private static bool IsRegex(string text)
+    {
+        if (text.Length < 3 || text[0] != '/') return false;
+        if (text[^1] == '/') return true;
+        var dollar = text.LastIndexOf('$');
+        return dollar > 1 && text[dollar - 1] == '/';
     }
 
     public bool MatchesContext(ResourceKind kind, bool thirdParty, string? pageHost)
@@ -143,9 +191,10 @@ public sealed class NetworkRule
         return pattern.IsMatch(lowerUrl, AnchorDomain != null ? afterHost : 0);
     }
 
-    /// Every literal token (≥3 alnum characters) this pattern could be
-    /// indexed under — empty for a domain-anchored rule (the host dictionary
-    /// already narrows those) or a pattern with nothing that long (`*ads*`).
+    /// Every whole word this pattern could be indexed under
+    /// (`AbpPattern.IndexTokens`) — empty for a domain-anchored rule (the
+    /// host dictionary already narrows those) or a pattern with no word it
+    /// holds on both sides (`*ads*`, `banner`).
     /// `FilterList` picks whichever candidate is rarest across the whole
     /// list, not just the longest one: two rules can easily share their
     /// longest word ("banner", "advert"…) while differing everywhere else,

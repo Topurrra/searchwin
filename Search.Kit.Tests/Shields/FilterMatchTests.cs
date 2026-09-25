@@ -176,4 +176,196 @@ public class FilterMatchTests
         Assert.Equal(original.ShouldBlock(url, "page.com", ResourceKind.Script), loaded.ShouldBlock(url, "page.com", ResourceKind.Script));
         Assert.Equal(original.CssFor("example.com"), loaded.CssFor("example.com"));
     }
+
+    // MARK: - the token index
+
+    // A rule's word is only a whole word of the address when the rule says
+    // so: `banner` with nothing around it is a piece of text, and matches
+    // inside "banners" just as a plain pattern test would.
+    [Fact]
+    public void A_bare_word_matches_inside_a_longer_one()
+    {
+        var list = Compile("banner");
+        Assert.True(list.ShouldBlock(new Uri("https://cdn.example.com/banners/1.png"), "page.com", ResourceKind.Image));
+    }
+
+    [Fact]
+    public void An_unanchored_name_matches_inside_a_longer_host()
+    {
+        var list = Compile("adserver");
+        Assert.True(list.ShouldBlock(new Uri("https://myadserver.example/x.js"), "page.com", ResourceKind.Script));
+    }
+
+    [Fact]
+    public void A_word_next_to_a_wildcard_is_not_a_whole_word()
+    {
+        var list = Compile("-ad-*banner");
+        Assert.True(list.ShouldBlock(new Uri("https://cdn.example.com/-ad-bigbanner.png"), "page.com", ResourceKind.Image));
+    }
+
+    [Fact]
+    public void A_word_between_separators_is_still_a_whole_word()
+    {
+        var list = Compile("/adframe/*");
+        Assert.True(list.ShouldBlock(new Uri("https://cdn.example.com/adframe/x.html"), "page.com", ResourceKind.Subdocument));
+        Assert.False(list.ShouldBlock(new Uri("https://cdn.example.com/myadframe/x.html"), "page.com", ResourceKind.Subdocument));
+    }
+
+    [Fact]
+    public void An_exception_word_inside_a_longer_one_still_excepts()
+    {
+        var list = Compile("||cdn.example^", "@@banner");
+        Assert.False(list.ShouldBlock(new Uri("https://cdn.example/banners/1.png"), "page.com", ResourceKind.Image));
+        Assert.True(list.ShouldBlock(new Uri("https://cdn.example/other/1.png"), "page.com", ResourceKind.Image));
+    }
+
+    [Fact]
+    public void A_pattern_starting_with_a_separator_is_found_anywhere()
+    {
+        var list = Compile("^adsbygoogle.js");
+        Assert.True(list.ShouldBlock(new Uri("https://cdn.example.com/p/adsbygoogle.js"), "page.com", ResourceKind.Script));
+        Assert.False(list.ShouldBlock(new Uri("https://cdn.example.com/p/myadsbygoogle.js"), "page.com", ResourceKind.Script));
+    }
+
+    [Fact]
+    public void Separator_matches_the_end_of_the_address()
+    {
+        var list = Compile("/track.js^", "|https://end.example/x^|");
+        Assert.True(list.ShouldBlock(new Uri("https://cdn.example.com/track.js"), null, ResourceKind.Script));
+        Assert.True(list.ShouldBlock(new Uri("https://end.example/x"), null, ResourceKind.Script));
+        Assert.False(list.ShouldBlock(new Uri("https://end.example/xy"), null, ResourceKind.Script));
+    }
+
+    [Fact]
+    public void End_anchor_after_wildcards()
+    {
+        var list = Compile("/ads/*.js|");
+        Assert.True(list.ShouldBlock(new Uri("https://cdn.example.com/ads/a.js/b.js"), null, ResourceKind.Script));
+        Assert.False(list.ShouldBlock(new Uri("https://cdn.example.com/ads/a.js?v=1"), null, ResourceKind.Script));
+    }
+
+    // MARK: - hosts
+
+    [Fact]
+    public void A_trailing_dot_on_the_host_is_the_same_host()
+    {
+        var list = Compile("||doubleclick.net^", "||tracker.com^$third-party", "||cdn.example^$domain=news.example");
+        Assert.True(list.ShouldBlock(new Uri("https://ads.doubleclick.net/x.js"), "page.com", ResourceKind.Script));
+        Assert.True(list.ShouldBlock(new Uri("https://ads.doubleclick.net./x.js"), "page.com", ResourceKind.Script));
+        Assert.True(list.ShouldBlock(new Uri("https://tracker.com./x.js"), "page.com", ResourceKind.Script));
+        Assert.False(list.ShouldBlock(new Uri("https://tracker.com./x.js"), "tracker.com", ResourceKind.Script));
+        Assert.False(list.ShouldBlock(new Uri("https://tracker.com/x.js"), "tracker.com.", ResourceKind.Script));
+        Assert.True(list.ShouldBlock(new Uri("https://cdn.example/x.js"), "news.example.", ResourceKind.Script));
+    }
+
+    [Fact]
+    public void The_public_suffix_list_tells_sites_apart()
+    {
+        var psl = new PslRegistrableDomain(SearchKit.Tests.ParityTests.Data.Value.Psl);
+        var withPsl = FilterList.Compile(["||bob.github.io^$third-party"], psl);
+        var withGuess = FilterList.Compile(["||bob.github.io^$third-party"], SimpleRegistrableDomain.Instance);
+        var url = new Uri("https://bob.github.io/track.js");
+        Assert.True(withPsl.ShouldBlock(url, "alice.github.io", ResourceKind.Script));
+        Assert.False(withPsl.ShouldBlock(url, "bob.github.io", ResourceKind.Script));
+        Assert.False(withGuess.ShouldBlock(url, "alice.github.io", ResourceKind.Script));
+    }
+
+    // MARK: - options
+
+    [Fact]
+    public void An_exception_for_other_requests_is_kept()
+    {
+        var list = Compile("||x.example^", "@@||x.example/ok.js$script,other");
+        Assert.False(list.ShouldBlock(new Uri("https://x.example/ok.js"), "page.com", ResourceKind.Script));
+        Assert.False(list.ShouldBlock(new Uri("https://x.example/ok.js"), "page.com", ResourceKind.Other));
+        Assert.True(list.ShouldBlock(new Uri("https://x.example/ok.js"), "page.com", ResourceKind.Image));
+        Assert.True(list.ShouldBlock(new Uri("https://x.example/bad.js"), "page.com", ResourceKind.Script));
+    }
+
+    [Theory]
+    [InlineData("other", ResourceKind.Other, ResourceKind.Script)]
+    [InlineData("ping", ResourceKind.Other, ResourceKind.Script)]
+    [InlineData("beacon", ResourceKind.Other, ResourceKind.Image)]
+    [InlineData("websocket", ResourceKind.Other, ResourceKind.Script)]
+    [InlineData("object", ResourceKind.Other, ResourceKind.Media)]
+    [InlineData("object-subrequest", ResourceKind.Other, ResourceKind.Media)]
+    [InlineData("xhr", ResourceKind.XmlHttpRequest, ResourceKind.Script)]
+    [InlineData("css", ResourceKind.Stylesheet, ResourceKind.Script)]
+    [InlineData("frame", ResourceKind.Subdocument, ResourceKind.Script)]
+    public void Type_aliases_narrow_the_rule(string option, ResourceKind hit, ResourceKind miss)
+    {
+        var list = Compile("||x.example^$" + option);
+        Assert.Equal(1, list.Stats.NetworkRules);
+        Assert.True(list.ShouldBlock(new Uri("https://x.example/a"), "page.com", hit));
+        Assert.False(list.ShouldBlock(new Uri("https://x.example/a"), "page.com", miss));
+    }
+
+    [Theory]
+    [InlineData("3p", true)]
+    [InlineData("~1p", true)]
+    [InlineData("1p", false)]
+    [InlineData("first-party", false)]
+    [InlineData("~first-party", true)]
+    public void Party_aliases(string option, bool thirdPartyOnly)
+    {
+        var list = Compile("||x.example/a.js$" + option);
+        Assert.Equal(thirdPartyOnly, list.ShouldBlock(new Uri("https://x.example/a.js"), "page.com", ResourceKind.Script));
+        Assert.Equal(!thirdPartyOnly, list.ShouldBlock(new Uri("https://x.example/a.js"), "x.example", ResourceKind.Script));
+    }
+
+    [Fact]
+    public void An_exception_with_an_option_it_cannot_judge_is_kept_without_it()
+    {
+        var list = Compile("||x.example^", "@@||x.example/ok.js$script,match-case", "@@||x.example/fine.js$some-future-option");
+        Assert.Equal(2, list.Stats.NetworkExceptions);
+        Assert.False(list.ShouldBlock(new Uri("https://x.example/ok.js"), "page.com", ResourceKind.Script));
+        Assert.True(list.ShouldBlock(new Uri("https://x.example/ok.js"), "page.com", ResourceKind.Image));
+        Assert.False(list.ShouldBlock(new Uri("https://x.example/fine.js"), "page.com", ResourceKind.Script));
+    }
+
+    [Theory]
+    [InlineData("@@||x.example^$elemhide")]
+    [InlineData("@@||x.example^$csp")]
+    [InlineData("@@||x.example^$document")]
+    [InlineData("@@||x.example^$redirect-rule")]
+    [InlineData("@@||x.example^$removeparam=utm_source")]
+    [InlineData("@@||x.example^$genericblock")]
+    [InlineData("@@||x.example^$badfilter")]
+    public void An_exception_that_is_about_something_else_is_not_an_allow(string line)
+    {
+        var list = Compile("||x.example^", line);
+        Assert.Equal(1, list.Stats.SkippedUnsupported);
+        Assert.True(list.ShouldBlock(new Uri("https://x.example/a.js"), "page.com", ResourceKind.Script));
+    }
+
+    [Theory]
+    [InlineData("/banner[0-9]+\\.gif/")]
+    [InlineData("/^https?:\\/\\/ads\\./$script")]
+    [InlineData("@@/^https?:\\/\\/ok\\./$image")]
+    [InlineData("/ads\\.js$/$script,third-party")]
+    public void Regex_rules_are_counted_as_unsupported(string line)
+    {
+        var stats = new FilterStats();
+        var network = new List<NetworkRule>();
+        FilterParser.ParseLine(line, network, [], stats);
+        Assert.Empty(network);
+        Assert.Equal(1, stats.SkippedUnsupported);
+    }
+
+    [Fact]
+    public void A_path_that_merely_starts_with_a_slash_is_not_a_regex()
+    {
+        var list = Compile("/ads/*", "/banner.gif");
+        Assert.Equal(2, list.Stats.NetworkRules);
+        Assert.True(list.ShouldBlock(new Uri("https://cdn.example/ads/x.js"), null, ResourceKind.Script));
+        Assert.True(list.ShouldBlock(new Uri("https://cdn.example/img/banner.gif"), null, ResourceKind.Image));
+    }
+
+    [Fact]
+    public void A_block_rule_with_an_option_it_cannot_judge_is_still_dropped()
+    {
+        var list = Compile("||x.example^$match-case", "||y.example^$webrtc");
+        Assert.Equal(0, list.Stats.NetworkRules);
+        Assert.Equal(2, list.Stats.SkippedUnsupported);
+    }
 }

@@ -20,16 +20,35 @@ internal sealed class AbpPattern
     private readonly bool startAnchor;
     private readonly bool endAnchor;
 
+    // The tokens between one `*` and the next, as [start, end) ranges into
+    // `tokens` — one more piece than there are wildcards, some of them empty.
+    private readonly (int Start, int End)[] pieces;
+
     private AbpPattern(Token[] tokens, bool startAnchor, bool endAnchor)
     {
         this.tokens = tokens;
         this.startAnchor = startAnchor;
         this.endAnchor = endAnchor;
+        var list = new List<(int, int)>();
+        var from = 0;
+        for (var i = 0; i <= tokens.Length; i++)
+        {
+            if (i < tokens.Length && tokens[i].Kind != Kind.Wildcard) continue;
+            list.Add((from, i));
+            from = i + 1;
+        }
+        pieces = [.. list];
     }
+
+    /// The shortest word, on either side, that the index goes by: a request
+    /// looks up every run of letters and digits in its address at least this
+    /// long, and a rule is filed under one of its own.
+    public const int MinToken = 2;
 
     /// `text` is already lower-cased by the caller (matching is always
     /// case-insensitive here — `$match-case` isn't one of the options this
-    /// engine acts on, so a rule that needs it is skipped upstream instead).
+    /// engine acts on, so a block that needs it is skipped upstream, and an
+    /// exception carrying it simply allows a little more).
     public static AbpPattern Parse(string text, bool forceStartAnchor = false)
     {
         var startAnchor = forceStartAnchor || text.StartsWith('|');
@@ -57,7 +76,30 @@ internal sealed class AbpPattern
     /// plain pattern, or the index right after the request's host for a
     /// domain-anchored one. A start anchor means the match must begin
     /// exactly there, not merely somewhere at or after it.
-    public bool IsMatch(string haystack, int from) => tokens.Length == 0 || Search(haystack, 0, from);
+    ///
+    /// No backtracking: each piece between two `*` is fixed in length (a
+    /// `^` is one character, or none at the very end), so the earliest place
+    /// a piece fits also ends earliest, and whatever follows a `*` can only
+    /// do better from an earlier place. Each piece is looked for once, left
+    /// to right, which keeps a rule with many wildcards linear in the
+    /// address instead of growing with a power of its length. Only a piece
+    /// held at an end by `|` is looked for there instead.
+    public bool IsMatch(string haystack, int from)
+    {
+        if (tokens.Length == 0) return true;
+        var pos = from;
+        for (var i = 0; i < pieces.Length; i++)
+        {
+            var (start, end) = pieces[i];
+            var heldStart = i == 0 && startAnchor;
+            var heldEnd = i == pieces.Length - 1 && endAnchor;
+            if (heldEnd)
+                return heldStart ? MatchAt(start, end, haystack, pos) == haystack.Length : EndsWith(start, end, haystack, pos);
+            pos = heldStart ? MatchAt(start, end, haystack, pos) : Find(start, end, haystack, pos);
+            if (pos < 0) return false;
+        }
+        return true;
+    }
 
     /// Nothing after a `||domain` but at most its closing `^`: the rule is
     /// the domain and nothing else, so a set of names can stand in for it.
@@ -66,69 +108,97 @@ internal sealed class AbpPattern
     public bool IsDomainOnly =>
         !endAnchor && (tokens.Length == 0 || (tokens.Length == 1 && tokens[0].Kind == Kind.Separator));
 
-    /// Every token this pattern's literal pieces contain that's at least
-    /// three plain letters/digits long, longest first — `FilterList` picks
-    /// the first one as the index key for a non-domain-anchored rule, so a
-    /// request only has to test the handful of rules that share a token it
-    /// actually contains, not the whole list.
+    /// Every word (a run of at least `MinToken` letters/digits) this pattern
+    /// can only match as a *whole* word of the address — `FilterList` files a
+    /// non-domain-anchored rule under the rarest of them, so a request only
+    /// tests the rules that share a word it actually contains.
+    ///
+    /// Whole means held on both sides: by a character in the pattern that
+    /// isn't a letter or digit, by a `^`, or by a `|` at that end. A request
+    /// only looks up whole runs of its address, so a word the pattern leaves
+    /// open — at an unanchored end (`banner` also matches "banners"), or
+    /// next to a `*` (`-ad-*banner` also matches "bigbanner") — would never
+    /// be looked up when it's part of a longer one, and the rule would never
+    /// be tried. A rule with no whole word goes in the bucket every request
+    /// tries. (After a `||domain`, what's left starts with `/`, `^` or `*`,
+    /// so the anchor there never holds a word against the host.)
     public IEnumerable<string> IndexTokens()
     {
-        foreach (var token in tokens)
+        for (var i = 0; i < tokens.Length; i++)
         {
-            if (token.Kind != Kind.Literal) continue;
-            foreach (var run in AlnumRuns(token.Text))
-                if (run.Length >= 3) yield return run;
+            if (tokens[i].Kind != Kind.Literal) continue;
+            var text = tokens[i].Text;
+            var openLeft = i == 0 ? !startAnchor : tokens[i - 1].Kind == Kind.Wildcard;
+            var openRight = i == tokens.Length - 1 ? !endAnchor : tokens[i + 1].Kind == Kind.Wildcard;
+            var start = -1;
+            for (var j = 0; j <= text.Length; j++)
+            {
+                if (j < text.Length && char.IsAsciiLetterOrDigit(text[j])) { if (start < 0) start = j; continue; }
+                if (start < 0) continue;
+                var whole = !(start == 0 && openLeft) && !(j == text.Length && openRight);
+                if (whole && j - start >= MinToken) yield return text[start..j];
+                start = -1;
+            }
         }
     }
 
-    /// Maximal runs of ASCII letters/digits in `text` — the same tokenizer
-    /// run over a rule's literal pieces at compile time and over a request
-    /// URL at match time, so the two sides agree on what a "token" is.
-    public static IEnumerable<string> AlnumRuns(string text)
+    /// Where the piece `tokens[start..end]` ends if it begins exactly at
+    /// `pos`, or -1. A `^` takes one separator character, or nothing at the
+    /// end of the address.
+    private int MatchAt(int start, int end, string haystack, int pos)
     {
-        var start = -1;
-        for (var i = 0; i <= text.Length; i++)
+        for (var i = start; i < end; i++)
         {
-            var isAlnum = i < text.Length && char.IsAsciiLetterOrDigit(text[i]);
-            if (isAlnum) { if (start < 0) start = i; }
-            else { if (start >= 0) yield return text[start..i]; start = -1; }
+            var token = tokens[i];
+            if (token.Kind == Kind.Literal)
+            {
+                if (pos + token.Text.Length > haystack.Length
+                    || string.CompareOrdinal(haystack, pos, token.Text, 0, token.Text.Length) != 0) return -1;
+                pos += token.Text.Length;
+            }
+            else if (pos < haystack.Length)
+            {
+                if (!IsSeparator(haystack[pos])) return -1;
+                pos++;
+            }
         }
+        return pos;
     }
 
-    // A short backtracking search: patterns are almost always well under a
-    // hundred characters, and this is only reached for the minority of
-    // rules that aren't a plain domain match with nothing after it — real
-    // ad-block engines do the same thing once their own token index has cut
-    // the candidates down to a handful.
-    private bool Search(string haystack, int tokenIndex, int pos)
+    /// Where the piece ends at its earliest place at or after `from`, or -1.
+    private int Find(int start, int end, string haystack, int from)
     {
-        if (tokenIndex == tokens.Length) return !endAnchor || pos == haystack.Length;
-        var token = tokens[tokenIndex];
-        switch (token.Kind)
+        if (start == end) return from;
+        if (tokens[start].Kind == Kind.Literal)
         {
-            case Kind.Literal:
-                if (tokenIndex == 0 && startAnchor)
-                {
-                    if (pos + token.Text.Length > haystack.Length) return false;
-                    return string.CompareOrdinal(haystack, pos, token.Text, 0, token.Text.Length) == 0
-                        && Search(haystack, tokenIndex + 1, pos + token.Text.Length);
-                }
-                for (var at = haystack.IndexOf(token.Text, pos, StringComparison.Ordinal); at >= 0;
-                     at = haystack.IndexOf(token.Text, at + 1, StringComparison.Ordinal))
-                {
-                    if (Search(haystack, tokenIndex + 1, at + token.Text.Length)) return true;
-                }
-                return false;
-
-            case Kind.Wildcard:
-                for (var p = pos; p <= haystack.Length; p++)
-                    if (Search(haystack, tokenIndex + 1, p)) return true;
-                return false;
-
-            default: // Separator: exactly one separator character, or end of string.
-                if (pos == haystack.Length) return Search(haystack, tokenIndex + 1, pos);
-                return IsSeparator(haystack[pos]) && Search(haystack, tokenIndex + 1, pos + 1);
+            var text = tokens[start].Text;
+            for (var at = haystack.IndexOf(text, from, StringComparison.Ordinal); at >= 0;
+                 at = haystack.IndexOf(text, at + 1, StringComparison.Ordinal))
+            {
+                var found = MatchAt(start, end, haystack, at);
+                if (found >= 0) return found;
+            }
+            return -1;
         }
+        for (var at = from; at <= haystack.Length; at++)
+        {
+            var found = MatchAt(start, end, haystack, at);
+            if (found >= 0) return found;
+        }
+        return -1;
+    }
+
+    /// Whether the piece fits somewhere at or after `from` and ends exactly
+    /// at the end of the address. It takes a fixed number of characters,
+    /// less any `^` that falls on the end, so only its last few starting
+    /// places can work.
+    private bool EndsWith(int start, int end, string haystack, int from)
+    {
+        var longest = 0;
+        for (var i = start; i < end; i++) longest += tokens[i].Kind == Kind.Literal ? tokens[i].Text.Length : 1;
+        for (var at = Math.Max(from, haystack.Length - longest); at <= haystack.Length; at++)
+            if (MatchAt(start, end, haystack, at) == haystack.Length) return true;
+        return false;
     }
 
     internal void WriteTo(BinaryWriter w)

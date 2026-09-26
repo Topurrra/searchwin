@@ -1,5 +1,5 @@
 //! Cron tasks — register recurring jobs on Windows Task Scheduler from a cron
-//! expression, so they fire even when KeepItLocal is fully closed and across
+//! expression, so they fire even when Search is fully closed and across
 //! reboots, with zero background process of our own.
 //!
 //! The frontend translates a cron expression into a small set of native trigger
@@ -7,18 +7,17 @@
 //! not cron, so only the cleanly-representable shapes reach here. This module
 //! turns those specs into PowerShell `*-ScheduledTask` cmdlets, mirroring the
 //! proven approach in `reminders.rs` (current-user context, no admin, locale-safe
-//! `[datetime]` triggers). Tasks live under the `\KeepItLocal\Cron\` folder.
+//! `[datetime]` triggers). Tasks live in this engine world's Search folder.
 
 use std::process::Command;
+use tauri::AppHandle;
+
+use super::scheduler_scope::{SchedulerScope, TaskKind};
 
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-
-/// Task Scheduler folder that groups all of our cron tasks (kept separate from
-/// the reminders folder so the two never collide on reconcile).
-const TASK_PATH: &str = "\\KeepItLocal\\Cron\\";
 
 /// One native Windows trigger, as produced by the frontend translator.
 ///
@@ -31,13 +30,25 @@ const TASK_PATH: &str = "\\KeepItLocal\\Cron\\";
 pub enum TriggerSpec {
     Startup,
     #[serde(rename_all = "camelCase")]
-    Daily { hour: u32, minute: u32 },
+    Daily {
+        hour: u32,
+        minute: u32,
+    },
     #[serde(rename_all = "camelCase")]
-    Weekly { days_of_week: Vec<u32>, hour: u32, minute: u32 },
+    Weekly {
+        days_of_week: Vec<u32>,
+        hour: u32,
+        minute: u32,
+    },
     #[serde(rename_all = "camelCase")]
-    Minutely { every_minutes: u32 },
+    Minutely {
+        every_minutes: u32,
+    },
     #[serde(rename_all = "camelCase")]
-    Hourly { every_hours: u32, minute: u32 },
+    Hourly {
+        every_hours: u32,
+        minute: u32,
+    },
 }
 
 /// A registered cron task, surfaced back to the UI list.
@@ -95,7 +106,11 @@ fn ps_trigger(t: &TriggerSpec) -> Result<String, String> {
             }
             format!("New-ScheduledTaskTrigger -Daily -At ([datetime]::Today.AddHours({hour}).AddMinutes({minute}))")
         }
-        TriggerSpec::Weekly { days_of_week, hour, minute } => {
+        TriggerSpec::Weekly {
+            days_of_week,
+            hour,
+            minute,
+        } => {
             if *hour > 23 || *minute > 59 {
                 return Err("Invalid weekly time".to_string());
             }
@@ -117,7 +132,10 @@ fn ps_trigger(t: &TriggerSpec) -> Result<String, String> {
                 "New-ScheduledTaskTrigger -Once -At ([datetime]::Today) -RepetitionInterval (New-TimeSpan -Minutes {every_minutes}) -RepetitionDuration (New-TimeSpan -Days 3650)"
             )
         }
-        TriggerSpec::Hourly { every_hours, minute } => {
+        TriggerSpec::Hourly {
+            every_hours,
+            minute,
+        } => {
             if *every_hours == 0 || *every_hours > 24 || *minute > 59 {
                 return Err("Invalid hour interval".to_string());
             }
@@ -187,11 +205,32 @@ fn run_powershell(_script: &str) -> Result<String, String> {
 /// given translated triggers.
 #[tauri::command]
 pub fn create_cron_task(
+    app: AppHandle,
     id: String,
     program: String,
     args: String,
     working_dir: String,
     triggers: Vec<TriggerSpec>,
+) -> Result<(), String> {
+    create_cron_task_using(
+        app,
+        id,
+        program,
+        args,
+        working_dir,
+        triggers,
+        run_powershell,
+    )
+}
+
+fn create_cron_task_using(
+    app: AppHandle,
+    id: String,
+    program: String,
+    args: String,
+    working_dir: String,
+    triggers: Vec<TriggerSpec>,
+    run: impl FnOnce(&str) -> Result<String, String>,
 ) -> Result<(), String> {
     if !valid_id(&id) {
         return Err("Invalid task id".to_string());
@@ -202,6 +241,7 @@ pub fn create_cron_task(
     if triggers.is_empty() {
         return Err("This schedule has no triggers".to_string());
     }
+    let task_path = ps_quote(&SchedulerScope::from_app(&app)?.task_path(TaskKind::Cron));
 
     let id_q = ps_quote(&id);
     let prog_q = ps_quote(program.trim());
@@ -230,41 +270,67 @@ pub fn create_cron_task(
          $a={action};\
          $t=@({trig_array});\
          $s=New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable;\
-         Register-ScheduledTask -TaskName '{id_q}' -TaskPath '{TASK_PATH}' -Action $a -Trigger $t -Settings $s -Force | Out-Null"
+         Register-ScheduledTask -TaskName '{id_q}' -TaskPath '{task_path}' -Action $a -Trigger $t -Settings $s -Force | Out-Null"
     );
-    run_powershell(&script).map(|_| ())
+    run(&script).map(|_| ())
 }
 
 /// Remove a cron task. Idempotent.
 #[tauri::command]
-pub fn delete_cron_task(id: String) -> Result<(), String> {
+pub fn delete_cron_task(app: AppHandle, id: String) -> Result<(), String> {
+    delete_cron_task_using(app, id, run_powershell)
+}
+
+fn delete_cron_task_using(
+    app: AppHandle,
+    id: String,
+    run: impl FnOnce(&str) -> Result<String, String>,
+) -> Result<(), String> {
     if !valid_id(&id) {
         return Err("Invalid task id".to_string());
     }
     let id_q = ps_quote(&id);
+    let task_path = ps_quote(&SchedulerScope::from_app(&app)?.task_path(TaskKind::Cron));
     let script = format!(
-        "Unregister-ScheduledTask -TaskName '{id_q}' -TaskPath '{TASK_PATH}' -Confirm:$false -ErrorAction SilentlyContinue"
+        "Unregister-ScheduledTask -TaskName '{id_q}' -TaskPath '{task_path}' -Confirm:$false -ErrorAction SilentlyContinue"
     );
-    run_powershell(&script).map(|_| ())
+    run(&script).map(|_| ())
 }
 
 /// Trigger a cron task immediately (the "Run now" button).
 #[tauri::command]
-pub fn run_cron_task_now(id: String) -> Result<(), String> {
+pub fn run_cron_task_now(app: AppHandle, id: String) -> Result<(), String> {
+    run_cron_task_now_using(app, id, run_powershell)
+}
+
+fn run_cron_task_now_using(
+    app: AppHandle,
+    id: String,
+    run: impl FnOnce(&str) -> Result<String, String>,
+) -> Result<(), String> {
     if !valid_id(&id) {
         return Err("Invalid task id".to_string());
     }
     let id_q = ps_quote(&id);
-    let script = format!("Start-ScheduledTask -TaskName '{id_q}' -TaskPath '{TASK_PATH}'");
-    run_powershell(&script).map(|_| ())
+    let task_path = ps_quote(&SchedulerScope::from_app(&app)?.task_path(TaskKind::Cron));
+    let script = format!("Start-ScheduledTask -TaskName '{id_q}' -TaskPath '{task_path}'");
+    run(&script).map(|_| ())
 }
 
 /// List every cron task we registered, with next/last run and state.
 #[tauri::command]
-pub fn list_cron_tasks() -> Result<Vec<CronTaskInfo>, String> {
+pub fn list_cron_tasks(app: AppHandle) -> Result<Vec<CronTaskInfo>, String> {
+    list_cron_tasks_using(app, run_powershell)
+}
+
+fn list_cron_tasks_using(
+    app: AppHandle,
+    run: impl FnOnce(&str) -> Result<String, String>,
+) -> Result<Vec<CronTaskInfo>, String> {
+    let task_path = ps_quote(&SchedulerScope::from_app(&app)?.task_path(TaskKind::Cron));
     let script = format!(
         "$ErrorActionPreference='SilentlyContinue';\
-         $list=@(Get-ScheduledTask -TaskPath '{TASK_PATH}*' | ForEach-Object {{ \
+         $list=@(Get-ScheduledTask -TaskPath '{task_path}' | Where-Object {{ $_.TaskPath -eq '{task_path}' }} | ForEach-Object {{ \
            $i=$_ | Get-ScheduledTaskInfo; \
            [pscustomobject]@{{ \
              id=$_.TaskName; \
@@ -276,7 +342,7 @@ pub fn list_cron_tasks() -> Result<Vec<CronTaskInfo>, String> {
            }} }});\
          if($list.Count -eq 0){{ '[]' }} else {{ $list | ConvertTo-Json -Compress -Depth 4 }}"
     );
-    let out = run_powershell(&script)?;
+    let out = run(&script)?;
     let trimmed = out.trim();
     if trimmed.is_empty() || trimmed == "null" {
         return Ok(Vec::new());
@@ -322,5 +388,122 @@ mod tests {
                 "every translated trigger should build a PowerShell expression"
             );
         }
+    }
+
+    #[cfg(windows)]
+    fn test_app(name: &str) -> (AppHandle, std::path::PathBuf) {
+        let fixture =
+            std::env::temp_dir().join(format!("search-cron-{name}-{}", std::process::id()));
+        std::fs::create_dir_all(fixture.join("world")).unwrap();
+        (
+            AppHandle::new(fixture.join("world"), fixture.clone()),
+            fixture,
+        )
+    }
+
+    #[cfg(windows)]
+    fn fake_powershell(fixture: &std::path::Path, source: &str) -> String {
+        let path = fixture.join("fake-cron.ps1");
+        std::fs::write(&path, source).unwrap();
+        let output = Command::new("powershell")
+            .args(["-NoProfile", "-NonInteractive", "-File"])
+            .arg(path)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        String::from_utf8(output.stdout).unwrap().trim().to_string()
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn create_run_and_delete_touch_only_own_world() {
+        let (app, fixture) = test_app("mutations");
+        let own = SchedulerScope::from_app(&app)
+            .unwrap()
+            .task_path(TaskKind::Cron);
+        let scripts = std::cell::RefCell::new(Vec::<String>::new());
+        create_cron_task_using(
+            app.clone(),
+            "job".into(),
+            "cmd.exe".into(),
+            "".into(),
+            "".into(),
+            vec![TriggerSpec::Startup],
+            |script| {
+                scripts.borrow_mut().push(script.to_string());
+                Ok(String::new())
+            },
+        )
+        .unwrap();
+        run_cron_task_now_using(app.clone(), "job".into(), |script| {
+            scripts.borrow_mut().push(script.to_string());
+            Ok(String::new())
+        })
+        .unwrap();
+        delete_cron_task_using(app, "job".into(), |script| {
+            scripts.borrow_mut().push(script.to_string());
+            Ok(String::new())
+        })
+        .unwrap();
+        let source = r#"
+$script:tasks = @(
+    [pscustomobject]@{TaskName='job';TaskPath='\KeepItLocal\Cron\'},
+    [pscustomobject]@{TaskName='job';TaskPath='\Search\other\Cron\'}
+)
+$script:runs = @()
+function New-ScheduledTaskAction { param($Execute,$Argument,$WorkingDirectory) [pscustomobject]@{Execute=$Execute;Arguments=$Argument} }
+function New-ScheduledTaskTrigger { param([switch]$AtStartup) 'trigger' }
+function New-ScheduledTaskSettingsSet { param([switch]$AllowStartIfOnBatteries,[switch]$DontStopIfGoingOnBatteries,[switch]$StartWhenAvailable) 'settings' }
+function Register-ScheduledTask { [CmdletBinding()] param($TaskName,$TaskPath,$Action,$Trigger,$Settings,[switch]$Force) $script:tasks += [pscustomobject]@{TaskName=$TaskName;TaskPath=$TaskPath} }
+function Start-ScheduledTask { param($TaskName,$TaskPath) $script:runs += "$TaskPath|$TaskName" }
+function Unregister-ScheduledTask {
+    [CmdletBinding(SupportsShouldProcess=$true)]
+    param($TaskName,$TaskPath)
+    $script:tasks = @($script:tasks | Where-Object { $_.TaskName -ne $TaskName -or $_.TaskPath -ne $TaskPath })
+}
+@SCRIPTS@
+[pscustomobject]@{tasks=@($script:tasks | ForEach-Object { $_.TaskPath });runs=@($script:runs)} | ConvertTo-Json -Compress
+"#.replace("@SCRIPTS@", &scripts.into_inner().join("\n"));
+        let value: serde_json::Value =
+            serde_json::from_str(&fake_powershell(&fixture, &source)).unwrap();
+        assert_eq!(
+            value["tasks"],
+            serde_json::json!(["\\KeepItLocal\\Cron\\", "\\Search\\other\\Cron\\"])
+        );
+        assert_eq!(value["runs"], serde_json::json!([format!("{own}|job")]));
+        std::fs::remove_dir_all(fixture).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn list_reads_only_the_exact_world_folder() {
+        let (app, fixture) = test_app("listing");
+        let own = SchedulerScope::from_app(&app)
+            .unwrap()
+            .task_path(TaskKind::Cron);
+        let source = r#"
+$script:tasks = @(
+    [pscustomobject]@{TaskName='own';TaskPath='@OWN@';State='Ready';Actions=@([pscustomobject]@{Execute='cmd.exe';Arguments=''})},
+    [pscustomobject]@{TaskName='child';TaskPath='@OWN@child\';State='Ready';Actions=@([pscustomobject]@{Execute='cmd.exe';Arguments=''})},
+    [pscustomobject]@{TaskName='other';TaskPath='\Search\other\Cron\';State='Ready';Actions=@([pscustomobject]@{Execute='cmd.exe';Arguments=''})}
+)
+function Get-ScheduledTask { [CmdletBinding()] param($TaskPath) $script:tasks }
+function Get-ScheduledTaskInfo { param([Parameter(ValueFromPipeline=$true)]$InputObject) process { [pscustomobject]@{NextRunTime=$null;LastRunTime=$null;LastTaskResult=0} } }
+@SCRIPT@
+"#.replace("@OWN@", &own);
+        let tasks = list_cron_tasks_using(app, |script| {
+            Ok(fake_powershell(
+                &fixture,
+                &source.replace("@SCRIPT@", script),
+            ))
+        })
+        .unwrap();
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].id, "own");
+        std::fs::remove_dir_all(fixture).unwrap();
     }
 }

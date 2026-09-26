@@ -28,6 +28,24 @@ function Assert-LocalReleasePath([string]$Path) {
     }
 }
 
+function Assert-X64Executable([string]$Path) {
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        throw "Required executable is missing: $Path"
+    }
+    $reader = [IO.BinaryReader]::new([IO.File]::OpenRead($Path))
+    try {
+        if ($reader.ReadUInt16() -ne 0x5a4d) { throw "Not a Windows executable: $Path" }
+        $reader.BaseStream.Seek(0x3c, [IO.SeekOrigin]::Begin) | Out-Null
+        $peOffset = $reader.ReadInt32()
+        if ($peOffset -lt 0 -or $peOffset + 6 -gt $reader.BaseStream.Length) {
+            throw "Invalid Windows executable header: $Path"
+        }
+        $reader.BaseStream.Seek($peOffset, [IO.SeekOrigin]::Begin) | Out-Null
+        if ($reader.ReadUInt32() -ne 0x00004550) { throw "Invalid Windows executable header: $Path" }
+        if ($reader.ReadUInt16() -ne 0x8664) { throw "The release requires an x64 executable: $Path" }
+    } finally { $reader.Dispose() }
+}
+
 if ($Arch -ne 'x64') {
     throw 'The bundled Rust engine is built for x64 only. An arm64 release would mix architectures.'
 }
@@ -59,11 +77,11 @@ if (-not (Test-Path -LiteralPath (Join-Path $root 'Tools\pnpm-lock.yaml') -PathT
 }
 if ($PreflightOnly) { return }
 
-if (-not (Test-Path -LiteralPath (Join-Path $outputPath 'Search.exe') -PathType Leaf)) {
-    throw "Search.exe is missing from $outputPath; publish the app before packaging components."
-}
+$app = Join-Path $outputPath 'Search.exe'
+Assert-X64Executable $app
 Assert-LocalReleasePath $toolsPath
 
+$engineArtifacts = [System.Collections.Generic.List[string]]::new()
 Push-Location (Join-Path $root 'Engine')
 try {
     $features = @()
@@ -73,11 +91,24 @@ try {
     }
     if (Get-Command nasm -ErrorAction SilentlyContinue) { $features = @('--features', 'fast-avif') }
     else { Write-Host "No NASM here: the engine's AVIF encoder builds without its assembly (slower)." }
-    & cargo build --release --no-default-features @features
+    & cargo build --release --no-default-features --message-format=json-render-diagnostics @features | ForEach-Object {
+        $message = $_ | ConvertFrom-Json -ErrorAction Stop
+        if ($message.reason -eq 'compiler-message' -and $message.message.rendered) {
+            [Console]::Error.Write($message.message.rendered)
+        } elseif ($message.reason -eq 'compiler-artifact' -and
+                  $message.target.name -eq 'kil-engine' -and
+                  @($message.target.kind) -contains 'bin' -and $message.executable) {
+            $engineArtifacts.Add([string]$message.executable)
+        }
+    }
     if ($LASTEXITCODE -ne 0) { throw 'The engine did not build.' }
 } finally { Pop-Location }
-$engine = Join-Path $root 'Engine\target\release\kil-engine.exe'
-if (-not (Test-Path -LiteralPath $engine -PathType Leaf)) { throw "The engine build did not produce $engine" }
+$uniqueArtifacts = @($engineArtifacts | Select-Object -Unique)
+if ($uniqueArtifacts.Count -ne 1) {
+    throw "The current engine build reported $($uniqueArtifacts.Count) kil-engine binary artifacts; expected exactly one."
+}
+$engine = [IO.Path]::GetFullPath($uniqueArtifacts[0])
+Assert-X64Executable $engine
 
 Push-Location (Join-Path $root 'Tools')
 try {

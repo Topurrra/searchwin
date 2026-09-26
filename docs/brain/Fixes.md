@@ -3,7 +3,11 @@ tags: [searchwin, fixes, todo]
 updated: 2026-09-27
 ---
 
-# Fixes: phase 3 follow-ups (paused 2026-09-27)
+# Fixes: phase 3 follow-ups
+
+Stabilization update: [[Log/2026-09-26-stabilization]] records the fixes and fresh
+verification on codex/stabilization. The list below is the original review
+backlog; several entries are now resolved, and the log names what remains.
 
 Back to [[README]] · Found by the phase 3 review and check ([[Log/2026-09-27]]).
 Paused on the usage limit before the fix round started. `main` is at `c7001c7`,

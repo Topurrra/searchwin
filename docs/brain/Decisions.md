@@ -318,3 +318,12 @@ Newest at the bottom.
 - **Decision:** [[Optimization]] covers what exists now; every future feature
   or phase gets its own optimization note, linked from it.
 - **Also planned:** T3 Code inside Search, for the agentic browser (Master Plan › Future).
+
+### Stabilization implementation note — 2026-09-26
+
+The existing plan is being implemented on `codex/stabilization`. Reminders and
+Screen Recorder remain unavailable until their Search-native lifecycle works.
+Reminders cannot be re-enabled by namespace isolation alone: scheduled activation
+and notification delivery still need implementation. The normal field benchmark
+now avoids the real clipboard; its copy tests require explicit opt-in.
+See [[Log/2026-09-26-stabilization]] for verified changes and outstanding work.

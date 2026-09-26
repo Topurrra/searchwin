@@ -532,3 +532,13 @@ the fix lives. *(uncertain)* marks things that weren't proven.
 
 ### Cut lists and hidden screens
 - **A screen marked `hidden: true` in appScreens.ts is not the same as removing it from the index catalog.** When two different code paths manage visibility (appScreens.ts's inline `hidden: true` and offInSearch.ts filtering), the last write wins silently. Tools that should be hidden but appear in the field, index and catalog.json are a subtle bug. **Fix:** a single source of truth (offInSearch.ts only) and one test asserting all offInSearch ids are actually excluded (not just checking that the ones in offInSearch don't appear; also checking that tools with stale `hidden: true` don't appear either).
+
+### Stabilization: measure the real boundary
+
+Portrait player controls were below the viewport (1398px in a 540px content
+area), despite passing DOM tests. A fixed viewport height and shrinkable video
+kept them visible; AOT measurements and hit tests checked the rendered result.
+A file protocol whitelist alone still lets FFmpeg follow a local concat
+playlist disguised as a movie. Force a supported input demuxer as well.
+Task Scheduler ownership must come from the engine data directory, with exact
+folder matching; UI hiding does not replace a backend guard.

@@ -10,3 +10,6 @@ target/
 node_modules/
 .svelte-kit/
 Tools/dist/
+
+# Local agent workflow artifacts and verification fixtures.
+.superpowers/

@@ -32,20 +32,20 @@ if (-not (Get-Command dotnet -ErrorAction SilentlyContinue) -and (Test-Path "$en
 
 $buildDir = Join-Path $PSScriptRoot 'build'
 $out = Join-Path $buildDir 'Search'
-$repoPath = [IO.Path]::GetFullPath($PSScriptRoot).TrimEnd('\')
-if (-not [IO.Path]::GetFullPath($out).StartsWith("$repoPath\", [StringComparison]::OrdinalIgnoreCase)) {
-    throw "Unsafe release output directory: $out"
-}
-foreach ($path in @($buildDir, $out)) {
-    if ((Test-Path -LiteralPath $path) -and
-        ((Get-Item -LiteralPath $path).Attributes -band [IO.FileAttributes]::ReparsePoint)) {
-        throw "Refusing to remove a linked release directory: $path"
-    }
-}
 & (Join-Path $PSScriptRoot 'build-components.ps1') -Output $out -Arch $Arch -PreflightOnly
 if ($Installer) {
     $nsis = @("${env:ProgramFiles(x86)}\NSIS\makensis.exe", "$env:ProgramFiles\NSIS\makensis.exe") | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
     if (-not $nsis) { throw 'The installer needs NSIS 3 (nsis.sourceforge.io).' }
+}
+$repoPath = [IO.Path]::GetFullPath($PSScriptRoot).TrimEnd('\')
+if (-not [IO.Path]::GetFullPath($out).StartsWith("$repoPath\", [StringComparison]::OrdinalIgnoreCase)) {
+    throw "Unsafe release output directory: $out"
+}
+foreach ($path in @($repoPath, $buildDir, $out)) {
+    if ((Test-Path -LiteralPath $path) -and
+        ((Get-Item -LiteralPath $path).Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+        throw "Refusing to remove a linked release directory: $path"
+    }
 }
 if (Test-Path -LiteralPath $out) { Remove-Item -LiteralPath $out -Recurse -Force }
 

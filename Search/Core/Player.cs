@@ -25,6 +25,7 @@ public static class Player
 
     private static readonly Dictionary<string, Job> jobs = [];
     private static readonly Lock gate = new();
+    private static bool packChanging;
 
     /// `host:play.prepare {path, how}` — how: `remux` (copy what plays),
     /// `transcode` (the video too, after a copy didn't play), `check` (a
@@ -57,6 +58,7 @@ public static class Player
         Job job;
         lock (gate)
         {
+            if (packChanging) throw new InvalidOperationException("FFmpeg is being installed or removed. Try again when it finishes.");
             if (!jobs.TryGetValue(key, out job!))
             {
                 var cancel = new CancellationTokenSource();
@@ -80,11 +82,21 @@ public static class Player
                 job.Cancel.Cancel();
     }
 
-    /// The pack is going: nothing may still be running from it.
-    public static void Forget()
+    /// Reserve a pack change only when no player job is still using its files.
+    /// Prepare checks the same gate before admitting a new job.
+    public static bool TryBeginPackChange()
     {
         lock (gate)
-            foreach (var job in jobs.Values) job.Cancel.Cancel();
+        {
+            if (packChanging || jobs.Count > 0) return false;
+            packChanging = true;
+            return true;
+        }
+    }
+
+    public static void EndPackChange()
+    {
+        lock (gate) packChanging = false;
     }
 
     private static JsonObject? Read(string folder)

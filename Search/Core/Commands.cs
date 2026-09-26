@@ -1,5 +1,6 @@
 using Microsoft.UI.Xaml.Controls;
 using SearchKit.Commands;
+using SearchKit.Packs;
 
 namespace Search;
 
@@ -55,13 +56,11 @@ public static class Commands
         add("open.settings", "Settings", Tier.Read, ["settings", "preferences"], _ => b.Tuning = true, "Ctrl+,", "Open");
         add("open.tools", "Tools", Tier.Read, ["tools", "all tools"], call => OpenTools(b, call.Argument), group: "Open");
         add("open.packs", "Packs", Tier.Read, ["packs", "add-ons"], _ => Packs.Show(), group: "Open");
-        // A download the person asks for by name; Settings › Packs shows it coming.
-        add("packs.ffmpeg", "Install FFmpeg", Tier.Act, ["install ffmpeg", "ffmpeg"], _ =>
+        PackCommands.Register(Registry, Packs.Show, () =>
         {
-            Packs.Show();
-            if (SearchKit.Packs.PackManifest.Find("ffmpeg") is { } ffmpeg && Packs.State(ffmpeg) != SearchKit.Packs.PackState.Ready)
+            if (PackManifest.Find("ffmpeg") is { } ffmpeg && Packs.State(ffmpeg) != PackState.Ready)
                 Packs.Install("ffmpeg");
-        }, group: "Packs");
+        });
 
         // Spaces
         add("spaces.new", "New Space", Tier.Act, ["new space"], _ => b.AskForSpace(), group: "Spaces");

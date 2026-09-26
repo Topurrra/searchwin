@@ -19,9 +19,12 @@ public static class Packs
 
     public static IReadOnlyList<Pack> All => PackManifest.Shipped;
 
-    /// Something about a pack changed: installed, removed, progress, trouble.
+    /// Something about a pack changed structurally: installed, removed, or trouble.
     /// Raised on the UI thread.
     public static event Action<string>? Changed;
+
+    /// Download bytes changed; Settings updates its existing row in place.
+    public static event Action<string>? Progress;
 
     private sealed class Job(CancellationTokenSource cancel)
     {
@@ -51,12 +54,18 @@ public static class Packs
     public static async void Install(string id)
     {
         if (PackManifest.Find(id) is not { } pack || jobs.ContainsKey(id)) return;
+        if (id == "ffmpeg" && !Player.TryBeginPackChange())
+        {
+            troubles[id] = "The player is using FFmpeg. Close its active job and try again.";
+            Tell(id);
+            return;
+        }
         var job = new Job(new CancellationTokenSource());
         jobs[id] = job;
         troubles.Remove(id);
         Tell(id);
         // Progress is Settings' to draw; tool pages hear only the outcome.
-        var ticking = UI.Every(0.25, () => Changed?.Invoke(id));
+        var ticking = UI.Every(0.25, () => Progress?.Invoke(id));
         try
         {
             await Task.Run(() => Fetch(pack, job));
@@ -83,6 +92,7 @@ public static class Packs
             ticking.Stop();
             jobs.Remove(id);
             job.Cancel.Dispose();
+            if (id == "ffmpeg") Player.EndPackChange();
             Tell(id);
         }
     }
@@ -97,16 +107,25 @@ public static class Packs
     public static void Remove(string id)
     {
         if (jobs.ContainsKey(id)) return;
+        if (id == "ffmpeg" && !Player.TryBeginPackChange())
+        {
+            troubles[id] = "The player is using FFmpeg. Close its active job and try again.";
+            Tell(id);
+            return;
+        }
         troubles.Remove(id);
         try
         {
-            if (id == "ffmpeg") Player.Forget();
             Shelf.Remove(id);
             Log.Write($"packs: {id} removed");
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException)
         {
             troubles[id] = "It's in use right now — close what's using it and try again.";
+        }
+        finally
+        {
+            if (id == "ffmpeg") Player.EndPackChange();
         }
         WriteEngineList();
         Tell(id);

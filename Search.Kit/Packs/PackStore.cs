@@ -53,6 +53,7 @@ public sealed class PackStore(string root)
     /// download that doesn't match changes nothing. Returns the folder.
     public async Task<string> InstallAsync(Pack pack, Stream download, Action<long>? progress = null, CancellationToken cancel = default)
     {
+        SweepRemoved();
         var home = Path.Combine(root, pack.Id);
         Directory.CreateDirectory(home);
         Sweep(home);
@@ -91,6 +92,7 @@ public sealed class PackStore(string root)
     /// something that looks installed.
     public void Remove(string id)
     {
+        SweepRemoved();
         var home = Path.Combine(root, id);
         if (!Directory.Exists(home)) return;
         var gone = Path.Combine(root, $".removed-{id}-{Guid.NewGuid().ToString("N")[..8]}");
@@ -141,6 +143,14 @@ public sealed class PackStore(string root)
     {
         foreach (var dir in Directory.EnumerateDirectories(home, ".*")) TryDelete(dir);
         foreach (var file in Directory.EnumerateFiles(home, ".*")) TryDelete(file);
+    }
+
+    /// A crashed or interrupted removal leaves its renamed folder at the
+    /// root, outside the per-pack install sweep.
+    private void SweepRemoved()
+    {
+        if (!Directory.Exists(root)) return;
+        foreach (var dir in Directory.EnumerateDirectories(root, ".removed-*")) TryDelete(dir);
     }
 
     private static void TryDelete(string path)

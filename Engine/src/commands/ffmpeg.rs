@@ -2,8 +2,8 @@
 //!
 //! Search doesn't carry FFmpeg: it's a pack (Settings › Packs), an LGPL
 //! build the browser downloads, verifies and unpacks when asked, and names
-//! in `packs.json` (core::packs). That one comes first. A person may still
-//! choose their own `ffmpeg.exe` (kept locally) or have one on PATH.
+//! in `packs.json` (core::packs). A person's explicit choice takes priority
+//! over the pack; PATH is the final fallback.
 
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
@@ -93,7 +93,7 @@ fn runs(program: &Path) -> bool {
 }
 
 fn resolve(stem: &str) -> Option<PathBuf> {
-    for dir in pack_dir().into_iter().chain(override_dir()) {
+    for dir in override_dir().into_iter().chain(pack_dir()) {
         let selected = dir.join(binary_name(stem));
         if selected.is_file() && runs(&selected) {
             return Some(selected);
@@ -104,7 +104,7 @@ fn resolve(stem: &str) -> Option<PathBuf> {
     runs(&on_path).then_some(on_path)
 }
 
-/// Resolve the pack's, the user-selected or the PATH-provided FFmpeg executable.
+/// Resolve the user-selected, pack, or PATH-provided FFmpeg executable.
 pub fn resolve_ffmpeg() -> Option<PathBuf> {
     resolve("ffmpeg")
 }
@@ -198,8 +198,8 @@ fn current_status() -> FfmpegStatus {
         .as_deref()
         .is_some_and(|ffmpeg| supports_encoder(ffmpeg, "h264_mf"));
     let source = match path.as_deref() {
-        Some(ffmpeg) if pack_dir().is_some_and(|dir| ffmpeg.starts_with(dir)) => "pack",
         Some(ffmpeg) if override_dir().is_some_and(|dir| ffmpeg.starts_with(dir)) => "user",
+        Some(ffmpeg) if pack_dir().is_some_and(|dir| ffmpeg.starts_with(dir)) => "pack",
         Some(_) => "path",
         None => "none",
     }
@@ -264,5 +264,37 @@ mod tests {
             selected_directory(picked).expect("binary path has a parent"),
             PathBuf::from(r"C:\Tools\ffmpeg\bin")
         );
+    }
+
+    #[test]
+    fn explicit_selection_wins_over_a_runnable_pack_for_both_programs() {
+        let root = std::env::temp_dir().join(format!(
+            "kil-ffmpeg-resolver-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
+        ));
+        let pack = root.join("pack");
+        let user = root.join("user");
+        let data = root.join("data");
+        for dir in [&pack, &user, &data] { std::fs::create_dir_all(dir).unwrap(); }
+        let source = root.join("fixture.rs");
+        std::fs::write(&source, "fn main() { println!(\"fixture version\"); }").unwrap();
+        let executable = root.join(binary_name("fixture"));
+        assert!(Command::new("rustc").arg(&source).args(["-o"]).arg(&executable).status().unwrap().success());
+        for dir in [&pack, &user] {
+            for stem in ["ffmpeg", "ffprobe"] {
+                std::fs::copy(&executable, dir.join(binary_name(stem))).unwrap();
+            }
+        }
+        std::fs::write(data.join("packs.json"), serde_json::json!({"ffmpeg": pack}).to_string()).unwrap();
+        crate::core::packs::set_data_dir(data);
+        set_override_dir(Some(user.clone()));
+
+        assert_eq!(resolve_ffmpeg(), Some(user.join(binary_name("ffmpeg"))));
+        assert_eq!(resolve_ffprobe(), Some(user.join(binary_name("ffprobe"))));
+        assert_eq!(current_status().source, "user");
+
+        set_override_dir(None);
+        std::fs::remove_dir_all(root).unwrap();
     }
 }

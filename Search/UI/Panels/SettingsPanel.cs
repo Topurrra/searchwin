@@ -48,6 +48,7 @@ public sealed partial class SettingsPanel : Grid
     /// drawn again under a switch that is still sliding.
     private Action? sideHides;
     private Action? hereLine;
+    private readonly Dictionary<string, Line> packLines = [];
 
     public SettingsPanel(Browser browser)
     {
@@ -84,6 +85,7 @@ public sealed partial class SettingsPanel : Grid
         {
             Listen(false);
             watching?.Stop();
+            packLines.Clear();
         };
         Show();
     }
@@ -197,6 +199,7 @@ public sealed partial class SettingsPanel : Grid
         heading.Text = Pages.First(p => p.page == page).title;
         sideHides = null;
         hereLine = null;
+        packLines.Clear();
         var body = new StackPanel { Spacing = 18, Padding = new Thickness(0, 0, 0, 4) };
         switch (page)
         {
@@ -227,6 +230,7 @@ public sealed partial class SettingsPanel : Grid
             shield.PropertyChanged += Shielding;
             browser.PropertyChanged += Browsing;
             Packs.Changed += Packed;
+            Packs.Progress += PackProgress;
         }
         else
         {
@@ -234,12 +238,20 @@ public sealed partial class SettingsPanel : Grid
             shield.PropertyChanged -= Shielding;
             browser.PropertyChanged -= Browsing;
             Packs.Changed -= Packed;
+            Packs.Progress -= PackProgress;
         }
     }
 
     private void Packed(string id)
     {
         if (page == Page.Packs) Show();
+    }
+
+    private void PackProgress(string id)
+    {
+        if (page == Page.Packs && packLines.TryGetValue(id, out var line) &&
+            Packs.Received(id) is { } got && PackManifest.Find(id) is { } pack)
+            line.Detail = $"Downloading… {got * 100 / pack.Size}% of {Megabytes(pack.Size)}";
     }
 
     private void Prefs(object? sender, PropertyChangedEventArgs e)
@@ -682,11 +694,11 @@ public sealed partial class SettingsPanel : Grid
             }
             if (Packs.Trouble(pack.Id) is { } trouble) detail = trouble;
 
-            var links = new List<UIElement> { new Pill("Build", () => OpenLink(pack.BuildPage)), new Pill("Source", () => OpenLink(pack.Source)) };
-            if (Packs.Shelf.Folder(pack.Id) is { } folder && File.Exists(Path.Combine(folder, "LICENSE.txt")))
-                links.Insert(0, new Pill("Licence", () => OpenLink(new Uri(Path.Combine(folder, "LICENSE.txt")))));
+            var links = new List<UIElement> { new Pill("Licence", () => OpenLink(pack.LicencePage)), new Pill("Build", () => OpenLink(pack.BuildPage)), new Pill("Source", () => OpenLink(pack.Source)) };
+            var line = new Line(pack.Name, detail, control);
+            packLines[pack.Id] = line;
             body.Children.Add(Parts.Card(
-                new Line(pack.Name, detail, control),
+                line,
                 new Line(pack.Licence, pack.Build, Pills([.. links]))));
         }
         var note = Parts.Note(

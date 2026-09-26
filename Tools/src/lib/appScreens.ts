@@ -401,8 +401,8 @@ export const toolScreens: ToolScreen[] = [
         },
     },
     {
-        // The recorder runs in Rust and mirrors state through a module store, so
-        // it remains safe to host in the Media workspace while recording.
+        // Native capture owns recorder state; host commands defer to it while
+        // recording, so the Media workspace can show that state safely.
         id: 'screen-recorder',
         name: 'Screen Recorder',
         category: 'Media',

@@ -13,6 +13,14 @@ public enum PackState
     Outdated,
 }
 
+public enum PackRemoval
+{
+    Missing,
+    Removed,
+    /// The pack is no longer available, but its quarantined files need a later sweep.
+    CleanupPending,
+}
+
 /// The download didn't match the manifest: nothing was unpacked, and what
 /// was installed before is still there.
 public sealed class PackVerifyException(string message) : Exception(message);
@@ -90,14 +98,14 @@ public sealed class PackStore(string root)
     /// Takes the pack off this PC. Renamed out of the way first, so a
     /// delete that stops halfway (a file still in use) never leaves
     /// something that looks installed.
-    public void Remove(string id)
+    public PackRemoval Remove(string id)
     {
         SweepRemoved();
         var home = Path.Combine(root, id);
-        if (!Directory.Exists(home)) return;
+        if (!Directory.Exists(home)) return PackRemoval.Missing;
         var gone = Path.Combine(root, $".removed-{id}-{Guid.NewGuid().ToString("N")[..8]}");
         Directory.Move(home, gone);
-        TryDelete(gone);
+        return TryDelete(gone) ? PackRemoval.Removed : PackRemoval.CleanupPending;
     }
 
     private static async Task Receive(Pack pack, Stream download, string archive, Action<long>? progress, CancellationToken cancel)
@@ -153,13 +161,14 @@ public sealed class PackStore(string root)
         foreach (var dir in Directory.EnumerateDirectories(root, ".removed-*")) TryDelete(dir);
     }
 
-    private static void TryDelete(string path)
+    private static bool TryDelete(string path)
     {
         try
         {
             if (Directory.Exists(path)) Directory.Delete(path, recursive: true);
             else if (File.Exists(path)) File.Delete(path);
+            return !Directory.Exists(path) && !File.Exists(path);
         }
-        catch (Exception error) when (error is IOException or UnauthorizedAccessException) { }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException) { return false; }
     }
 }

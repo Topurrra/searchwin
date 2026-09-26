@@ -116,18 +116,26 @@ public static class Packs
         troubles.Remove(id);
         try
         {
-            Shelf.Remove(id);
-            Log.Write($"packs: {id} removed");
+            var result = Shelf.Remove(id);
+            if (result == PackRemoval.CleanupPending)
+            {
+                troubles[id] = "The pack was removed, but some files could not be deleted. Search will retry cleanup during the next pack operation.";
+                Log.Write($"packs: {id} removed; cleanup pending");
+            }
+            else Log.Write($"packs: {id} removed");
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException)
         {
             troubles[id] = "It's in use right now — close what's using it and try again.";
+            Log.Write($"packs: {id} removal blocked: {error.Message}");
         }
         finally
         {
+            // Even a deferred delete has unpublished the pack, so the engine
+            // must stop resolving it before another Player job can start.
+            WriteEngineList();
             if (id == "ffmpeg") Player.EndPackChange();
         }
-        WriteEngineList();
         Tell(id);
     }
 

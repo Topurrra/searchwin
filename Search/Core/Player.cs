@@ -50,15 +50,14 @@ public static class Player
         var done = Path.Combine(Cache, key);
         // Made before, pack or no pack.
         if (await Task.Run(() => Read(done)) is { } made) return made;
-        if (Packs.FfmpegBin is not { } bin)
-            return how == "check"
-                ? new JsonObject { ["playable"] = true, ["subtitles"] = new JsonArray() }
-                : new JsonObject { ["needsPack"] = true };
-
         Job job;
         lock (gate)
         {
             if (packChanging) throw new InvalidOperationException("FFmpeg is being installed or removed. Try again when it finishes.");
+            if (Packs.FfmpegBin is not { } bin)
+                return how == "check"
+                    ? new JsonObject { ["playable"] = true, ["subtitles"] = new JsonArray() }
+                    : new JsonObject { ["needsPack"] = true };
             if (!jobs.TryGetValue(key, out job!))
             {
                 var cancel = new CancellationTokenSource();

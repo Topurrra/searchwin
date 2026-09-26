@@ -130,10 +130,58 @@ public sealed class PackTests : IDisposable
         var pack = PackFor("1.0", bytes);
         await Install(pack, bytes);
 
-        store.Remove("ffmpeg");
+        Assert.Equal(PackRemoval.Removed, store.Remove("ffmpeg"));
 
         Assert.Equal(PackState.Missing, store.State(pack));
         Assert.Empty(Directory.EnumerateFileSystemEntries(root));
+    }
+
+    [Fact]
+    public async Task A_locked_pack_file_prevents_rename_and_keeps_the_working_install()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        var bytes = Archive("1");
+        var pack = PackFor("1.0", bytes);
+        var folder = await Install(pack, bytes);
+        using (var held = new FileStream(Path.Combine(folder, "bin", "ffmpeg.exe"), FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+        {
+            Assert.Throws<IOException>(() => store.Remove("ffmpeg"));
+
+            Assert.Equal(PackState.Ready, store.State(pack));
+            Assert.Empty(Directory.EnumerateDirectories(root, ".removed-*"));
+        }
+
+        Assert.Equal(PackRemoval.Removed, store.Remove("ffmpeg"));
+        Assert.Empty(Directory.EnumerateFileSystemEntries(root));
+    }
+
+    [Fact]
+    public async Task A_read_only_file_defers_cleanup_after_the_pack_is_unpublished()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        var bytes = Archive("1");
+        var pack = PackFor("1.0", bytes);
+        var folder = await Install(pack, bytes);
+        var file = Path.Combine(folder, "bin", "ffmpeg.exe");
+        File.SetAttributes(file, FileAttributes.ReadOnly);
+        try
+        {
+            var result = store.Remove("ffmpeg");
+
+            Assert.Equal(PackRemoval.CleanupPending, result);
+            Assert.Equal(PackState.Missing, store.State(pack));
+            var gone = Assert.Single(Directory.EnumerateDirectories(root, ".removed-*"));
+            File.SetAttributes(Path.Combine(gone, "1.0", "bin", "ffmpeg.exe"), FileAttributes.Normal);
+            Assert.Equal(PackRemoval.Missing, store.Remove("ffmpeg"));
+            Assert.Empty(Directory.EnumerateFileSystemEntries(root));
+        }
+        finally
+        {
+            foreach (var leftover in Directory.Exists(root)
+                ? Directory.EnumerateFiles(root, "ffmpeg.exe", SearchOption.AllDirectories)
+                : [])
+                File.SetAttributes(leftover, FileAttributes.Normal);
+        }
     }
 
     [Fact]
@@ -157,7 +205,7 @@ public sealed class PackTests : IDisposable
         Directory.CreateDirectory(gone);
         File.WriteAllText(Path.Combine(gone, "leftover"), "old files");
 
-        store.Remove("ffmpeg");
+        Assert.Equal(PackRemoval.Missing, store.Remove("ffmpeg"));
 
         Assert.Empty(Directory.EnumerateFileSystemEntries(root));
     }

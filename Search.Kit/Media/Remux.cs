@@ -9,6 +9,45 @@ namespace SearchKit.Media;
 /// file beside it (`film.srt`, `film.en.ass`), turned into WebVTT.
 public sealed record Subtitle(string Label, string Language, int? Stream = null, string? Beside = null);
 
+/// Limits each player input to the container the selected file promises. A
+/// protocol whitelist by itself still lets FFmpeg open local segments named
+/// by a text playlist disguised as a movie.
+public static class MediaInput
+{
+    private const string Protocols = "file,pipe";
+
+    public static IReadOnlyList<string> Open(string path) => Input(path, Path.GetExtension(path).ToLowerInvariant() switch
+    {
+        ".mp4" or ".m4v" or ".mov" or ".m4a" or ".3gp" => "mov",
+        ".webm" or ".mkv" or ".mka" => "matroska",
+        ".ogv" or ".ogg" or ".oga" or ".opus" => "ogg",
+        ".mp3" => "mp3",
+        ".aac" => "aac",
+        ".wav" => "wav",
+        ".flac" => "flac",
+        ".avi" => "avi",
+        ".wmv" or ".wma" => "asf",
+        ".flv" => "flv",
+        ".mpg" or ".mpeg" => "mpeg",
+        ".m2ts" or ".mts" => "mpegts",
+        ".ape" => "ape",
+        ".wv" => "wv",
+        ".aiff" or ".aif" => "aiff",
+        _ => throw new NotSupportedException("That media format isn't supported."),
+    });
+
+    public static IReadOnlyList<string> Sidecar(string path) => Input(path, Path.GetExtension(path).ToLowerInvariant() switch
+    {
+        ".srt" => "srt",
+        ".ass" or ".ssa" => "ass",
+        ".vtt" => "webvtt",
+        _ => throw new NotSupportedException("That subtitle format isn't supported."),
+    });
+
+    private static IReadOnlyList<string> Input(string path, string demuxer) =>
+        ["-protocol_whitelist", Protocols, "-f", demuxer, "-i", path];
+}
+
 /// How the FFmpeg pack turns a file WebView2 can't play into one it can:
 /// what ffprobe said about it in, FFmpeg's arguments out. Everything that
 /// Chromium decodes is copied as it is (near-instant, no loss); audio it
@@ -50,7 +89,8 @@ public sealed record Remux(
         var audio = audios.FirstOrDefault(s => Int(s["disposition"], "default") == 1) ?? audios.FirstOrDefault();
         if (video == null && audio == null) return null;
 
-        var args = new List<string> { "-hide_banner", "-nostdin", "-loglevel", "error", "-y", "-progress", "pipe:1", "-nostats", "-i", input };
+        var args = new List<string> { "-hide_banner", "-nostdin", "-loglevel", "error", "-y", "-progress", "pipe:1", "-nostats" };
+        args.AddRange(MediaInput.Open(input));
         var copiesVideo = false;
         if (video != null)
         {

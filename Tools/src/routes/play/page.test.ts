@@ -73,6 +73,16 @@ describe('the play page', () => {
         expect(track.getAttribute('label')).toBe('English');
     });
 
+    it('starts a direct WebM while the codec and subtitle check is still pending', async () => {
+        host.prepared = () => new Promise(() => {});
+        page = await open('C:\\Films\\portrait.webm');
+
+        expect(host.calls).toContainEqual({ cmd: 'host:play.prepare', args: { path: 'C:\\Films\\portrait.webm', how: 'check' } });
+        expect(document.querySelector('video')!.getAttribute('src')).toBe(
+            'https://files.search/local?path=C%3A%5CFilms%5Cportrait.webm',
+        );
+    });
+
     it('remuxes an MP4 whose audio WebView2 would play silent (AC-3) before playing it', async () => {
         host.prepared = (args: { how: string }) =>
             args.how === 'check' ? { playable: false, subtitles: [] } : { media: 'C:\\Cache\\m\\media.mp4', subtitles: [] };

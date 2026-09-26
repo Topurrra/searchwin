@@ -35,6 +35,15 @@ describe('search://tools', () => {
         expect(cards()).toEqual(catalog().map((tool) => `#/tool/${tool.id}`));
     });
 
+    it('withholds unfinished recorder and reminders from both entry points', () => {
+        open();
+        for (const id of ['screen-recorder', 'reminders']) {
+            expect(cards()).not.toContain(`#/tool/${id}`);
+            expect(catalog().map((tool) => tool.id)).not.toContain(id);
+            expect(openTool(id)).toEqual({ refused: expect.any(String) });
+        }
+    });
+
     it('narrows as you type and opens the first on Enter, through its link', () => {
         open();
         const filter = document.querySelector<HTMLInputElement>('input.filter')!;

@@ -225,7 +225,7 @@ public sealed partial class Browser
     /// does with it — a tab, the player, its own app, or its folder.
     public void OpenLocal(string path)
     {
-        switch (FileKinds.ActionForPath(path))
+        switch (FileKinds.Opening(FileKinds.ActionForPath(path), path, Packs.FfmpegBin != null))
         {
             case RowAction.OpenInTab:
                 OpenFile(path);

@@ -10,6 +10,8 @@ export const offInSearch: Readonly<Record<string, string>> = {
     snippets: 'Snippets come to Search with its background mode, in a later version.',
     'voice-to-text': 'Voice comes to Search in a later version.',
     'automation-recipes': 'Recipes come to Search with its agent, in a later version.',
+    'screen-recorder': 'Screen Recorder needs native Search capture controls before it can be used here.',
+    reminders: 'Reminders need Search background scheduling before they can fire reliably.',
 
     // Search does these itself.
     'clipboard-history': 'Search keeps its own clipboard history: press Ctrl+Shift+V.',

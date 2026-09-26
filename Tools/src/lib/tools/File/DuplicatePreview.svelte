@@ -132,9 +132,9 @@
         }
     }
 
-    async function openInApp() {
+    async function openFile() {
         try {
-            await invoke('open_search_result_path', { path });
+            await invoke('host:open.file', { path });
         } catch (e) {
             toast(e instanceof Error ? e.message : String(e), 'error');
         }
@@ -227,7 +227,7 @@
                 </div>
             </div>
             <div class="dup-preview-actions">
-                <button type="button" class="dup-preview-iconbtn" onclick={openInApp} title="Open in default app">
+                <button type="button" class="dup-preview-iconbtn" onclick={openFile} title="Open file">
                     <ExternalLink class="h-3.5 w-3.5" />
                 </button>
                 <button type="button" class="dup-preview-iconbtn" onclick={revealInFolder} title="Reveal in folder">

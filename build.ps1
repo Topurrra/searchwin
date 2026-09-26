@@ -42,7 +42,6 @@ foreach ($path in @($buildDir, $out)) {
         throw "Refusing to remove a linked release directory: $path"
     }
 }
-if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) { throw 'The release needs the .NET 9 SDK.' }
 & (Join-Path $PSScriptRoot 'build-components.ps1') -Output $out -Arch $Arch -PreflightOnly
 if ($Installer) {
     $nsis = @("${env:ProgramFiles(x86)}\NSIS\makensis.exe", "$env:ProgramFiles\NSIS\makensis.exe") | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1

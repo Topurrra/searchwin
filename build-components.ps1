@@ -5,15 +5,38 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$root = $PSScriptRoot
+$root = [IO.Path]::GetFullPath($PSScriptRoot).TrimEnd('\', '/')
 $outputPath = [IO.Path]::GetFullPath($(if ([IO.Path]::IsPathRooted($Output)) { $Output } else { Join-Path $root $Output }))
 $toolsPath = Join-Path $outputPath 'tools'
+
+function Assert-LocalReleasePath([string]$Path) {
+    $path = [IO.Path]::GetFullPath($Path).TrimEnd('\', '/')
+    $prefix = "$root\"
+    if (-not $path.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) {
+        throw "Release output must be inside this repository: $path. Build locally, then copy the finished folder."
+    }
+    $current = $root
+    if ((Get-Item -LiteralPath $current -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) {
+        throw "Release output crosses a junction or symlink: $current"
+    }
+    foreach ($part in $path.Substring($prefix.Length).Split([char[]]@('\', '/'), [StringSplitOptions]::RemoveEmptyEntries)) {
+        $current = Join-Path $current $part
+        if ((Test-Path -LiteralPath $current) -and
+            ((Get-Item -LiteralPath $current -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+            throw "Release output crosses a junction or symlink: $current"
+        }
+    }
+}
 
 if ($Arch -ne 'x64') {
     throw 'The bundled Rust engine is built for x64 only. An arm64 release would mix architectures.'
 }
-if ($outputPath -eq [IO.Path]::GetPathRoot($outputPath) -or $outputPath -eq $root) {
-    throw "Unsafe release output directory: $outputPath"
+Assert-LocalReleasePath $outputPath
+Assert-LocalReleasePath $toolsPath
+if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) { throw 'The release needs a .NET SDK 9 or newer.' }
+$sdkVersion = ([string]((& dotnet --version 2>$null) | Select-Object -First 1)).Trim()
+if ($LASTEXITCODE -ne 0 -or $sdkVersion -notmatch '^(\d+)\.' -or [int]$Matches[1] -lt 9) {
+    throw "The selected .NET SDK must be version 9 or newer (found: $sdkVersion)."
 }
 if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) { throw 'The release needs Rust cargo to build kil-engine.exe.' }
 if (-not (Get-Command node -ErrorAction SilentlyContinue)) { throw 'The release needs Node.js 22 or newer to build the tool pages.' }
@@ -39,13 +62,7 @@ if ($PreflightOnly) { return }
 if (-not (Test-Path -LiteralPath (Join-Path $outputPath 'Search.exe') -PathType Leaf)) {
     throw "Search.exe is missing from $outputPath; publish the app before packaging components."
 }
-if ((Get-Item -LiteralPath $outputPath).Attributes -band [IO.FileAttributes]::ReparsePoint) {
-    throw "Release output must not be a junction or symlink: $outputPath"
-}
-if ((Test-Path -LiteralPath $toolsPath) -and
-    ((Get-Item -LiteralPath $toolsPath).Attributes -band [IO.FileAttributes]::ReparsePoint)) {
-    throw "Refusing to replace a linked tools directory: $toolsPath"
-}
+Assert-LocalReleasePath $toolsPath
 
 Push-Location (Join-Path $root 'Engine')
 try {
@@ -76,6 +93,7 @@ if (-not (Test-Path -LiteralPath (Join-Path $dist 'index.html') -PathType Leaf) 
 }
 
 # Replace the pages as one fresh tree, so removed pages cannot survive in a release.
+Assert-LocalReleasePath $toolsPath
 if (Test-Path -LiteralPath $toolsPath) { Remove-Item -LiteralPath $toolsPath -Recurse -Force }
 Copy-Item -LiteralPath $dist -Destination $toolsPath -Recurse
 Copy-Item -LiteralPath $engine -Destination (Join-Path $outputPath 'kil-engine.exe') -Force

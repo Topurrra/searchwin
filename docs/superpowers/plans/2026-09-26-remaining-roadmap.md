@@ -1,5 +1,10 @@
 # SearchWin Remaining Work Plan
 
+> Status update (2026-09-27): the first stabilization pass is merged. This file
+> preserves the original review baseline and detailed work packages. The current
+> checklist is [Remaining Work](../../brain/Remaining%20Work.md), with completed
+> changes and fresh validation in [the stabilization log](../../brain/Log/2026-09-26-stabilization.md).
+
 > **For agentic workers:** Use superpowers:executing-plans or superpowers:subagent-driven-development when implementing an approved work package. This is a project-level roadmap; split each package into a focused implementation plan before changing runtime behavior.
 
 **Goal:** Finish and optimize the existing browser and tools, then deliver the remaining features in dependency order.

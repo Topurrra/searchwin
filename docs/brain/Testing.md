@@ -92,8 +92,9 @@ Add `--test` to talk to a debug build. Bench URLs may be `http(s)` or `chrome-ex
 
 ### Testing the native AOT build
 
-- `publish-aot.cmd -o <folder>` now copies `kil-engine.exe` and `Tools/dist` beside `Search.exe`.
-- **Known issue:** the script copies `Engine/target/release/kil-engine.exe` unconditionally, which may be hours old and lack current fixes. The engine needs to be rebuilt fresh before publishing AOT for a real build. **Workaround:** `cargo build --release --no-default-features` in the Engine folder first, or pick the newer of release and debug (as `Engine.Executable` does at runtime).
+- `publish-aot.cmd -o <repository-local-folder>` builds the app, engine and tool pages. Prerequisites and output paths are checked before cleanup.
+- Packaging uses the executable reported by the current Cargo build, verifies x64 PE format, and copies the freshly built tools. It no longer falls back to an old engine at a fixed path.
+- `bench-field.ps1 -World <name>` does not read or write the clipboard by default. Its two copy checks require explicit `-IncludeClipboard`; the result reports skipped checks.
 - Verify the AOT build the same way as the Debug build (smoke test, bench scenarios). Measure first-window latency and keystroke times; they should match Debug within 10–20%.
 
 ## Verifying on screen

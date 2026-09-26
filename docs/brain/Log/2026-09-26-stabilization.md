@@ -9,6 +9,10 @@ Branch: `codex/stabilization`, based on `904708d`. Runtime and release changes
 through `50cdd8c`; later documentation records this session. This is the first
 bounded fixes/optimization pass, not completion of the whole roadmap.
 
+**Integration, 2026-09-27:** merged into `main` as `acdca08`, preserving the
+earlier roadmap notes. The Obsidian vault is synchronized with the repository
+notes. See [[Remaining Work]] for the current checklist.
+
 ## Implemented
 
 - Unsupported Screen Recorder and Reminders are absent from catalog and direct
@@ -52,7 +56,7 @@ bounded fixes/optimization pass, not completion of the whole roadmap.
 | Packaged AOT field smoke | 17 checked, 2 clipboard checks skipped, 0 failed |
 | Independent reviews | Each work package reviewed; final whole-branch review and scoped fix review passed |
 
-Runnable folder: `build/Search` (about 105 MB uncompressed). `Search.exe` is
+Verified build: `C:\Users\user\.codex\worktrees\searchwin-stabilization\searchwin\build\Search` (about 105 MB uncompressed). Rebuild with `build.ps1` in the main checkout when its local build output is needed. `Search.exe` is
 20,989,440 bytes; `kil-engine.exe` is 22,431,744 bytes. This session did not
 produce a new NSIS installer.
 
@@ -92,3 +96,7 @@ The corrected resolver test passes; its pre-fix failure remains unverified.
   OCR before optional PaddleOCR, then proceed to later feature phases.
 
 The original [[Fixes]] and [[Optimization]] notes contain the broader backlog.
+
+Post-merge verification on main: Search.Kit 806 passed; Rust 390 passed and
+4 ignored; Tools 232 passed; browser JavaScript 125 passed. Merge conflicts
+were limited to appended documentation; both sets of notes were preserved.

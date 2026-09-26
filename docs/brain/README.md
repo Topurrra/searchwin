@@ -1,6 +1,6 @@
 ---
 tags: [searchwin, index]
-updated: 2026-09-24
+updated: 2026-09-27
 ---
 
 # SearchWin — second brain
@@ -18,6 +18,8 @@ behave like the Mac app, with the same UI, keys and data.
 | Note | What's in it |
 |---|---|
 | **[[Master Plan]]** | **Where Search is going: browser + Workspace engine + tools as pages + agent, in phases** |
+| **[[Remaining Work]]** | **Current checklist after the stabilization merge: optimizations first, then missing features** |
+| [[Log/2026-09-26-stabilization]] | Stabilization changes, test results and remaining verification |
 | **[[Cloud Agent Brief]]** | **Tasks T0–T8 and rules for a cloud Claude agent (Linux, CI for Windows)** |
 | [[Overview]] | What the app is, where it stands, the numbers |
 | [[Architecture]] | How the code is put together, file by file |
@@ -25,7 +27,7 @@ behave like the Mac app, with the same UI, keys and data.
 | [[Testing]] | Test worlds, the bench, how to verify on screen, the checklist |
 | [[Tools]] | Tool inventory by pack: what ships, what's cut and why, status of each |
 | [[Packs]] | How the packs framework works: download, verify, install, update, remove; FFmpeg pack specs |
-| [[Fixes]] | What phase 3 left to fix (paused 2026-09-27) |
+| [[Fixes]] | Original phase 3 review backlog, with the current stabilization status linked |
 | [[Optimization]] | What to speed up in what exists now; each future feature gets its own note |
 | [[Windows vs Mac]] | Where the port differs from the Mac app on purpose, and what's missing |
 | [[Decisions]] | Why things are the way they are (ADR log) |

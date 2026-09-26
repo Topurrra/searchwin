@@ -7,7 +7,11 @@ updated: 2026-09-27
 
 Back to [[README]] · Phase: [[Master Plan#Phases]] · Packs: [[Packs]]
 
-**32 tools** ship in phase 3 across **8 packs**, all restyled with Search's design tokens. Each tool is a page in tabs at `https://tools.search/tool/<id>`. See [[Log/2026-09-27]] for what each builder tested.
+The current catalog has **30 available tool entries across eight categories**.
+Tool pages are bundled, at `https://tools.search/index.html#/tool/<id>`.
+FFmpeg is the only current downloadable runtime pack. The older 32-entry
+catalog included unsupported Recorder and Reminders routes; both are now
+withheld. See [[Log/2026-09-26-stabilization]] for the current verification.
 
 ## Packs
 
@@ -52,18 +56,16 @@ Back to [[README]] · Phase: [[Master Plan#Phases]] · Packs: [[Packs]]
 | **Image Watermark** | ✅ | Add text/image overlay to photos |
 | **Favicon Generator** | ✅ | Generate favicon from image (PNG, ICO, Apple touch) |
 
-### Documents (5 tools) — CSV, Markdown, export
+### Documents (2 available tools) — CSV and Markdown; hub panels are not separate tools
 
 | Tool | Status | What it does |
 |---|---|---|
 | **CSV Toolkit** | ✅ | Hub: Convert / Merge / Clean / Split / JSON converters (5 panels) |
 | **Markdown Converter** | ✅ | Render Markdown, export to HTML / PDF / DOCX (uses engine's renderer, NOT Word) |
-| **Word Converter** | ❌ | Word ⇄ PDF (deferred to phase 4, D35) — hidden from index |
+| **Word Converter** | ❌ | Word ⇄ PDF (deferred to phase 4, D33) — hidden from index |
 | **Remove Password** | ❌ | PDF/Office password removal — hidden from index (deferred) |
-| (Reminders) | ✅ | See Focus pack |
-| (Time Tracker) | ✅ | See Focus pack |
 
-### Development (11 tools) — crypto, SSH, regex, SQL, diff, JWT, etc.
+### Development (4 tools) — includes the eight-panel Developer Tools hub
 
 | Tool | Status | What it does |
 |---|---|---|
@@ -72,19 +74,19 @@ Back to [[README]] · Phase: [[Master Plan#Phases]] · Packs: [[Packs]]
 | **SSH Key Manager** | ✅ | List, generate, import keys from `~/.ssh` (read-only in UI) |
 | **Image to Base64** | ✅ | Convert image to data URI |
 
-### Media (2 tools) — extract, compress; player; recorder hidden
+### Media (1 available tool) — Media Utility; player uses a separate file route
 
 | Tool | Status | What it does |
 |---|---|---|
 | **Media Utility** | ✅ | Extract audio to MP3, compress video to size (gates on FFmpeg pack) |
-| **Screen Recorder** | ❌ | Record screen with redaction (engine built without screenrec; Tauri toolbar doesn't work in shim; **hidden** but NOT actually excluded from index — see blocker in [[Log/2026-09-27]]) |
+| **Screen Recorder** | ❌ | Excluded from catalog and direct tool route; engine bridge operations refused until native capture controls work |
 | (Player) | ✅ | Play MKV / AVI / WMV / FLV / 3GP / WMA with remux, subtitles, range serving (pack-gated; wired via file action route) |
 
-### Focus (3 tools) — time, focus mode, reminders
+### Focus (2 available tools) — time tracker and focus mode
 
 | Tool | Status | What it does |
 |---|---|---|
-| **Reminders** | ✅ | Create, list, complete scheduled tasks (⚠️ bug: reconciles all `\KeepItLocal\*` tasks, including Cron; see blocker in [[Log/2026-09-27]]) |
+| **Reminders** | ❌ | Withheld. Scheduler namespaces are isolated, but native activation and notification delivery still need implementation |
 | **Time Tracker** | ✅ | Track time on current window, export report |
 | **Focus Mode** | ✅ | Block distracting sites, notifications, apps (read-only demo) |
 
@@ -92,14 +94,15 @@ Back to [[README]] · Phase: [[Master Plan#Phases]] · Packs: [[Packs]]
 
 | id | Why | Phase |
 |---|---|---|
-| `word-converter` | Word ⇄ PDF (with Word silent or LibreOffice) → phase 4 | D35, phase 4 |
+| `word-converter` | Word ⇄ PDF (with Word silent or LibreOffice) → phase 4 | D33, phase 4 |
 | `snippets` | Text expansion with global hotkeys → phase 4 | Phase 4 |
 | `voice-to-text` | Vosk model pack + voice input → phase 4 | Phase 4 |
 | `automation-recipes` | Agent recipes, not a tool — no link yet | Phase 6 |
 | `notes` | Waits for Search's side-panel Notes | Side panel (phase 5?) |
 | `windows-hardening` | Loses to free tools (ShutUp10++, O&O); too narrow scope | Deferred |
 | `doc-password` | PDF/Office password removal; doc processing priority unclear | Deferred |
-| `screen-recorder` | Engine built without screenrec; toolbar/region picker are Tauri windows that don't work in shim | Phase 4+; **currently listed but broken** (blocker) |
+| `screen-recorder` | Needs native capture controls and the engine feature | Phase 4+; hidden and guarded |
+| `reminders` | Needs Search-owned activation, notification and persistence | Hidden and guarded |
 | `file-search` | Duplicates field's native search (Ctrl+L, same commands); moved to field-settings | Cut (field does it better) |
 
 ## How to hide a tool
@@ -123,12 +126,11 @@ Back to [[README]] · Phase: [[Master Plan#Phases]] · Packs: [[Packs]]
 
 | Tool | Issue | Workaround |
 |---|---|---|
-| CleanerAnalyzer | "Open location" button calls `open_search_result_path` (runs .exe/.msi/.bat) | Don't click it on installers |
-| DuplicatePreview | "Open" button calls `open_search_result_path` | Same |
 | OcrTool, CamScanner | Shell-out Tesseract only; no Windows-OCR fallback, no pack wiring | Not usable without `tesseract.exe` on PATH |
-| Reminders | Reconcile deletes all `\KeepItLocal\*` tasks (including Cron panel tasks) | Don't open Reminders in Workspace worlds |
-| File Shredder (FFmpeg player) | Player's remux uses no protocol whitelist | Download over HTTPS only |
-| (Full list) | See [[Log/2026-09-27#Known issues]] | — |
+| Reminders, Screen Recorder | Native lifecycle is incomplete | Routes remain unavailable |
+| Player | Whole-file conversion delays incompatible media | Incremental playback remains planned |
+| File Manager | Permanent-delete confirmation lacks a Search owner window | Pending fix |
+| (Full list) | See [[Remaining Work]] and [[Log/2026-09-26-stabilization]] | — |
 
 ## Component locations
 

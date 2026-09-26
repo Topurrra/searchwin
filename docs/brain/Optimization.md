@@ -7,6 +7,16 @@ updated: 2026-09-27
 
 Back to [[README]] · Related: [[Fixes]], [[Master Plan]]
 
+## Stabilization status — 2026-09-27
+
+Merged fixes and measurements: [[Log/2026-09-26-stabilization]]. Player controls
+now fit the viewport, including portrait video and minimum-width checks. Pack
+progress updates the existing Settings row. Direct media already plays while
+the codec check runs; remuxed/transcoded media still waits for complete output.
+The YouTube shield already handles both `/player` and `/next`; the live ad cause
+is not established. The original hypotheses below are historical, not confirmed
+diagnoses. The current outstanding checklist is [[Remaining Work]].
+
 **Rule:** this note covers what exists today (up to phase 3). Each future
 feature or phase gets its own optimization note (for example
 `Optimization - Voice.md`), linked from here and from [[README]].

@@ -9,6 +9,10 @@ Back to [[README]] · Tools: [[Tools]] · FFmpeg: [[#FFmpeg pack specifications]
 
 **Packs** are optional downloadable components that ship Search with extended features: tools, media codecs, OCR models, voice recognition, semantic search. Each pack is independently verified, installed, updated and removed through **Settings › Packs**.
 
+**Current implementation:** FFmpeg is the only downloadable runtime pack in the
+manifest. The eight tool categories are bundled pages. Voice, OCR and other
+runtime packs are future work; see [[Remaining Work]].
+
 ## How packs work
 
 ### Manifest (`packs.json`)
@@ -17,16 +21,35 @@ Embedded in the Kit at build time (`Search.Kit/Packs/packs.json`):
 
 ```json
 {
-  "ffmpeg": {
-    "version": "8.1.2-50",
-    "size": 70835150,
-    "sha256": "e9712ffb...3db63",
-    "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/…/ffmpeg-n8.1.2-50-g1a748fe2cd-win64-lgpl-shared-8.1.zip",
-    "licenceUrl": "https://github.com/FFmpeg/FFmpeg/blob/1a748fe2cd.../COPYING.LGPLv3",
-    "buildUrl": "https://github.com/BtbN/FFmpeg-Builds/releases/…",
-    "source": "github.com/BtbN/FFmpeg-Builds at 1a748fe2cd…",
-    "files": ["ffmpeg.exe", "ffplay.exe", "ffprobe.exe", ...]
-  }
+  "packs": [
+    {
+      "id": "ffmpeg",
+      "name": "FFmpeg",
+      "version": "8.1.2-50-g1a748fe2cd",
+      "size": 70835150,
+      "sha256": "e9712ffbdb03ef71bbab660c75b835bfe698ef6fad0247c76d8d394a39a3db63",
+      "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-08-31-13-27/ffmpeg-n8.1.2-50-g1a748fe2cd-win64-lgpl-shared-8.1.zip",
+      "licence": "LGPL-3.0-or-later",
+      "licenceUrl": "https://github.com/FFmpeg/FFmpeg/blob/1a748fe2cd43e3ead22fafb1b5b7d77f153898a8/COPYING.LGPLv3",
+      "build": "BtbN/FFmpeg-Builds, win64 LGPL shared build of 2026-08-31: no x264, x265 or other GPL parts",
+      "buildPage": "https://github.com/BtbN/FFmpeg-Builds/releases/tag/autobuild-2026-08-31-13-27",
+      "source": "https://github.com/FFmpeg/FFmpeg/commit/1a748fe2cd43e3ead22fafb1b5b7d77f153898a8",
+      "enables": "Plays MKV, AVI, WMV and more in the player, with their subtitles, and runs Media Utility",
+      "folder": "ffmpeg-n8.1.2-50-g1a748fe2cd-win64-lgpl-shared-8.1",
+      "files": [
+        "bin/ffmpeg.exe",
+        "bin/ffprobe.exe",
+        "bin/avcodec-62.dll",
+        "bin/avdevice-62.dll",
+        "bin/avfilter-11.dll",
+        "bin/avformat-62.dll",
+        "bin/avutil-60.dll",
+        "bin/swresample-6.dll",
+        "bin/swscale-9.dll",
+        "LICENSE.txt"
+      ]
+    }
+  ]
 }
 ```
 
@@ -35,7 +58,7 @@ Each entry specifies:
 - `size`: byte count (checked during download).
 - `sha256`: verified during download, before unpacking.
 - `url`: https only; direct link to release archive.
-- `licenceUrl`, `buildUrl`, `source`: transparency; visible in Settings › Packs.
+- `licenceUrl`, `buildPage`, `source`: transparency; visible in Settings › Packs.
 - `files`: only these are extracted; anything else in the archive is skipped. Paths checked to stay inside the pack folder.
 
 ### Download and verify
@@ -43,9 +66,9 @@ Each entry specifies:
 **Search/Core/Packs.cs, PackStore.cs:**
 
 1. `HttpClient` streams the download.
-2. **While streaming:** hash computed, compared to manifest.
+2. **While streaming:** hash computed incrementally.
 3. **Before unpacking:** size and SHA-256 checked against manifest. If either fails, download refused, old version (if any) stays intact.
-4. **Staging:** files extracted to `Packs/.staging-<id>-<nonce>` (dot-prefixed, hidden).
+4. **Staging:** files extracted to `Packs/<id>/.unpack-<nonce>` (dot-prefixed, hidden).
 5. **Atomic move:** staged folder renamed to `Packs/<id>/<version>`. If this fails (e.g., folder in use), old version stays and new one is rolled back.
 6. **Old version:** stays until new one is in place; removed only after successful move.
 
@@ -54,15 +77,20 @@ Each entry specifies:
 Call `PackStore.InstallAsync` with the same id:
 1. If version is newer: download new one, atomic move.
 2. If same version: rename-and-restore repair (old copy comes back on move failure).
-3. If older: refused (no downgrade).
+3. Versions are selected by Search's embedded manifest; there is no arbitrary
+   version picker or general semantic-version downgrade check in PackStore.
 
 ### Remove
 
 1. Folder renamed to `.removed-<id>-<nonce>` (dot-prefixed, quarantined).
-2. Deletion happens in background (file handles may still be open, e.g., remux).
+2. Deletion is attempted after the rename. A failed rename preserves the install;
+   successful rename with failed deletion returns CleanupPending and reports the
+   leftover files while the pack is logically removed.
 3. **Crash cleanup:** Sweep looks for `.removed-*` at start of next Install/Remove.
 
-⚠️ **Known issue:** Sweep only scans root-level folders, so an interrupted remove can leave 144 MB behind. See [[Log/2026-09-27#Lower-severity issues]].
+Root-level removal leftovers are now retried on later pack operations. Browser
+Player jobs and pack mutations share a reservation; engine Media Utility jobs
+still need broader coordination. See [[Log/2026-09-26-stabilization]].
 
 ### Engine integration
 
@@ -77,14 +105,14 @@ pub fn bin_dir(pack_id: &str) -> Option<String> {
 No new command; the engine reads the file on each lookup, so:
 - Installed while engine running → immediately available.
 - No race on pipe connect.
-- Same pattern works for Tesseract later.
+- Other runtime packs can use the same lookup pattern; PaddleOCR is the chosen optional OCR pack.
 
 **Engine/src/commands/ffmpeg.rs resolve():**
 ```
-check pack first → user override (if set) → PATH
+check runnable explicit user override → pack → PATH
 ```
 
-**Report:** `ffmpeg_status` tells tools whether ffmpeg is available and its source ('pack', 'override', 'path').
+**Report:** `ffmpeg_status` tells tools whether ffmpeg is available and its source (`user`, `pack`, or `path`).
 
 ### UI: Settings › Packs
 
@@ -92,7 +120,7 @@ check pack first → user override (if set) → PATH
 
 - New rail item (Package icon) between Downloads and Privacy.
 - Each pack row: name, version, "what it enables" (one line).
-- **Installed:** version shown, Update or Remove button (if update available). Licence, Build, Source links. "Licence" link opens the pack's own LICENSE.txt (if present) or the URL. Progress % while downloading, Cancel button.
+- **Installed:** version shown, Update or Remove button (if update available). Licence, Build and Source links are also visible before install; Licence uses the manifest's pinned URL. Progress changes the existing row text, with a Cancel button, rather than rebuilding Settings on every tick.
 - **Not installed:** Install button. "Get <Pack>" (or disabled if already installing elsewhere).
 - Note: "Packs download only when you click. We check them with SHA-256." No background update checks.
 
@@ -101,7 +129,7 @@ check pack first → user override (if set) → PATH
 **Search/Core/Commands.cs:**
 - `packs` → opens Settings › Packs.
 - `install ffmpeg` → opens Settings › Packs and starts FFmpeg install.
-- Plain `>ffmpeg` also starts install (low intent signal — see issue in [[Log/2026-09-27]]).
+- Plain `>ffmpeg` opens pack information without starting a download.
 
 ## FFmpeg pack specifications
 
@@ -194,7 +222,7 @@ If a newer BtbN month-end build is available:
 
 **Planned (not yet wired):**
 - **Vosk:** speech recognition model (phase 4).
-- **Tesseract:** OCR model (with Windows OCR fallback in Core).
+- **PaddleOCR:** optional OCR runtime/model; Windows OCR is planned for Core.
 - **pdfium:** PDF rendering for documents.
 - **MiniLM:** semantic search embeddings.
 - **Background Removal:** image processing model.

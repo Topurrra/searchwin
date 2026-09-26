@@ -98,7 +98,7 @@ Workspace's feature packs, turned on or off locally.
 - **Core** (always on): the field, shields, FishCatcher, converters, bangs,
   clipboard, file search (names + text).
 - **Optional**, downloaded when enabled: Voice (Vosk model), OCR
-  (Tesseract/tessdata), Semantic search (MiniLM), Images (background-removal
+  (PaddleOCR), Semantic search (MiniLM), Images (background-removal
   model), Documents (pdfium), Media (uses *your* ffmpeg, never bundled), AI.
 
 ## Architecture
@@ -186,6 +186,15 @@ in KeepItLocal Redact" when it's installed: a hand-off, not an integration.
 | Engine idle (tray mode) | Target < 60 MB, capped by a Job Object |
 | Installer (Core) | Target ≤ 45 MB (shell 21 + engine ~15–20 + tools ~5). Packs are separate downloads |
 | Page load with shields | Faster than with shields off |
+
+## Current stabilization status — 2026-09-27
+
+The first stabilization pass is merged into main. The available catalog contains
+30 entries: Utilities 7, Files 6, Privacy 3, Images 5, Documents 2, Development 4,
+Media 1 and Focus 2. Reminders and Screen Recorder are withheld. Tool categories
+are bundled pages; FFmpeg is the only current downloadable runtime pack.
+See [[Remaining Work]] and [[Log/2026-09-26-stabilization]] for the current
+checklist and verification; the phase descriptions below retain historical scope.
 
 ## Phases
 

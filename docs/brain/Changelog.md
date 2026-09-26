@@ -1,11 +1,20 @@
 ---
 tags: [searchwin, changelog]
-updated: 2026-09-24
+updated: 2026-09-27
 ---
 
 # Changelog
 
 Back to [[README]] · Newest first. Short hashes are from `searchwin`'s git.
+
+## Stabilization merged: 2026-09-27
+
+- `acdca08` merges the stabilization work, including task isolation, safe file
+  actions, player layout/input fixes, pack progress/lifecycle fixes and required
+  release checks. Full details: [[Log/2026-09-26-stabilization]].
+- Current catalog: 30 available tools. Reminders and Screen Recorder stay
+  unavailable until their native lifecycle works.
+- [[Remaining Work]] tracks unfinished optimizations and later feature phases.
 
 ## 1.0.0: 2026-09-24
 

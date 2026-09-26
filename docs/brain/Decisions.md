@@ -321,14 +321,14 @@ Newest at the bottom.
 
 ### Review note — 2026-09-26 (no new product decision)
 
-The [remaining-work roadmap](../superpowers/plans/2026-09-26-remaining-roadmap.md)
+The [[Remaining Work|remaining-work roadmap]]
 reconciles current source with the vault and proposes stabilization before further
 feature phases. Existing decisions remain authoritative; the proposed sequence
 has not yet been adopted as a new product decision.
 
 ### Stabilization implementation note — 2026-09-26
 
-The existing plan is being implemented on `codex/stabilization`. Reminders and
+The stabilization work is now merged into `main`. Reminders and
 Screen Recorder remain unavailable until their Search-native lifecycle works.
 Reminders cannot be re-enabled by namespace isolation alone: scheduled activation
 and notification delivery still need implementation. The normal field benchmark

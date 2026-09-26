@@ -4,6 +4,9 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+overrides:
+  es5-ext: 0.10.64
+
 importers:
 
   .:

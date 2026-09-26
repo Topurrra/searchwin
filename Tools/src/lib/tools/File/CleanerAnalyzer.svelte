@@ -15,6 +15,7 @@
       The previous hand-rolled component is preserved as CleanerAnalyzer.old.svelte.
     */
     import { invoke } from '@tauri-apps/api/core';
+    import { revealItemInDir } from '@tauri-apps/plugin-opener';
     import { listen, type UnlistenFn } from '@tauri-apps/api/event';
     import { onMount } from 'svelte';
     import {
@@ -320,9 +321,9 @@
         await navigator.clipboard.writeText(path);
         toast('Path copied', 'success');
     }
-    async function openPath(path: string) {
+    async function revealPath(path: string) {
         try {
-            await invoke('open_search_result_path', { path });
+            await revealItemInDir(path);
         } catch (error) {
             toast(error instanceof Error ? error.message : String(error), 'error');
         }
@@ -554,8 +555,8 @@
                                 class="ca-tile"
                                 style="flex-grow:{Math.max(1, dir.percent)}; --tile-hue:{dir.hueDeg};"
                                 title={dir.path}
-                                aria-label={`${dir.label} on ${dir.parentLabel}: ${formatBytes(dir.bytes)}. Open in Explorer.`}
-                                onclick={() => openPath(dir.path)}
+                                aria-label={`${dir.label} on ${dir.parentLabel}: ${formatBytes(dir.bytes)}. Show in Explorer.`}
+                                onclick={() => revealPath(dir.path)}
                             >
                                 <span class="ca-tile-label">{dir.label}</span>
                                 <span class="ca-tile-bytes">{formatBytes(dir.bytes)}</span>
@@ -682,7 +683,7 @@
                                             </span>
                                         </div>
                                         <div class="ca-row-actions">
-                                            <button type="button" class="ca-icon-btn" title="Open location" aria-label="Open file location" onclick={() => openPath(file.path)}>
+                                            <button type="button" class="ca-icon-btn" title="Open location" aria-label="Open file location" onclick={() => revealPath(file.path)}>
                                                 <ExternalLink class="ca-act-ico" />
                                             </button>
                                             <button type="button" class="ca-icon-btn" title="Copy path" aria-label="Copy path" onclick={() => copyPath(file.path)}>

@@ -401,18 +401,13 @@ export const toolScreens: ToolScreen[] = [
         },
     },
     {
-        // The recorder runs in Rust and mirrors state through a module store, so
-        // it remains safe to host in the Media workspace while recording.
+        // Native capture owns recorder state; host commands defer to it while
+        // recording, so the Media workspace can show that state safely.
         id: 'screen-recorder',
         name: 'Screen Recorder',
         category: 'Media',
         description: 'Record your screen to a clean MP4 — fully on-device, nothing uploaded.',
         available: true,
-        // Hidden in Search (phase 3): the engine ships without its `screenrec`
-        // feature, and its region picker, redaction picker and floating
-        // toolbar were Tauri windows the headless engine can't open. Back
-        // when those are native Search overlays. FFmpeg itself is the pack.
-        hidden: true,
         icon: Video,
         kind: 'tool',
         loader: () => import('$lib/tools/Capture/ScreenRecorder.svelte'),

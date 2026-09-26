@@ -435,6 +435,10 @@ public sealed partial class Rule : Grid
 /// One thing to set or do: what it is on the left, the control on the right.
 public sealed partial class Line : Grid
 {
+    private readonly TextBlock more;
+
+    public string? Detail { get => more.Text; set => more.Text = value ?? ""; }
+
     public Line(string title, string? detail, UIElement? control)
     {
         Padding = new Thickness(14, 11, 14, 11);
@@ -445,13 +449,10 @@ public sealed partial class Line : Grid
         var heading = Kit.Text(title, 13);
         heading.TextWrapping = TextWrapping.Wrap;
         words.Children.Add(heading);
-        if (!string.IsNullOrEmpty(detail))
-        {
-            var more = Kit.Text(detail, 11.5, Palette.Muted);
-            more.TextWrapping = TextWrapping.Wrap;
-            more.MaxLines = 3;
-            words.Children.Add(more);
-        }
+        more = Kit.Text(detail ?? "", 11.5, Palette.Muted);
+        more.TextWrapping = TextWrapping.Wrap;
+        more.MaxLines = 3;
+        if (!string.IsNullOrEmpty(detail)) words.Children.Add(more);
         Children.Add(words);
         if (control is FrameworkElement fe)
         {

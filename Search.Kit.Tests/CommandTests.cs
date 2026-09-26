@@ -119,6 +119,23 @@ public class BangTests
 
 public class CommandRegistryTests
 {
+    [Fact]
+    public async Task Bare_ffmpeg_opens_packs_while_install_ffmpeg_starts_the_download()
+    {
+        var registry = new CommandRegistry();
+        var opened = 0;
+        var installed = 0;
+        SearchKit.Packs.PackCommands.Register(registry, () => opened++, () => installed++);
+
+        Assert.Equal("open.ffmpeg", registry.Find("ffmpeg")[0].Command.Id);
+        await registry.RunAsync(registry.Find("ffmpeg")[0].Command.Id, "", Source.Field, _ => Task.FromResult(true));
+        Assert.Equal((1, 0), (opened, installed));
+
+        Assert.Equal("packs.ffmpeg", registry.Find("install ffmpeg")[0].Command.Id);
+        await registry.RunAsync(registry.Find("install ffmpeg")[0].Command.Id, "", Source.Field, _ => Task.FromResult(true));
+        Assert.Equal((2, 1), (opened, installed));
+    }
+
     private static CommandRegistry Registry(List<string> ran)
     {
         var registry = new CommandRegistry();

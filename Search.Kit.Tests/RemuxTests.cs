@@ -25,6 +25,51 @@ public class RemuxTests
     private static string After(IReadOnlyList<string> args, string flag) => args[args.ToList().IndexOf(flag) + 1];
 
     [Theory]
+    [InlineData("film.mkv", "matroska")]
+    [InlineData("film.avi", "avi")]
+    [InlineData("film.wmv", "asf")]
+    [InlineData("film.m2ts", "mpegts")]
+    [InlineData("film.mp4", "mov")]
+    public void A_media_input_uses_its_expected_demuxer_before_ffmpeg_opens_it(string name, string demuxer)
+    {
+        var plan = Remux.Plan(Probe("h264", "aac"), Path.Combine("C:\\in", name), "C:\\out")!;
+        var input = plan.Arguments.ToList().IndexOf("-i");
+
+        Assert.Equal("-f", plan.Arguments[input - 2]);
+        Assert.Equal(demuxer, plan.Arguments[input - 1]);
+        Assert.Equal("file,pipe", After(plan.Arguments, "-protocol_whitelist"));
+    }
+
+    [Theory]
+    [InlineData("film.webm", "matroska")]
+    [InlineData("song.ogg", "ogg")]
+    [InlineData("song.wma", "asf")]
+    [InlineData("song.flac", "flac")]
+    public void The_probe_uses_the_same_bounded_input_as_conversion(string name, string demuxer)
+    {
+        var args = MediaInput.Open(Path.Combine("C:\\in", name));
+        Assert.Equal(["-protocol_whitelist", "file,pipe", "-f", demuxer, "-i", Path.Combine("C:\\in", name)], args);
+    }
+
+    [Theory]
+    [InlineData("film.srt", "srt")]
+    [InlineData("film.en.ass", "ass")]
+    [InlineData("film.en.ssa", "ass")]
+    [InlineData("film.vtt", "webvtt")]
+    public void Sidecar_subtitles_are_opened_as_their_supported_format(string name, string demuxer)
+    {
+        var args = MediaInput.Sidecar(Path.Combine("C:\\in", name));
+        Assert.Equal(["-protocol_whitelist", "file,pipe", "-f", demuxer, "-i", Path.Combine("C:\\in", name)], args);
+    }
+
+    [Fact]
+    public void A_playlist_extension_is_not_a_player_input()
+    {
+        Assert.Throws<NotSupportedException>(() => MediaInput.Open("C:\\in\\film.m3u8"));
+        Assert.Throws<NotSupportedException>(() => MediaInput.Sidecar("C:\\in\\film.txt"));
+    }
+
+    [Theory]
     // MKV as it usually comes: H.264 copied, AC-3 5.1 made AAC stereo.
     [InlineData("h264", "ac3", 6, false, "copy", "aac", true)]
     [InlineData("h264", "dts", 2, false, "copy", "aac", false)]

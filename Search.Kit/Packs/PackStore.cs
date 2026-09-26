@@ -13,6 +13,14 @@ public enum PackState
     Outdated,
 }
 
+public enum PackRemoval
+{
+    Missing,
+    Removed,
+    /// The pack is no longer available, but its quarantined files need a later sweep.
+    CleanupPending,
+}
+
 /// The download didn't match the manifest: nothing was unpacked, and what
 /// was installed before is still there.
 public sealed class PackVerifyException(string message) : Exception(message);
@@ -53,6 +61,7 @@ public sealed class PackStore(string root)
     /// download that doesn't match changes nothing. Returns the folder.
     public async Task<string> InstallAsync(Pack pack, Stream download, Action<long>? progress = null, CancellationToken cancel = default)
     {
+        SweepRemoved();
         var home = Path.Combine(root, pack.Id);
         Directory.CreateDirectory(home);
         Sweep(home);
@@ -89,13 +98,14 @@ public sealed class PackStore(string root)
     /// Takes the pack off this PC. Renamed out of the way first, so a
     /// delete that stops halfway (a file still in use) never leaves
     /// something that looks installed.
-    public void Remove(string id)
+    public PackRemoval Remove(string id)
     {
+        SweepRemoved();
         var home = Path.Combine(root, id);
-        if (!Directory.Exists(home)) return;
+        if (!Directory.Exists(home)) return PackRemoval.Missing;
         var gone = Path.Combine(root, $".removed-{id}-{Guid.NewGuid().ToString("N")[..8]}");
         Directory.Move(home, gone);
-        TryDelete(gone);
+        return TryDelete(gone) ? PackRemoval.Removed : PackRemoval.CleanupPending;
     }
 
     private static async Task Receive(Pack pack, Stream download, string archive, Action<long>? progress, CancellationToken cancel)
@@ -143,13 +153,22 @@ public sealed class PackStore(string root)
         foreach (var file in Directory.EnumerateFiles(home, ".*")) TryDelete(file);
     }
 
-    private static void TryDelete(string path)
+    /// A crashed or interrupted removal leaves its renamed folder at the
+    /// root, outside the per-pack install sweep.
+    private void SweepRemoved()
+    {
+        if (!Directory.Exists(root)) return;
+        foreach (var dir in Directory.EnumerateDirectories(root, ".removed-*")) TryDelete(dir);
+    }
+
+    private static bool TryDelete(string path)
     {
         try
         {
             if (Directory.Exists(path)) Directory.Delete(path, recursive: true);
             else if (File.Exists(path)) File.Delete(path);
+            return !Directory.Exists(path) && !File.Exists(path);
         }
-        catch (Exception error) when (error is IOException or UnauthorizedAccessException) { }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException) { return false; }
     }
 }

@@ -19,6 +19,7 @@ public sealed record Pack(
     Uri Download,
     // SPDX, e.g. LGPL-3.0-or-later.
     string Licence,
+    Uri LicencePage,
     // Who built it and how, in a sentence.
     string Build,
     Uri BuildPage,
@@ -75,7 +76,7 @@ public static partial class PackManifest
                 .ToList();
             if (files.Count == 0) throw Bad($"{id}: no files");
             if (packs.Any(p => p.Id == id)) throw Bad($"{id} twice");
-            packs.Add(new Pack(id, Text("name"), version, size, sha, Link("url"), Text("licence"), Text("build"),
+            packs.Add(new Pack(id, Text("name"), version, size, sha, Link("url"), Text("licence"), Link("licenceUrl"), Text("build"),
                 Link("buildPage"), Link("source"), Text("enables"), folder, files));
         }
         return packs;

@@ -69,6 +69,7 @@ pub mod search;
 pub mod screen_recorder;
 // Always-compiled Tauri command surface for the recorder (errors without the feature).
 pub mod screenrec_cmds;
+mod scheduler_scope;
 pub mod sensitive_allowlist;
 pub mod sensitive_scan;
 pub mod shredder;

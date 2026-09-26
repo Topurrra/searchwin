@@ -1,6 +1,6 @@
 ---
 tags: [searchwin, build]
-updated: 2026-09-24
+updated: 2026-09-27
 ---
 
 # Build and Release
@@ -13,7 +13,7 @@ Back to [[README]] · Problems we hit: [[Lessons Learned#Build and Native AOT]]
 - For **Native AOT**: Visual Studio 2022 or its Build Tools with *Desktop development with C++* (the MSVC linker)
 - For the installer: **NSIS 3** (`makensis.exe` in Program Files)
 - For the engine: **Rust** (stable, MSVC), and **NASM** for fast AVIF encoding (optional; the build falls back without it). On this PC: NASM 3.02 in `%LOCALAPPDATA%\Programs\nasm`, on the user PATH.
-- For the tool pages: **Node 22+** and **pnpm**
+- For the tool pages: **Node 22+** and **pnpm 9.15.9** (pinned in Tools/package.json)
 - WebView2 runtime (already on Windows 11)
 
 ## Commands (run in `searchwin\`)
@@ -23,18 +23,18 @@ dotnet build Search\Search.csproj   # debug → Search\bin\...\Debug\...\Search.
 .\build.ps1                          # release → build\Search\Search.exe (Native AOT if MSVC is present, else ReadyToRun)
 .\build.ps1 -Zip                     # + build\Search-<ver>-x64.zip
 .\build.ps1 -Installer               # + build\Search-Setup-<ver>-x64.exe
-.\build.ps1 -Arch arm64              # Arm64 (always ReadyToRun for now)
+# Arm64 packaging is deferred: the scripts reject mixed-architecture builds.
 ```
 
 What `build.ps1` does:
 
-1. Wipes `build\Search`.
+1. Validates the SDK, required component toolchains, and workspace output before replacing `build\Search`.
 2. Checks for MSVC with `vswhere`. If found (x64), runs `publish-aot.cmd`,
    which calls `vcvarsall.bat x64` and runs `dotnet publish -p:PublishAot=true
    -p:IlcUseEnvironmentalTools=true -p:PublishReadyToRun=false -p:DebugType=none`.
 3. Otherwise runs `dotnet publish -p:PublishReadyToRun=true` (about 215 MB, because it carries the .NET runtime).
 4. Moves `*.pdb` out to `build\`: symbols are kept but not shipped.
-5. Builds **the engine** (`cargo build --release --no-default-features`, copied beside the exe as `kil-engine.exe`) and **the tool pages** (`pnpm build` in `Tools/`, copied to `tools\`). Each is skipped, with a note, when cargo or pnpm isn't installed.
+5. Builds **the engine** (`cargo build --release --no-default-features`, copied beside the exe as `kil-engine.exe`) and **the tool pages** (`pnpm build` in `Tools/`, copied to `tools\`). Both are required. Missing tools or outputs fail the release; `build-components.ps1` builds and copies each component once.
 6. `-Installer`: downloads the WebView2 Evergreen bootstrapper once into
    `build\redist` and **checks its Microsoft signature**, then runs `makensis`.
 
@@ -53,7 +53,7 @@ What `build.ps1` does:
 
 ## Output
 
-- `build\Search\`: about 75 MB. `Search.exe` (15 MB native), the WinUI DLLs, `Search.pri`, `App.xbf`, `Assets\`
+- `build\Search\`: about 105 MB in the 2026-09-27 verification. Native `Search.exe`, current `kil-engine.exe`, tool pages, WinUI DLLs, `Search.pri`, `App.xbf`, and `Assets\`.
 - The folder is portable: copy it anywhere and double-click.
 
 ## Installer
@@ -81,3 +81,5 @@ What `build.ps1` does:
 2. `.\build.ps1 -Installer -Zip`
 3. **Smoke-test the built exe** in a test world (see [[Testing#Release smoke test]]).
 4. Commit, then hand over `build\Search-Setup-<ver>-x64.exe`. Installing over the old version keeps user data.
+
+Release output must be an unlinked descendant of the repository. For direct AOT publishing, use "publish-aot.cmd -o build\AOT-check" (quote paths containing spaces); build locally, then copy the finished folder if an external destination is needed. See [[Log/2026-09-26-stabilization]] for the verified fixes and remaining checks.

@@ -25,6 +25,7 @@ public static class Player
 
     private static readonly Dictionary<string, Job> jobs = [];
     private static readonly Lock gate = new();
+    private static bool packChanging;
 
     /// `host:play.prepare {path, how}` — how: `remux` (copy what plays),
     /// `transcode` (the video too, after a copy didn't play), `check` (a
@@ -44,18 +45,19 @@ public static class Player
         };
         var file = new FileInfo(path);
         if (!await Task.Run(() => file.Exists)) throw new FileNotFoundException("That file isn't there any more.");
+        _ = MediaInput.Open(file.FullName);
         var key = Remux.Key(file.FullName, file.Length, file.LastWriteTimeUtc, how);
         var done = Path.Combine(Cache, key);
         // Made before, pack or no pack.
         if (await Task.Run(() => Read(done)) is { } made) return made;
-        if (Packs.FfmpegBin is not { } bin)
-            return how == "check"
-                ? new JsonObject { ["playable"] = true, ["subtitles"] = new JsonArray() }
-                : new JsonObject { ["needsPack"] = true };
-
         Job job;
         lock (gate)
         {
+            if (packChanging) throw new InvalidOperationException("FFmpeg is being installed or removed. Try again when it finishes.");
+            if (Packs.FfmpegBin is not { } bin)
+                return how == "check"
+                    ? new JsonObject { ["playable"] = true, ["subtitles"] = new JsonArray() }
+                    : new JsonObject { ["needsPack"] = true };
             if (!jobs.TryGetValue(key, out job!))
             {
                 var cancel = new CancellationTokenSource();
@@ -79,11 +81,21 @@ public static class Player
                 job.Cancel.Cancel();
     }
 
-    /// The pack is going: nothing may still be running from it.
-    public static void Forget()
+    /// Reserve a pack change only when no player job is still using its files.
+    /// Prepare checks the same gate before admitting a new job.
+    public static bool TryBeginPackChange()
     {
         lock (gate)
-            foreach (var job in jobs.Values) job.Cancel.Cancel();
+        {
+            if (packChanging || jobs.Count > 0) return false;
+            packChanging = true;
+            return true;
+        }
+    }
+
+    public static void EndPackChange()
+    {
+        lock (gate) packChanging = false;
     }
 
     private static JsonObject? Read(string folder)
@@ -114,8 +126,10 @@ public static class Player
             var started = Stopwatch.GetTimestamp();
             var answer = new JsonObject();
             var subtitles = new JsonArray();
+            var probeArgs = new List<string> { "-v", "error", "-print_format", "json", "-show_format", "-show_streams" };
+            probeArgs.AddRange(MediaInput.Open(input));
             var probe = JsonNode.Parse(await Run(Path.Combine(bin, "ffprobe.exe"),
-                ["-v", "error", "-print_format", "json", "-show_format", "-show_streams", input], null, cancel));
+                probeArgs, null, cancel));
             if (how == "check") answer["playable"] = Remux.Plays(probe);
             else
             {
@@ -137,8 +151,12 @@ public static class Player
                 var name = Remux.SubtitleFile(subtitles.Count);
                 try
                 {
+                    var besidePath = Path.Combine(folder, sub.Beside!);
+                    var subtitleArgs = new List<string> { "-hide_banner", "-nostdin", "-loglevel", "error", "-y" };
+                    subtitleArgs.AddRange(MediaInput.Sidecar(besidePath));
+                    subtitleArgs.AddRange(["-f", "webvtt", Path.Combine(work, name)]);
                     await Run(Path.Combine(bin, "ffmpeg.exe"),
-                        ["-hide_banner", "-nostdin", "-loglevel", "error", "-y", "-i", Path.Combine(folder, sub.Beside!), "-f", "webvtt", Path.Combine(work, name)],
+                        subtitleArgs,
                         null, cancel);
                     subtitles.Add(Track(sub, name));
                 }

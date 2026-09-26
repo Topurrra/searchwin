@@ -38,7 +38,7 @@ public sealed class PackTests : IDisposable
 
     private static Pack PackFor(string version, byte[] archive) => new(
         "ffmpeg", "FFmpeg", version, archive.Length, Convert.ToHexStringLower(SHA256.HashData(archive)),
-        new Uri("https://example.org/ffmpeg.zip"), "LGPL-3.0-or-later", "a build", new Uri("https://example.org/build"),
+        new Uri("https://example.org/ffmpeg.zip"), "LGPL-3.0-or-later", new Uri("https://example.org/licence"), "a build", new Uri("https://example.org/build"),
         new Uri("https://example.org/source"), "plays things", "ffmpeg-build",
         ["bin/ffmpeg.exe", "bin/ffprobe.exe", "LICENSE.txt"]);
 
@@ -130,10 +130,99 @@ public sealed class PackTests : IDisposable
         var pack = PackFor("1.0", bytes);
         await Install(pack, bytes);
 
-        store.Remove("ffmpeg");
+        Assert.Equal(PackRemoval.Removed, store.Remove("ffmpeg"));
 
         Assert.Equal(PackState.Missing, store.State(pack));
         Assert.Empty(Directory.EnumerateFileSystemEntries(root));
+    }
+
+    [Fact]
+    public async Task A_locked_pack_file_prevents_rename_and_keeps_the_working_install()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        var bytes = Archive("1");
+        var pack = PackFor("1.0", bytes);
+        var folder = await Install(pack, bytes);
+        using (var held = new FileStream(Path.Combine(folder, "bin", "ffmpeg.exe"), FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+        {
+            Assert.Throws<IOException>(() => store.Remove("ffmpeg"));
+
+            Assert.Equal(PackState.Ready, store.State(pack));
+            Assert.Empty(Directory.EnumerateDirectories(root, ".removed-*"));
+        }
+
+        Assert.Equal(PackRemoval.Removed, store.Remove("ffmpeg"));
+        Assert.Empty(Directory.EnumerateFileSystemEntries(root));
+    }
+
+    [Fact]
+    public async Task A_read_only_file_defers_cleanup_after_the_pack_is_unpublished()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        var bytes = Archive("1");
+        var pack = PackFor("1.0", bytes);
+        var folder = await Install(pack, bytes);
+        var file = Path.Combine(folder, "bin", "ffmpeg.exe");
+        File.SetAttributes(file, FileAttributes.ReadOnly);
+        try
+        {
+            var result = store.Remove("ffmpeg");
+
+            Assert.Equal(PackRemoval.CleanupPending, result);
+            Assert.Equal(PackState.Missing, store.State(pack));
+            var gone = Assert.Single(Directory.EnumerateDirectories(root, ".removed-*"));
+            File.SetAttributes(Path.Combine(gone, "1.0", "bin", "ffmpeg.exe"), FileAttributes.Normal);
+            Assert.Equal(PackRemoval.Missing, store.Remove("ffmpeg"));
+            Assert.Empty(Directory.EnumerateFileSystemEntries(root));
+        }
+        finally
+        {
+            foreach (var leftover in Directory.Exists(root)
+                ? Directory.EnumerateFiles(root, "ffmpeg.exe", SearchOption.AllDirectories)
+                : [])
+                File.SetAttributes(leftover, FileAttributes.Normal);
+        }
+    }
+
+    [Fact]
+    public async Task The_next_pack_operation_cleans_an_interrupted_removal()
+    {
+        var gone = Path.Combine(root, ".removed-ffmpeg-deadbeef");
+        Directory.CreateDirectory(gone);
+        File.WriteAllText(Path.Combine(gone, "leftover"), "old files");
+
+        var bytes = Archive("1");
+        await Install(PackFor("1.0", bytes), bytes);
+
+        Assert.False(Directory.Exists(gone));
+        Assert.Equal("1.0", store.Installed("ffmpeg"));
+    }
+
+    [Fact]
+    public void Removing_a_missing_pack_still_cleans_an_interrupted_removal()
+    {
+        var gone = Path.Combine(root, ".removed-ffmpeg-deadbeef");
+        Directory.CreateDirectory(gone);
+        File.WriteAllText(Path.Combine(gone, "leftover"), "old files");
+
+        Assert.Equal(PackRemoval.Missing, store.Remove("ffmpeg"));
+
+        Assert.Empty(Directory.EnumerateFileSystemEntries(root));
+    }
+
+    [Fact]
+    public async Task A_failed_repair_keeps_the_working_version()
+    {
+        var first = Archive("working");
+        var pack = PackFor("1.0", first);
+        var folder = await Install(pack, first);
+        var replacement = Archive("broken", withoutProbe: true);
+
+        await Assert.ThrowsAsync<PackVerifyException>(() => Install(PackFor("1.0", replacement), replacement));
+
+        Assert.Equal(PackState.Ready, store.State(pack));
+        Assert.Equal("ffmpeg working", File.ReadAllText(Path.Combine(folder, "bin", "ffmpeg.exe")));
+        Assert.Empty(Leftovers());
     }
 
     [Fact]
@@ -151,6 +240,7 @@ public sealed class PackTests : IDisposable
     [InlineData("files", "[\"../../../evil.exe\"]")]
     [InlineData("files", "[\"bin\\\\..\\\\evil.exe\"]")]
     [InlineData("url", "\"http://example.org/plain.zip\"")]
+    [InlineData("licenceUrl", "\"http://example.org/plain.txt\"")]
     [InlineData("sha256", "\"abc\"")]
     public void A_manifest_entry_that_could_unpack_outside_its_folder_or_skip_verification_is_refused(string key, string value)
     {
@@ -158,7 +248,7 @@ public sealed class PackTests : IDisposable
         {
             ["id"] = "\"ffmpeg\"", ["name"] = "\"FFmpeg\"", ["version"] = "\"1.0\"", ["size"] = "10",
             ["sha256"] = "\"" + new string('a', 64) + "\"", ["url"] = "\"https://example.org/f.zip\"",
-            ["licence"] = "\"LGPL\"", ["build"] = "\"b\"", ["buildPage"] = "\"https://example.org/b\"",
+            ["licence"] = "\"LGPL\"", ["licenceUrl"] = "\"https://example.org/licence\"", ["build"] = "\"b\"", ["buildPage"] = "\"https://example.org/b\"",
             ["source"] = "\"https://example.org/s\"", ["enables"] = "\"e\"", ["folder"] = "\"top\"",
             ["files"] = "[\"bin/ffmpeg.exe\"]",
         };

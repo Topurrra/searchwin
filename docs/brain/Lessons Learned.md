@@ -540,3 +540,13 @@ Direct playback starts while its codec check runs asynchronously. Diagnose the
 reported failures before implementing fixes suggested by older notes. Tool
 categories, catalog entries, nested panels and downloadable runtime packs are
 different counts: the current manifest contains only FFmpeg.
+
+### Stabilization: measure the real boundary
+
+Portrait player controls were below the viewport (1398px in a 540px content
+area), despite passing DOM tests. A fixed viewport height and shrinkable video
+kept them visible; AOT measurements and hit tests checked the rendered result.
+A file protocol whitelist alone still lets FFmpeg follow a local concat
+playlist disguised as a movie. Force a supported input demuxer as well.
+Task Scheduler ownership must come from the engine data directory, with exact
+folder matching; UI hiding does not replace a backend guard.

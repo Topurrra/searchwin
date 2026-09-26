@@ -670,8 +670,10 @@
 
 <style>
     .player {
-        min-height: 100vh;
+        height: 100vh;
+        min-height: 0;
         display: flex;
+        overflow: hidden;
         background: var(--color-bg, #0c0c0e);
         color: var(--color-text, #e5e5e5);
     }
@@ -692,6 +694,7 @@
         display: flex;
         flex-direction: column;
         min-width: 0;
+        min-height: 0;
         background: #000;
     }
     .stage.fullscreen {
@@ -700,6 +703,7 @@
     video {
         flex: 1;
         width: 100%;
+        height: 0;
         min-height: 0;
         object-fit: contain;
         background: #000;
@@ -740,6 +744,7 @@
     }
     .controls {
         display: flex;
+        flex-shrink: 0;
         align-items: center;
         gap: 8px;
         padding: 10px 14px;
@@ -805,6 +810,7 @@
         border-left: 1px solid var(--color-border, #222226);
         background: var(--color-panel, #151517);
         overflow-y: auto;
+        max-height: 100%;
         padding: 12px;
         box-sizing: border-box;
     }

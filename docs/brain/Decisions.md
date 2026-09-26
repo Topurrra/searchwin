@@ -318,3 +318,10 @@ Newest at the bottom.
 - **Decision:** [[Optimization]] covers what exists now; every future feature
   or phase gets its own optimization note, linked from it.
 - **Also planned:** T3 Code inside Search, for the agentic browser (Master Plan › Future).
+
+### Review note — 2026-09-26 (no new product decision)
+
+The [remaining-work roadmap](../superpowers/plans/2026-09-26-remaining-roadmap.md)
+reconciles current source with the vault and proposes stabilization before further
+feature phases. Existing decisions remain authoritative; the proposed sequence
+has not yet been adopted as a new product decision.

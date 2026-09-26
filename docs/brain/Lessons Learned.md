@@ -532,3 +532,11 @@ the fix lives. *(uncertain)* marks things that weren't proven.
 
 ### Cut lists and hidden screens
 - **A screen marked `hidden: true` in appScreens.ts is not the same as removing it from the index catalog.** When two different code paths manage visibility (appScreens.ts's inline `hidden: true` and offInSearch.ts filtering), the last write wins silently. Tools that should be hidden but appear in the field, index and catalog.json are a subtle bug. **Fix:** a single source of truth (offInSearch.ts only) and one test asserting all offInSearch ids are actually excluded (not just checking that the ones in offInSearch don't appear; also checking that tools with stale `hidden: true` don't appear either).
+
+### Roadmap review: check hypotheses against current code
+
+The current YouTube script already handles both player and next endpoints.
+Direct playback starts while its codec check runs asynchronously. Diagnose the
+reported failures before implementing fixes suggested by older notes. Tool
+categories, catalog entries, nested panels and downloadable runtime packs are
+different counts: the current manifest contains only FFmpeg.

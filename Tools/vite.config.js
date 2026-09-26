@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 // The pages were written against Tauri; in Search they run in a tab, and
 // every Tauri module they import is answered by the shim (src/shim), which
 // talks to the Search tab holding the page.
+/** @param {string} file */
 const shim = (file) => fileURLToPath(new URL(`./src/shim/${file}`, import.meta.url));
 
 const tauri = {

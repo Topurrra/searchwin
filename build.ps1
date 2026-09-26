@@ -2,7 +2,7 @@
 # and, when asked, the ZIP people download it as.
 #
 #   .\build.ps1                 release build: build\Search\Search.exe
-#   .\build.ps1 -Arch arm64     for Windows on Arm
+#   .\build.ps1 -Arch arm64     currently unsupported: no Arm64 engine build
 #   .\build.ps1 -Zip            + build\Search-<version>-<arch>.zip
 #
 # Compiled to native code (Native AOT) when the C++ linker is on this machine —
@@ -30,61 +30,44 @@ if (-not (Get-Command dotnet -ErrorAction SilentlyContinue) -and (Test-Path "$en
     $env:PATH = "$env:USERPROFILE\.dotnet;$env:PATH"
 }
 
-$out = "build\Search"
-if (Test-Path $out) { Remove-Item -Recurse -Force $out }
+$buildDir = Join-Path $PSScriptRoot 'build'
+$out = Join-Path $buildDir 'Search'
+$repoPath = [IO.Path]::GetFullPath($PSScriptRoot).TrimEnd('\')
+if (-not [IO.Path]::GetFullPath($out).StartsWith("$repoPath\", [StringComparison]::OrdinalIgnoreCase)) {
+    throw "Unsafe release output directory: $out"
+}
+foreach ($path in @($buildDir, $out)) {
+    if ((Test-Path -LiteralPath $path) -and
+        ((Get-Item -LiteralPath $path).Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+        throw "Refusing to remove a linked release directory: $path"
+    }
+}
+if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) { throw 'The release needs the .NET 9 SDK.' }
+& (Join-Path $PSScriptRoot 'build-components.ps1') -Output $out -Arch $Arch -PreflightOnly
+if ($Installer) {
+    $nsis = @("${env:ProgramFiles(x86)}\NSIS\makensis.exe", "$env:ProgramFiles\NSIS\makensis.exe") | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+    if (-not $nsis) { throw 'The installer needs NSIS 3 (nsis.sourceforge.io).' }
+}
+if (Test-Path -LiteralPath $out) { Remove-Item -LiteralPath $out -Recurse -Force }
 
 $vs = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
 $linker = (Test-Path $vs) -and (& $vs -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath)
 
 if ($linker -and $Arch -eq "x64") {
-    cmd /c "`"$PSScriptRoot\publish-aot.cmd`" -o `"$PSScriptRoot\$out`""
+    cmd /c "`"$PSScriptRoot\publish-aot.cmd`" -o `"$out`""
 } else {
     if ($Arch -eq "x64") { "No C++ linker here: building with ReadyToRun instead of Native AOT." }
     dotnet publish Search\Search.csproj -c Release -r "win-$Arch" -p:Platform=$Arch -p:PublishReadyToRun=true -p:DebugType=none -o $out
+    if ($LASTEXITCODE -eq 0) { & (Join-Path $PSScriptRoot 'build-components.ps1') -Output $out -Arch $Arch }
 }
 if ($LASTEXITCODE -ne 0) { throw "build failed" }
 
 # Symbols stay out of the app, kept beside the build instead — what a crash
 # address is turned back into a name with, and nothing the app reads while
 # it runs. The Mac keeps its dSYM the same way.
-Get-ChildItem $out -Filter *.pdb | Move-Item -Destination build -Force
+Get-ChildItem -LiteralPath $out -Filter *.pdb | Move-Item -Destination $buildDir -Force
 
-# The engine (Workspace's Rust core, Engine/) and the tool pages (Tools/)
-# travel beside Search.exe. Heavy engine features (voice, OCR, semantic…)
-# are packs and aren't built in here.
-if (Get-Command cargo -ErrorAction SilentlyContinue) {
-    Push-Location Engine
-    # NASM is a build tool, not something users need: with it, AVIF encoding
-    # uses rav1e's assembly and is several times faster.
-    $features = @()
-    $nasm = "$env:LOCALAPPDATA\Programs\nasm"
-    if (-not (Get-Command nasm -ErrorAction SilentlyContinue) -and (Test-Path "$nasm\nasm.exe")) { $env:PATH = "$nasm;$env:PATH" }
-    if (Get-Command nasm -ErrorAction SilentlyContinue) { $features = @('--features', 'fast-avif') }
-    else { "No NASM here: the engine's AVIF encoder builds without its assembly (slower)." }
-    cargo build --release --no-default-features @features
-    $built = $LASTEXITCODE
-    Pop-Location
-    if ($built -ne 0) { throw "the engine didn't build" }
-    Copy-Item Engine\target\release\kil-engine.exe $out
-} else {
-    "No Rust toolchain here: building without the engine."
-}
-if (Get-Command pnpm -ErrorAction SilentlyContinue) {
-    Push-Location Tools
-    pnpm install --frozen-lockfile
-    pnpm build
-    $built = $LASTEXITCODE
-    Pop-Location
-    if ($built -ne 0) { throw "the tool pages didn't build" }
-    # publish-aot.cmd may have put a copy there already; into an existing
-    # folder, Copy-Item would nest this one inside it.
-    if (Test-Path "$out\tools") { Remove-Item -Recurse -Force "$out\tools" }
-    Copy-Item Tools\dist -Destination "$out\tools" -Recurse
-} else {
-    "No pnpm here: building without the tool pages."
-}
-
-$size = (Get-ChildItem $out -Recurse | Measure-Object Length -Sum).Sum / 1MB
+$size = (Get-ChildItem -LiteralPath $out -Recurse | Measure-Object Length -Sum).Sum / 1MB
 "built: $out\Search.exe  ({0:N0} MB)" -f $size
 
 $version = ([xml](Get-Content Search\Search.csproj)).Project.PropertyGroup.Version | Select-Object -First 1
@@ -101,21 +84,19 @@ if ($Installer) {
     }
     $signature = Get-AuthenticodeSignature $webview
     if ($signature.Status -ne "Valid" -or $signature.SignerCertificate.Subject -notmatch "O=Microsoft Corporation") {
-        Remove-Item $webview
+        Remove-Item -LiteralPath $webview
         throw "the WebView2 bootstrapper isn't signed by Microsoft; not using it"
     }
 
-    $nsis = @("${env:ProgramFiles(x86)}\NSIS\makensis.exe", "$env:ProgramFiles\NSIS\makensis.exe") | Where-Object { Test-Path $_ } | Select-Object -First 1
-    if (-not $nsis) { throw "the installer needs NSIS 3 (nsis.sourceforge.io)" }
     $setup = "build\Search-Setup-$version-$Arch.exe"
-    & $nsis /V2 "/DVERSION=$version" "/DSOURCE=$PSScriptRoot\$out" "/DWEBVIEW2=$PSScriptRoot\$webview" "/DOUTFILE=$PSScriptRoot\$setup" Installer\Search.nsi
+    & $nsis /V2 "/DVERSION=$version" "/DSOURCE=$out" "/DWEBVIEW2=$PSScriptRoot\$webview" "/DOUTFILE=$PSScriptRoot\$setup" Installer\Search.nsi
     if ($LASTEXITCODE -ne 0) { throw "the installer didn't build" }
     "installer: $setup  ({0:N0} MB)" -f ((Get-Item $setup).Length / 1MB)
 }
 
 if ($Zip) {
     $archive = "build\Search-$version-$Arch.zip"
-    if (Test-Path $archive) { Remove-Item $archive }
+    if (Test-Path -LiteralPath $archive) { Remove-Item -LiteralPath $archive }
     Compress-Archive -Path "$out\*" -DestinationPath $archive -CompressionLevel Optimal
     "zipped: $archive  ({0:N0} MB)" -f ((Get-Item $archive).Length / 1MB)
 }

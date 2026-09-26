@@ -3,38 +3,44 @@
 The field's regressions, checked on a running test world through bench.ps1:
 what Enter does with >commands, !bangs, ?questions, Ctrl+K, sums that are
 really names (24/7), and programs found among files. The clipboard's text
-is kept and put back (it is never printed).
+is kept and put back (it is never printed) when -IncludeClipboard is set.
 
     $env:SEARCH_PROBE = "myworld"; Start-Process .\Search\bin\...\Search.exe
-    ./bench-field.ps1 -World myworld [-Programs C:\Temp\folder]
+    ./bench-field.ps1 -World myworld [-Programs C:\Temp\folder] [-IncludeClipboard]
 
 Needs Settings › General › "Let a script drive Search" (settings.json
 {"welcomed":true,"bench":true}). It opens pages (example.com, a YouTube
 search), switches the look and puts it back. -Programs names a chosen search
 folder holding a file called setup-*.exe: it must be listed and never taken.
-Prints one line per check; the exit code is the number that failed.
+Clipboard checks are skipped by default. Prints one line per check; the exit
+code is the number that failed.
 #>
 param(
     [Parameter(Mandatory)] [string]$World,
-    [string]$Programs
+    [string]$Programs,
+    [switch]$IncludeClipboard
 )
 $ErrorActionPreference = 'Stop'
 $bench = Join-Path $PSScriptRoot 'bench.ps1'
 $failed = 0
+$checked = 0
+$skipped = 0
 
-# Sums copy their answers: the clipboard's text is put back at the end,
-# never shown.
-$kept = Get-Clipboard -Raw -ErrorAction SilentlyContinue
+# Sum checks copy their answers. Only the explicit opt-in reads and restores
+# clipboard text; the default never accesses the clipboard.
+if ($IncludeClipboard) { $kept = Get-Clipboard -Raw -ErrorAction SilentlyContinue }
 
 function Bench { pwsh -NoProfile -File $bench --world $World @args }
 function Field { Bench field @args | ConvertFrom-Json }
 
 function Check([string]$name, [bool]$ok, [string]$saw = '') {
+    $script:checked++
     if ($ok) { "PASS  $name" } else { "FAIL  $name  ($saw)"; $script:failed++ }
 }
 
 function Rows($r) { ($r.rows | ForEach-Object { "$($_.kind):$($_.title)" }) -join ' | ' }
 
+try {
 # Commands and bangs keep their first row picked, typed or set from the
 # browser's side (as Ctrl+L sets it), and Enter takes it.
 foreach ($how in 'keys', 'direct') {
@@ -70,9 +76,16 @@ foreach ($typed in '24/7', '9/11', '7-11', '50/50', '20-20', '1/2') {
     $top = $r.rows | Where-Object top
     Check "$typed is words: nothing copied, a search" ($null -eq $top -and $r.after.said -notlike 'Copied*' -and $r.after.active -like '*google.com*') "$(Rows $r) / $($r.after.said) / $($r.after.active)"
 }
-foreach ($typed in '24 / 7', '24/7=') {
-    $r = Field $typed enter
-    Check "$typed is a sum: 3.428571 copied" ($r.after.said -eq 'Copied 3.428571') "$(Rows $r) / $($r.after.said)"
+if ($IncludeClipboard) {
+    foreach ($typed in '24 / 7', '24/7=') {
+        $r = Field $typed enter
+        Check "$typed is a sum: 3.428571 copied" ($r.after.said -eq 'Copied 3.428571') "$(Rows $r) / $($r.after.said)"
+    }
+} else {
+    foreach ($typed in '24 / 7', '24/7=') {
+        "SKIP  $typed copy check (pass -IncludeClipboard to run)"
+        $skipped++
+    }
 }
 
 if ($Programs) {
@@ -82,6 +95,10 @@ if ($Programs) {
     Check 'files: setup Enter takes nothing' ($r.after.said -ne 'Shown in its folder' -and $r.after.typed -eq 'files: setup') "$($r.after.said) / $($r.after.typed)"
 }
 
-if ($null -ne $kept) { Set-Clipboard -Value $kept } else { Set-Clipboard -Value $null }
-"$failed failed"
+} finally {
+    if ($IncludeClipboard) {
+        if ($null -ne $kept) { Set-Clipboard -Value $kept } else { Set-Clipboard -Value $null }
+    }
+}
+"$checked checked, $skipped skipped, $failed failed"
 exit $failed
